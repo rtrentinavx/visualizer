@@ -2,25 +2,26 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import { Analytics } from '@vercel/analytics/react'
-import { initBotId } from 'botid/client/core'
 import './index.css'
 import App from './App'
 import { ThemeProvider } from './lib/ThemeContext'
 
-initBotId({ protect: [] })
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
 
-Sentry.init({
-  dsn: 'https://41bfd7e597c2524b769374972e269ee1@o4511332226891776.ingest.us.sentry.io/4511338342580224',
-  sendDefaultPii: true,
-  integrations: [
-    Sentry.browserTracingIntegration(),
-    Sentry.feedbackIntegration({
-      colorScheme: 'system',
-    }),
-  ],
-  tracesSampleRate: 1.0,
-  tracePropagationTargets: ['localhost', /^https:\/\/yourserver\.io\/api/],
-})
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    sendDefaultPii: false,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.feedbackIntegration({
+        colorScheme: 'system',
+      }),
+    ],
+    tracesSampleRate: 1.0,
+    tracePropagationTargets: ['localhost'],
+  })
+}
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

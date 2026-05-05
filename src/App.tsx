@@ -30,6 +30,7 @@ import PolicyMatrix from './components/panels/PolicyMatrix';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 import NodePalette from './components/panels/NodePalette';
 import { downloadTerraform, generateTerraform } from './lib/terraformExport';
+import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { useTheme } from './lib/ThemeContext';
 
 import {
@@ -57,25 +58,7 @@ import {
 
 type ViewMode = 'topology' | 'policies' | 'traffic';
 
-const STORAGE_KEY = 'dcf-topology-v1';
 
-function loadTopology(): DcfTopology {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {
-    // ignore parse errors
-  }
-  return demoTopology;
-}
-
-function saveTopology(topology: DcfTopology) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
-  } catch {
-    // ignore quota errors
-  }
-}
 
 const nodeTypes = {
   cloudRegion: CloudRegionNode,
@@ -257,7 +240,7 @@ function buildPolicyEdges(topology: DcfTopology, filter: string): Edge[] {
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const [topology, setTopology] = useState<DcfTopology>(loadTopology);
+  const [topology, setTopology] = useState<DcfTopology>(demoTopology);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('topology');
@@ -269,14 +252,46 @@ export default function App() {
   const [terraformCopied, setTerraformCopied] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
   const [showPalette, setShowPalette] = useState(true);
+  const [confirmModal, setConfirmModal] = useState<{
+    open: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  const [storageReady, setStorageReady] = useState(false);
 
   const nodePositionsRef = useRef<Map<string, XYPosition>>(new Map());
   const dropCountRef = useRef(0);
 
-  // Persist topology to localStorage
+  // Load encrypted topology on mount
   useEffect(() => {
-    saveTopology(topology);
-  }, [topology]);
+    let cancelled = false;
+    decryptTopology<DcfTopology>().then((saved) => {
+      if (cancelled) return;
+      if (saved) {
+        setTopology(saved);
+      } else {
+        // Fallback: try old plaintext format for migration
+        try {
+          const plain = localStorage.getItem('dcf-topology-v1');
+          if (plain) {
+            const parsed = JSON.parse(plain);
+            setTopology(parsed);
+            saveTopologyStorage(parsed).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      }
+      setStorageReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Persist topology to encrypted localStorage
+  useEffect(() => {
+    if (storageReady) {
+      saveTopologyStorage(topology).catch(() => {});
+    }
+  }, [topology, storageReady]);
 
   // Derive nodes/edges from topology, preserving positions
   useEffect(() => {
@@ -581,30 +596,42 @@ export default function App() {
   );
 
   const handleResetDemo = () => {
-    if (confirm('Reset to demo topology? All unsaved changes will be lost.')) {
-      nodePositionsRef.current = new Map();
-      setTopology(demoTopology);
-      setSelectedNodeId(null);
-      setSelectedNodeType(null);
-    }
+    setConfirmModal({
+      open: true,
+      title: 'Reset to Demo',
+      message: 'All unsaved changes will be lost. Your current topology will be replaced with the demo data.',
+      onConfirm: () => {
+        nodePositionsRef.current = new Map();
+        setTopology(demoTopology);
+        setSelectedNodeId(null);
+        setSelectedNodeType(null);
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+      },
+    });
   };
 
   const handleClearCanvas = () => {
-    if (confirm('Clear the entire canvas? This cannot be undone.')) {
-      nodePositionsRef.current = new Map();
-      setTopology({
-        regions: [],
-        vpcs: [],
-        gateways: [],
-        smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], workloadCount: 0, vpcIds: [] }],
-        policies: [],
-        threatGroups: [],
-        geoGroups: [],
-        flows: [],
-      });
-      setSelectedNodeId(null);
-      setSelectedNodeType(null);
-    }
+    setConfirmModal({
+      open: true,
+      title: 'Clear Canvas',
+      message: 'This will remove all nodes, edges, and policies. This action cannot be undone.',
+      onConfirm: () => {
+        nodePositionsRef.current = new Map();
+        setTopology({
+          regions: [],
+          vpcs: [],
+          gateways: [],
+          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], workloadCount: 0, vpcIds: [] }],
+          policies: [],
+          threatGroups: [],
+          geoGroups: [],
+          flows: [],
+        });
+        setSelectedNodeId(null);
+        setSelectedNodeType(null);
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+      },
+    });
   };
 
   return (
@@ -857,7 +884,7 @@ export default function App() {
               fitViewOptions={{ padding: 0.2 }}
               minZoom={0.2}
               maxZoom={2}
-              proOptions={{ hideAttribution: true }}
+              proOptions={{ hideAttribution: false }}
             >
               <Background color={theme === 'dark' ? '#2a2d3a' : '#dee2e6'} gap={20} size={1} />
               <Controls />
@@ -1016,11 +1043,62 @@ export default function App() {
                 </ul>
               </div>
 
+              <div className="p-3 rounded-lg border text-[10px]" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                <span className="font-semibold text-amber-400">⚠ Security Notice:</span> Topology data is stored locally in your browser using client-side encryption. Do not use this tool for production secrets or sensitive network architecture.
+              </div>
+
               <div className="pt-2 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
                 <p className="text-[10px] text-[var(--color-text-muted)]">
                   Built with React, Tailwind CSS, and @xyflow. Deployed on Vercel.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {confirmModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-sm flex flex-col rounded-xl border shadow-2xl overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          >
+            <div className="px-4 py-3 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{confirmModal.title}</h3>
+            </div>
+            <div className="p-4 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {confirmModal.message}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <button
+                onClick={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
+                className="px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  borderColor: 'var(--color-border-subtle)',
+                  color: 'var(--color-text-secondary)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                  e.currentTarget.style.color = 'var(--color-text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                  e.currentTarget.style.color = 'var(--color-text-secondary)';
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmModal.onConfirm}
+                className="px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
+                style={{ backgroundColor: 'var(--color-aviatrix)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-aviatrix-dark)')}
+                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-aviatrix)')}
+              >
+                Confirm
+              </button>
             </div>
           </div>
         </div>

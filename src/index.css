@@ -115,10 +115,6 @@ html, body, #root {
   border-radius: 6px;
 }
 
-.react-flow__attribution {
-  display: none;
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

@@ -4,6 +4,11 @@ function sanitizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
 }
 
+function escapeHcl(value: string): string {
+  // Escape double quotes and disable HCL interpolation by escaping ${ sequences
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$\{/g, '\\${');
+}
+
 export function generateTerraform(topology: DcfTopology): string {
   const lines: string[] = [];
 
@@ -30,14 +35,14 @@ export function generateTerraform(topology: DcfTopology): string {
     if (sg.id === 'sg-internet') return; // Skip special groups
     const resourceName = sanitizeName(sg.name);
     lines.push(`resource "aviatrix_smart_group" "${resourceName}" {`);
-    lines.push(`  name = "${sg.name}"`);
+    lines.push(`  name = "${escapeHcl(sg.name)}"`);
     lines.push('');
     lines.push(`  selector {`);
     sg.criteria.forEach((c) => {
       lines.push(`    match_expressions {`);
       lines.push(`      type = "vm"`);
-      lines.push(`      key  = "${c.key}"`);
-      lines.push(`      val  = "${c.value}"`);
+      lines.push(`      key  = "${escapeHcl(c.key)}"`);
+      lines.push(`      val  = "${escapeHcl(c.value)}"`);
       lines.push(`    }`);
     });
     lines.push(`  }`);
@@ -67,13 +72,13 @@ export function generateTerraform(topology: DcfTopology): string {
     const dstName = sanitizeName(topology.smartGroups.find((g) => g.id === pol.dstGroupId)?.name || pol.dstGroupId);
 
     lines.push(`  policies {`);
-    lines.push(`    # ${pol.name} (Priority: ${pol.priority})`);
-    lines.push(`    name     = "${pol.name}"`);
+    lines.push(`    # ${escapeHcl(pol.name)} (Priority: ${pol.priority})`);
+    lines.push(`    name     = "${escapeHcl(pol.name)}"`);
     lines.push(`    priority = ${pol.priority}`);
     lines.push(`    action   = "${pol.action === 'allow' ? 'PERMIT' : 'DENY'}"`);
     lines.push(`    protocol = "${pol.protocol.toUpperCase()}"`);
     if (pol.ports && pol.ports !== 'any') {
-      lines.push(`    port_ranges = [${pol.ports.split(',').map((p) => `"${p.trim()}"`).join(', ')}]`);
+      lines.push(`    port_ranges = [${pol.ports.split(',').map((p) => `"${escapeHcl(p.trim())}"`).join(', ')}]`);
     }
     lines.push(`    logging = ${pol.logging}`);
     if (pol.decrypt) {
@@ -82,10 +87,10 @@ export function generateTerraform(topology: DcfTopology): string {
     lines.push(`    src_smart_groups = [aviatrix_smart_group.${srcName}.uuid]`);
     lines.push(`    dst_smart_groups = [aviatrix_smart_group.${dstName}.uuid]`);
     if (pol.threatGroup) {
-      lines.push(`    # threat_group = "${pol.threatGroup}"`);
+      lines.push(`    # threat_group = "${escapeHcl(pol.threatGroup)}"`);
     }
     if (pol.geoGroup) {
-      lines.push(`    # geo_group = "${pol.geoGroup}"`);
+      lines.push(`    # geo_group = "${escapeHcl(pol.geoGroup)}"`);
     }
     lines.push(`  }`);
   });
