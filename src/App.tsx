@@ -19,8 +19,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { demoTopology } from './data/demoTopology';
-import type { DcfTopology, DcfPolicy, GatewayType, CloudProvider } from './types/dcf';
-import CloudRegionNode from './components/nodes/CloudRegionNode';
+import type { DcfTopology, DcfPolicy, GatewayType } from './types/dcf';
 import VpcNode from './components/nodes/VpcNode';
 import GatewayNode from './components/nodes/GatewayNode';
 import SmartGroupNode from './components/nodes/SmartGroupNode';
@@ -64,7 +63,6 @@ type ViewMode = 'topology' | 'policies' | 'traffic';
 
 
 const nodeTypes = {
-  cloudRegion: CloudRegionNode,
   vpc: VpcNode,
   gateway: GatewayNode,
   smartGroup: SmartGroupNode,
@@ -79,34 +77,14 @@ function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
   const nodes: Node[] = [];
   const xGap = 280;
 
-  topology.regions.forEach((region, i) => {
-    const match = !f || region.name.toLowerCase().includes(f) || region.provider.toLowerCase().includes(f);
+  topology.vpcs.forEach((vpc, i) => {
+    const match = !f || vpc.name.toLowerCase().includes(f) || vpc.cidr.includes(f) || vpc.account.toLowerCase().includes(f);
     nodes.push({
-      id: region.id,
-      type: 'cloudRegion',
+      id: vpc.id,
+      type: 'vpc',
       position: { x: 60 + i * xGap, y: 0 },
-      data: { name: region.name, provider: region.provider, cidr: region.cidr },
+      data: { name: vpc.name, cidr: vpc.cidr, account: vpc.account },
       hidden: !match,
-    });
-  });
-
-  const vpcsByRegion: Record<string, typeof topology.vpcs> = {};
-  topology.vpcs.forEach((vpc) => {
-    if (!vpcsByRegion[vpc.regionId]) vpcsByRegion[vpc.regionId] = [];
-    vpcsByRegion[vpc.regionId].push(vpc);
-  });
-
-  Object.entries(vpcsByRegion).forEach(([regionId, vpcs]) => {
-    const regionIndex = topology.regions.findIndex((r) => r.id === regionId);
-    vpcs.forEach((vpc, j) => {
-      const match = !f || vpc.name.toLowerCase().includes(f) || vpc.cidr.includes(f) || vpc.account.toLowerCase().includes(f);
-      nodes.push({
-        id: vpc.id,
-        type: 'vpc',
-        position: { x: 60 + regionIndex * xGap, y: 120 + j * 80 },
-        data: { name: vpc.name, cidr: vpc.cidr, account: vpc.account },
-        hidden: !match,
-      });
     });
   });
 
@@ -137,18 +115,6 @@ function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
 function buildTopologyEdges(topology: DcfTopology, filter: string): Edge[] {
   const f = filter.toLowerCase();
   const edges: Edge[] = [];
-
-  topology.vpcs.forEach((vpc) => {
-    const match = !f || vpc.name.toLowerCase().includes(f);
-    edges.push({
-      id: `e-${vpc.regionId}-${vpc.id}`,
-      source: vpc.regionId,
-      target: vpc.id,
-      type: 'smoothstep',
-      style: { stroke: '#3b82f6', strokeWidth: 1, opacity: 0.4 },
-      hidden: !match,
-    });
-  });
 
   topology.gateways.forEach((gw) => {
     const match = !f || gw.name.toLowerCase().includes(f) || gw.type.toLowerCase().includes(f);
@@ -394,11 +360,6 @@ export default function App() {
     (nodeId: string, nodeType: string, data: Record<string, unknown>) => {
       setTopology((prev) => {
         switch (nodeType) {
-          case 'cloudRegion':
-            return {
-              ...prev,
-              regions: prev.regions.map((r) => (r.id === nodeId ? { ...r, ...data } : r)),
-            };
           case 'vpc':
             return {
               ...prev,
@@ -428,12 +389,6 @@ export default function App() {
     (nodeId: string, nodeType: string) => {
       setTopology((prev) => {
         switch (nodeType) {
-          case 'cloudRegion':
-            return {
-              ...prev,
-              regions: prev.regions.filter((r) => r.id !== nodeId),
-              vpcs: prev.vpcs.filter((v) => v.regionId !== nodeId),
-            };
           case 'vpc':
             return {
               ...prev,
@@ -467,12 +422,7 @@ export default function App() {
         const sourceNode = nodes.find((n) => n.id === connection.source);
         const targetNode = nodes.find((n) => n.id === connection.target);
 
-        if (sourceNode?.type === 'cloudRegion' && targetNode?.type === 'vpc') {
-          setTopology((prev) => ({
-            ...prev,
-            vpcs: prev.vpcs.map((v) => (v.id === connection.target ? { ...v, regionId: connection.source! } : v)),
-          }));
-        } else if (sourceNode?.type === 'vpc' && targetNode?.type === 'gateway') {
+        if (sourceNode?.type === 'vpc' && targetNode?.type === 'gateway') {
           setTopology((prev) => ({
             ...prev,
             gateways: prev.gateways.map((g) => (g.id === connection.target ? { ...g, vpcId: connection.source! } : g)),
@@ -533,22 +483,10 @@ export default function App() {
       nodePositionsRef.current.set(id, position);
 
       switch (item.type) {
-        case 'cloudRegion': {
-          const newRegion = {
-            id,
-            name: 'New Region',
-            provider: 'aws' as CloudProvider,
-            cidr: '10.0.0.0/8',
-          };
-          setTopology((prev) => ({ ...prev, regions: [...prev.regions, newRegion] }));
-          break;
-        }
         case 'vpc': {
-          const firstRegion = topology.regions[0]?.id ?? 'region-orphan';
           const newVpc = {
             id,
             name: 'New VPC',
-            regionId: firstRegion,
             cidr: '10.0.0.0/16',
             account: 'default',
           };
@@ -651,7 +589,6 @@ export default function App() {
       onConfirm: () => {
         nodePositionsRef.current = new Map();
         setTopology({
-          regions: [],
           vpcs: [],
           gateways: [],
           smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], workloadCount: 0, vpcIds: [] }],
@@ -984,7 +921,6 @@ export default function App() {
               <MiniMap
                 nodeColor={(node) => {
                   if (node.hidden) return 'transparent';
-                  if (node.type === 'cloudRegion') return '#3b82f6';
                   if (node.type === 'vpc') return '#06b6d4';
                   if (node.type === 'gateway') {
                     const type = (node.data as any)?.type;
@@ -1004,7 +940,6 @@ export default function App() {
                   <div className="font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>Legend</div>
                   {viewMode === 'topology' ? (
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#3b82f6]" /> Cloud Region</div>
                       <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#06b6d4]" /> VPC / VNet</div>
                       <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#e4002b]" /> DCF Gateway</div>
                       <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f59e0b]" /> Egress Gateway</div>
@@ -1075,7 +1010,7 @@ export default function App() {
                 <ul className="space-y-1.5 pl-1">
                   <li className="flex items-start gap-2">
                     <MapIcon size={13} className="mt-0.5 shrink-0 text-blue-400" />
-                    <span><strong>Topology View</strong> — Interactive graph of cloud regions, VPCs/VNets, and gateways (DCF, Transit, Egress, Edge).</span>
+                    <span><strong>Topology View</strong> — Interactive graph of VPCs/VNets and gateways (DCF, Transit, Egress, Edge).</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Shield size={13} className="mt-0.5 shrink-0 text-green-400" />
@@ -1083,7 +1018,7 @@ export default function App() {
                   </li>
                   <li className="flex items-start gap-2">
                     <Zap size={13} className="mt-0.5 shrink-0 text-yellow-400" />
-                    <span><strong>Traffic Flow</strong> — Simulated traffic analysis across regions, protocols, and workload types.</span>
+                    <span><strong>Traffic Flow</strong> — Simulated traffic analysis across VPCs, protocols, and workload types.</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Search size={13} className="mt-0.5 shrink-0 text-purple-400" />
@@ -1115,7 +1050,7 @@ export default function App() {
                   </li>
                   <li className="flex items-center gap-2">
                     <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
-                    <span>Cost estimation dashboard per region/gateway</span>
+                    <span>Cost estimation dashboard per VPC/gateway</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />

@@ -1,19 +1,13 @@
 import type { DcfTopology } from '../types/dcf';
 
 export const demoTopology: DcfTopology = {
-  regions: [
-    { id: 'us-east-1', name: 'US East (N. Virginia)', provider: 'aws', cidr: '10.0.0.0/8' },
-    { id: 'us-west-2', name: 'US West (Oregon)', provider: 'aws', cidr: '10.64.0.0/10' },
-    { id: 'east-us', name: 'East US', provider: 'azure', cidr: '172.16.0.0/12' },
-    { id: 'us-central1', name: 'US Central (Iowa)', provider: 'gcp', cidr: '192.168.0.0/16' },
-  ],
   vpcs: [
-    { id: 'vpc-prod-1', name: 'prod-vpc-01', regionId: 'us-east-1', cidr: '10.1.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-prod-2', name: 'prod-vpc-02', regionId: 'us-west-2', cidr: '10.65.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-shared', name: 'shared-services-vpc', regionId: 'us-east-1', cidr: '10.0.0.0/16', account: 'aws-prod' },
-    { id: 'vnet-azure-prod', name: 'prod-vnet', regionId: 'east-us', cidr: '172.16.0.0/16', account: 'azure-prod' },
-    { id: 'vpc-gcp-prod', name: 'prod-vpc', regionId: 'us-central1', cidr: '192.168.0.0/16', account: 'gcp-prod' },
-    { id: 'vpc-dev', name: 'dev-vpc', regionId: 'us-east-1', cidr: '10.2.0.0/16', account: 'aws-dev' },
+    { id: 'vpc-prod-1', name: 'prod-vpc-01', cidr: '10.1.0.0/16', account: 'aws-prod' },
+    { id: 'vpc-prod-2', name: 'prod-vpc-02', cidr: '10.65.0.0/16', account: 'aws-prod' },
+    { id: 'vpc-shared', name: 'shared-services-vpc', cidr: '10.0.0.0/16', account: 'aws-prod' },
+    { id: 'vnet-azure-prod', name: 'prod-vnet', cidr: '172.16.0.0/16', account: 'azure-prod' },
+    { id: 'vpc-gcp-prod', name: 'prod-vpc', cidr: '192.168.0.0/16', account: 'gcp-prod' },
+    { id: 'vpc-dev', name: 'dev-vpc', cidr: '10.2.0.0/16', account: 'aws-dev' },
   ],
   gateways: [
     { id: 'gw-transit-east', name: 'transit-gw-useast', type: 'transit', vpcId: 'vpc-shared', haEnabled: true, ip: '10.0.1.10' },

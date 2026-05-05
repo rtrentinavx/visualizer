@@ -1,16 +1,6 @@
-export type CloudProvider = 'aws' | 'azure' | 'gcp' | 'oci';
-
-export interface CloudRegion {
-  id: string;
-  name: string;
-  provider: CloudProvider;
-  cidr?: string;
-}
-
 export interface Vpc {
   id: string;
   name: string;
-  regionId: string;
   cidr: string;
   account: string;
 }
@@ -87,7 +77,6 @@ export interface TrafficFlow {
 }
 
 export interface DcfTopology {
-  regions: CloudRegion[];
   vpcs: Vpc[];
   gateways: Gateway[];
   smartGroups: SmartGroup[];

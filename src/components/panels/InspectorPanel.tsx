@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, Shield, Globe, Router, Filter, Network, Server, Trash2, Save, Plus, Minus } from 'lucide-react';
-import type { DcfTopology, GatewayType, CloudProvider, SmartGroupCriteria } from '../../types/dcf';
+import { X, Shield, Globe, Router, Filter, Server, Trash2, Save, Plus, Minus } from 'lucide-react';
+import type { DcfTopology, GatewayType, SmartGroupCriteria } from '../../types/dcf';
 
 interface InspectorPanelProps {
   topology: DcfTopology;
@@ -20,7 +20,6 @@ const gatewayIcons: Record<GatewayType, typeof Shield> = {
 };
 
 const gatewayTypes: GatewayType[] = ['transit', 'spoke', 'dcf', 'egress', 'edge'];
-const cloudProviders: CloudProvider[] = ['aws', 'azure', 'gcp', 'oci'];
 
 export default function InspectorPanel({ topology, selectedNodeId, selectedNodeType, onClose, onUpdateNode, onDeleteNode }: InspectorPanelProps) {
   const [form, setForm] = useState<Record<string, unknown>>({});
@@ -34,14 +33,9 @@ export default function InspectorPanel({ topology, selectedNodeId, selectedNodeT
     }
     let data: Record<string, unknown> = {};
     switch (selectedNodeType) {
-      case 'cloudRegion': {
-        const r = topology.regions.find((x) => x.id === selectedNodeId);
-        if (r) data = { name: r.name, provider: r.provider, cidr: r.cidr ?? '' };
-        break;
-      }
       case 'vpc': {
         const v = topology.vpcs.find((x) => x.id === selectedNodeId);
-        if (v) data = { name: v.name, cidr: v.cidr, account: v.account, regionId: v.regionId };
+        if (v) data = { name: v.name, cidr: v.cidr, account: v.account };
         break;
       }
       case 'gateway': {
@@ -234,41 +228,6 @@ export default function InspectorPanel({ topology, selectedNodeId, selectedNodeT
 
   const renderForm = () => {
     switch (selectedNodeType) {
-      case 'cloudRegion': {
-        const region = topology.regions.find((r) => r.id === selectedNodeId);
-        if (!region) return null;
-        return (
-          <div className="space-y-1">
-            <Input label="Name" value={String(form.name ?? '')} onChange={(v) => updateField('name', v)} />
-            <Select
-              label="Provider"
-              value={String(form.provider ?? 'aws')}
-              options={cloudProviders.map((p) => ({ value: p, label: p.toUpperCase() }))}
-              onChange={(v) => updateField('provider', v)}
-            />
-            <Input label="CIDR" value={String(form.cidr ?? '')} onChange={(v) => updateField('cidr', v)} placeholder="10.0.0.0/8" />
-            <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">VPCs in Region</div>
-              <div className="space-y-1.5">
-                {topology.vpcs
-                  .filter((v) => v.regionId === region.id)
-                  .map((vpc) => (
-                    <div key={vpc.id} className="flex items-center justify-between px-2 py-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
-                      <div className="flex items-center gap-2">
-                        <Network size={12} className="text-[var(--color-accent-blue)]" />
-                        <span className="text-xs text-[var(--color-text-primary)]">{vpc.name}</span>
-                      </div>
-                      <code className="text-[10px] text-[var(--color-text-muted)]">{vpc.cidr}</code>
-                    </div>
-                  ))}
-                {topology.vpcs.filter((v) => v.regionId === region.id).length === 0 && (
-                  <div className="text-[10px] text-[var(--color-text-muted)] italic">No VPCs assigned</div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      }
       case 'vpc': {
         const vpc = topology.vpcs.find((v) => v.id === selectedNodeId);
         if (!vpc) return null;
@@ -277,12 +236,6 @@ export default function InspectorPanel({ topology, selectedNodeId, selectedNodeT
             <Input label="Name" value={String(form.name ?? '')} onChange={(v) => updateField('name', v)} />
             <Input label="CIDR" value={String(form.cidr ?? '')} onChange={(v) => updateField('cidr', v)} />
             <Input label="Account" value={String(form.account ?? '')} onChange={(v) => updateField('account', v)} />
-            <Select
-              label="Region"
-              value={String(form.regionId ?? '')}
-              options={topology.regions.map((r) => ({ value: r.id, label: r.name }))}
-              onChange={(v) => updateField('regionId', v)}
-            />
             <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
               <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Gateways</div>
               <div className="space-y-1.5">

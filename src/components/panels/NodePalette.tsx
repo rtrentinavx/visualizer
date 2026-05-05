@@ -1,15 +1,14 @@
-import { Cloud, Network, Router, Filter, Globe, Shield, Server, Boxes } from 'lucide-react';
+import { Network, Router, Filter, Globe, Shield, Server, Boxes } from 'lucide-react';
 
 interface PaletteItem {
   type: string;
   label: string;
-  icon: typeof Cloud;
+  icon: typeof Network;
   color: string;
   category: string;
 }
 
 const items: PaletteItem[] = [
-  { type: 'cloudRegion', label: 'Cloud Region', icon: Cloud, color: '#3b82f6', category: 'Infrastructure' },
   { type: 'vpc', label: 'VPC / VNet', icon: Network, color: '#06b6d4', category: 'Infrastructure' },
   { type: 'gateway', label: 'Transit GW', icon: Router, color: '#3b82f6', category: 'Gateway' },
   { type: 'gateway-spoke', label: 'Spoke GW', icon: Server, color: '#06b6d4', category: 'Gateway' },
