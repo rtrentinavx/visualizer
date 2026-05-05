@@ -495,19 +495,16 @@ export default function App() {
         }
         case 'gateway':
         case 'gateway-spoke':
-        case 'gateway-dcf':
         case 'gateway-egress':
         case 'gateway-edge': {
           const gwType: GatewayType =
             item.type === 'gateway-spoke'
               ? 'spoke'
-              : item.type === 'gateway-dcf'
-                ? 'dcf'
-                : item.type === 'gateway-egress'
-                  ? 'egress'
-                  : item.type === 'gateway-edge'
-                    ? 'edge'
-                    : 'transit';
+              : item.type === 'gateway-egress'
+                ? 'egress'
+                : item.type === 'gateway-edge'
+                  ? 'edge'
+                  : 'transit';
           const firstVpc = topology.vpcs[0]?.id ?? 'vpc-orphan';
           const newGw = {
             id,
@@ -924,7 +921,6 @@ export default function App() {
                   if (node.type === 'vpc') return '#06b6d4';
                   if (node.type === 'gateway') {
                     const type = (node.data as any)?.type;
-                    if (type === 'dcf') return '#e4002b';
                     if (type === 'transit') return '#3b82f6';
                     if (type === 'egress') return '#f59e0b';
                     return '#8b5cf6';
