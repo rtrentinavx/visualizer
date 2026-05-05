@@ -31,6 +31,7 @@ import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 import NodePalette from './components/panels/NodePalette';
 import { downloadTerraform, generateTerraform } from './lib/terraformExport';
 import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
+import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { useTheme } from './lib/ThemeContext';
 
 import {
@@ -54,6 +55,8 @@ import {
   RotateCcw,
   Trash2,
   PanelLeft,
+  CloudUpload,
+  CloudDownload,
 } from 'lucide-react';
 
 type ViewMode = 'topology' | 'policies' | 'traffic';
@@ -259,6 +262,7 @@ export default function App() {
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [storageReady, setStorageReady] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'saving' | 'loading' | 'saved' | 'error'>('idle');
 
   const nodePositionsRef = useRef<Map<string, XYPosition>>(new Map());
   const dropCountRef = useRef(0);
@@ -610,6 +614,35 @@ export default function App() {
     });
   };
 
+  const handleSaveToCloud = async () => {
+    setCloudSyncStatus('saving');
+    try {
+      await saveTopologyToCloud(topology);
+      setCloudSyncStatus('saved');
+      setTimeout(() => setCloudSyncStatus('idle'), 2000);
+    } catch {
+      setCloudSyncStatus('error');
+      setTimeout(() => setCloudSyncStatus('idle'), 3000);
+    }
+  };
+
+  const handleLoadFromCloud = async () => {
+    setCloudSyncStatus('loading');
+    try {
+      const saved = await loadTopologyFromCloud();
+      if (saved) {
+        nodePositionsRef.current = new Map();
+        setTopology(saved);
+        setSelectedNodeId(null);
+        setSelectedNodeType(null);
+      }
+      setCloudSyncStatus('idle');
+    } catch {
+      setCloudSyncStatus('error');
+      setTimeout(() => setCloudSyncStatus('idle'), 3000);
+    }
+  };
+
   const handleClearCanvas = () => {
     setConfirmModal({
       open: true,
@@ -771,6 +804,66 @@ export default function App() {
               title="Clear Canvas"
             >
               <Trash2 size={14} />
+            </button>
+
+            {/* Cloud Save */}
+            <button
+              onClick={handleSaveToCloud}
+              disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') {
+                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                  e.currentTarget.style.color = 'var(--color-text-primary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)';
+              }}
+              title={cloudSyncStatus === 'saved' ? 'Saved to cloud' : cloudSyncStatus === 'error' ? 'Sync failed' : 'Save to Cloud'}
+            >
+              {cloudSyncStatus === 'saving' ? (
+                <span className="w-3.5 h-3.5 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
+              ) : cloudSyncStatus === 'saved' ? (
+                <Check size={14} />
+              ) : (
+                <CloudUpload size={14} />
+              )}
+            </button>
+
+            {/* Cloud Load */}
+            <button
+              onClick={handleLoadFromCloud}
+              disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') {
+                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                  e.currentTarget.style.color = 'var(--color-text-primary)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Load from Cloud"
+            >
+              {cloudSyncStatus === 'loading' ? (
+                <span className="w-3.5 h-3.5 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <CloudDownload size={14} />
+              )}
             </button>
 
             {/* Terraform Export */}

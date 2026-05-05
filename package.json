@@ -12,6 +12,7 @@
   "dependencies": {
     "@sentry/react": "^10.51.0",
     "@sentry/vite-plugin": "^5.2.1",
+    "@upstash/redis": "^1.38.0",
     "@vercel/analytics": "^2.0.1",
     "@xyflow/react": "^12.10.2",
     "botid": "^1.5.11",
