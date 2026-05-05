@@ -12,7 +12,9 @@ interface GatewayNodeData extends Record<string, unknown> {
   name: string;
   type: GatewayType;
   haEnabled: boolean;
-  ip?: string;
+  primaryIp?: string;
+  haIp?: string;
+  asn?: number;
 }
 
 type GatewayNode = Node<GatewayNodeData, 'gateway'>;
@@ -30,7 +32,15 @@ export default memo(function GatewayNode({ data }: NodeProps<GatewayNode>) {
         </span>
       </div>
       <div className="text-sm font-medium text-[var(--color-text-primary)]">{data.name}</div>
-      {data.ip && <div className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5">{data.ip}</div>}
+      {(data.primaryIp || data.haIp) && (
+        <div className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5">
+          {data.primaryIp}
+          {data.haEnabled && data.haIp && ` / ${data.haIp}`}
+        </div>
+      )}
+      {data.type === 'transit' && data.asn !== undefined && (
+        <div className="text-[10px] text-[var(--color-text-muted)] font-mono mt-0.5">ASN: {data.asn}</div>
+      )}
       <div className="flex items-center gap-1 mt-1">
         <div className={`w-1.5 h-1.5 rounded-full ${data.haEnabled ? 'bg-green-500' : 'bg-amber-500'}`} />
         <span className="text-[10px] text-[var(--color-text-muted)]">{data.haEnabled ? 'HA Active' : 'Single'}</span>

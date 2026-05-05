@@ -77,7 +77,16 @@ function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
   const nodes: Node[] = [];
   const xGap = 280;
 
-  topology.vpcs.forEach((vpc, i) => {
+  // Determine transit VPCs (contain a transit gateway)
+  const transitVpcIds = new Set(
+    topology.gateways.filter((g) => g.type === 'transit').map((g) => g.vpcId)
+  );
+
+  const transitVpcs = topology.vpcs.filter((v) => transitVpcIds.has(v.id));
+  const spokeVpcs = topology.vpcs.filter((v) => !transitVpcIds.has(v.id));
+
+  // Place transit VPCs at top
+  transitVpcs.forEach((vpc, i) => {
     const match = !f || vpc.name.toLowerCase().includes(f) || vpc.cidr.includes(f) || vpc.account.toLowerCase().includes(f);
     nodes.push({
       id: vpc.id,
@@ -88,6 +97,73 @@ function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
     });
   });
 
+  // Map spoke gateways to their security domains
+  const gwDomainMap = new Map<string, string>();
+  topology.spokeAttachments.forEach((att) => {
+    if (att.securityDomain) {
+      gwDomainMap.set(att.spokeGwId, att.securityDomain);
+    }
+  });
+
+  // Group spoke VPCs by domain
+  const domainVpcs = new Map<string, typeof spokeVpcs>();
+  const unassignedVpcs: typeof spokeVpcs = [];
+
+  spokeVpcs.forEach((vpc) => {
+    const gw = topology.gateways.find((g) => g.vpcId === vpc.id);
+    const domainId = gw ? gwDomainMap.get(gw.id) : undefined;
+    if (domainId) {
+      if (!domainVpcs.has(domainId)) domainVpcs.set(domainId, []);
+      domainVpcs.get(domainId)!.push(vpc);
+    } else {
+      unassignedVpcs.push(vpc);
+    }
+  });
+
+  // Build ordered groups: configured domains first, then unassigned
+  const groups: { id: string; name: string; color: string; vpcs: typeof spokeVpcs }[] = [];
+  topology.securityDomains.forEach((dom) => {
+    const vpcs = domainVpcs.get(dom.id) || [];
+    if (vpcs.length > 0) {
+      groups.push({ id: dom.id, name: dom.name, color: dom.color, vpcs });
+    }
+  });
+  if (unassignedVpcs.length > 0) {
+    groups.push({ id: 'unassigned', name: 'Unassigned', color: '#9ca3af', vpcs: unassignedVpcs });
+  }
+
+  // Place spoke VPCs and invisible domain nodes
+  let currentX = 60;
+  const groupGap = 120;
+  const spokeVpcY = 220;
+
+  groups.forEach((group) => {
+    group.vpcs.forEach((vpc, i) => {
+      const match = !f || vpc.name.toLowerCase().includes(f) || vpc.cidr.includes(f) || vpc.account.toLowerCase().includes(f);
+      nodes.push({
+        id: vpc.id,
+        type: 'vpc',
+        position: { x: currentX + i * xGap, y: spokeVpcY },
+        data: { name: vpc.name, cidr: vpc.cidr, account: vpc.account },
+        hidden: !match,
+      });
+    });
+
+    // Invisible domain node centered above the group
+    const groupWidth = Math.max(0, group.vpcs.length - 1) * xGap;
+    const centerX = currentX + groupWidth / 2;
+    nodes.push({
+      id: `domain-${group.id}`,
+      type: 'default',
+      position: { x: centerX, y: spokeVpcY - 80 },
+      data: { label: group.name },
+      style: { opacity: 0, width: 1, height: 1 },
+    });
+
+    currentX += group.vpcs.length * xGap + groupGap;
+  });
+
+  // Place gateways cleanly under their VPCs
   const gatewaysByVpc: Record<string, typeof topology.gateways> = {};
   topology.gateways.forEach((gw) => {
     if (!gatewaysByVpc[gw.vpcId]) gatewaysByVpc[gw.vpcId] = [];
@@ -103,7 +179,7 @@ function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
         id: gw.id,
         type: 'gateway',
         position: { x: (vpcNode.position.x || 0) + j * 140, y: (vpcNode.position.y || 0) + 100 },
-        data: { name: gw.name, type: gw.type, haEnabled: gw.haEnabled, ip: gw.ip },
+        data: { name: gw.name, type: gw.type, haEnabled: gw.haEnabled, primaryIp: gw.primaryIp, haIp: gw.haIp, asn: gw.asn },
         hidden: !match,
       });
     });
@@ -128,6 +204,86 @@ function buildTopologyEdges(topology: DcfTopology, filter: string): Edge[] {
     });
   });
 
+  topology.spokeAttachments.forEach((att) => {
+    const spoke = topology.gateways.find((g) => g.id === att.spokeGwId);
+    const transit = topology.gateways.find((g) => g.id === att.transitGwId);
+    const match = !f || spoke?.name.toLowerCase().includes(f) || transit?.name.toLowerCase().includes(f);
+    const domain = att.securityDomain
+      ? topology.securityDomains.find((d) => d.id === att.securityDomain)
+      : undefined;
+    const domainLabel = domain ? ` · ${domain.name}` : '';
+    edges.push({
+      id: att.id,
+      source: att.spokeGwId,
+      target: att.transitGwId,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#3b82f6', strokeWidth: 2, opacity: 0.6 },
+      label: `attached${domainLabel}`,
+      labelStyle: { fontSize: 10, fill: '#3b82f6' },
+      hidden: !match,
+    });
+  });
+
+  topology.transitPeerings.forEach((peer) => {
+    const t1 = topology.gateways.find((g) => g.id === peer.transitGwId1);
+    const t2 = topology.gateways.find((g) => g.id === peer.transitGwId2);
+    const match = !f || t1?.name.toLowerCase().includes(f) || t2?.name.toLowerCase().includes(f);
+    edges.push({
+      id: peer.id,
+      source: peer.transitGwId1,
+      target: peer.transitGwId2,
+      type: 'smoothstep',
+      animated: true,
+      style: { stroke: '#8b5cf6', strokeWidth: 2, opacity: 0.6 },
+      label: 'peered ⟷',
+      labelStyle: { fontSize: 10, fill: '#8b5cf6' },
+      hidden: !match,
+    });
+  });
+
+  // Domain connection edges between invisible domain-group nodes
+  topology.domainConnections.forEach((dc) => {
+    const domain1 = topology.securityDomains.find((d) => d.id === dc.domain1Id);
+    const domain2 = topology.securityDomains.find((d) => d.id === dc.domain2Id);
+    if (!domain1 || !domain2) return;
+
+    const source = `domain-${dc.domain1Id}`;
+    const target = `domain-${dc.domain2Id}`;
+
+    if (dc.connected) {
+      edges.push({
+        id: dc.id,
+        source,
+        target,
+        type: 'smoothstep',
+        style: {
+          stroke: domain1.color,
+          strokeWidth: 2,
+          strokeDasharray: '5 5',
+          opacity: 0.8,
+        },
+        label: 'connected',
+        labelStyle: { fontSize: 10, fill: domain1.color },
+      });
+    } else {
+      edges.push({
+        id: dc.id,
+        source,
+        target,
+        type: 'smoothstep',
+        style: {
+          stroke: '#ef4444',
+          strokeWidth: 2,
+          strokeDasharray: '5 5',
+          opacity: 0.8,
+        },
+        label: 'blocked',
+        labelStyle: { fontSize: 10, fill: '#ef4444' },
+      });
+    }
+  });
+
   return edges;
 }
 
@@ -140,7 +296,7 @@ function buildPolicyNodes(topology: DcfTopology, filter: string): Node[] {
   const center = { x: 400, y: 350 };
 
   sgList.forEach((sg, i) => {
-    const match = !f || sg.name.toLowerCase().includes(f) || sg.criteria.some((c) => c.key.toLowerCase().includes(f) || c.value.toLowerCase().includes(f));
+    const match = !f || sg.name.toLowerCase().includes(f) || sg.criteria.some((c) => c.key?.toLowerCase().includes(f) || c.value?.toLowerCase().includes(f));
     const angle = angleStep * i - Math.PI / 2;
     nodes.push({
       id: sg.id,
@@ -198,6 +354,7 @@ function buildPolicyEdges(topology: DcfTopology, filter: string): Edge[] {
         ports: pol.ports,
         logging: pol.logging,
         decrypt: pol.decrypt,
+        direction: pol.direction,
       },
       markerEnd: { type: MarkerType.ArrowClosed, color: pol.action === 'allow' ? '#10b981' : '#ef4444' },
       hidden: !match,
@@ -239,14 +396,28 @@ export default function App() {
     decryptTopology<DcfTopology>().then((saved) => {
       if (cancelled) return;
       if (saved) {
-        setTopology(saved);
+        setTopology({
+          ...saved,
+          securityDomains: saved.securityDomains ?? [],
+          domainConnections: saved.domainConnections ?? [],
+          webGroups: saved.webGroups ?? [],
+          spokeAttachments: saved.spokeAttachments ?? [],
+          transitPeerings: saved.transitPeerings ?? [],
+        });
       } else {
         // Fallback: try old plaintext format for migration
         try {
           const plain = localStorage.getItem('dcf-topology-v1');
           if (plain) {
             const parsed = JSON.parse(plain);
-            setTopology(parsed);
+            setTopology({
+              ...parsed,
+              securityDomains: parsed.securityDomains ?? [],
+              domainConnections: parsed.domainConnections ?? [],
+              webGroups: parsed.webGroups ?? [],
+              spokeAttachments: parsed.spokeAttachments ?? [],
+              transitPeerings: parsed.transitPeerings ?? [],
+            });
             saveTopologyStorage(parsed).catch(() => {});
           }
         } catch { /* ignore */ }
@@ -427,6 +598,61 @@ export default function App() {
             ...prev,
             gateways: prev.gateways.map((g) => (g.id === connection.target ? { ...g, vpcId: connection.source! } : g)),
           }));
+          return;
+        }
+
+        const sourceGw = topology.gateways.find((g) => g.id === connection.source);
+        const targetGw = topology.gateways.find((g) => g.id === connection.target);
+
+        if (sourceGw && targetGw && sourceGw.type === 'spoke' && targetGw.type === 'transit') {
+          setTopology((prev) => {
+            const existingAtt = prev.spokeAttachments.find(
+              (a) => a.spokeGwId === connection.source && a.transitGwId === connection.target
+            );
+            if (existingAtt) {
+              const transitAtts = prev.spokeAttachments.filter(
+                (a) => a.transitGwId === connection.target && a.securityDomain
+              );
+              const domainCounts = new Map<string, number>();
+              transitAtts.forEach((a) => {
+                domainCounts.set(a.securityDomain!, (domainCounts.get(a.securityDomain!) || 0) + 1);
+              });
+              const mostCommon = Array.from(domainCounts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+              if (mostCommon && mostCommon !== existingAtt.securityDomain) {
+                return {
+                  ...prev,
+                  spokeAttachments: prev.spokeAttachments.map((a) =>
+                    a.id === existingAtt.id ? { ...a, securityDomain: mostCommon } : a
+                  ),
+                };
+              }
+              return prev;
+            }
+            return {
+              ...prev,
+              spokeAttachments: [
+                ...prev.spokeAttachments,
+                {
+                  id: `att-${Date.now()}`,
+                  spokeGwId: connection.source!,
+                  transitGwId: connection.target!,
+                  securityDomain: undefined,
+                },
+              ],
+            };
+          });
+          return;
+        }
+
+        if (sourceGw && targetGw && sourceGw.type === 'transit' && targetGw.type === 'transit') {
+          setTopology((prev) => ({
+            ...prev,
+            transitPeerings: [
+              ...prev.transitPeerings,
+              { id: `peer-${Date.now()}`, transitGwId1: connection.source, transitGwId2: connection.target },
+            ],
+          }));
+          return;
         }
       } else if (viewMode === 'policies') {
         const newPolicy: DcfPolicy = {
@@ -516,9 +742,9 @@ export default function App() {
             id,
             name: 'New Smart Group',
             color: '#3b82f6',
-            criteria: [] as { key: string; operator: 'equals' | 'contains' | 'startsWith'; value: string }[],
+            criteria: [] as { type: 'vm' | 'subnet'; key?: string; operator?: 'equals' | 'contains' | 'startsWith'; value?: string; cidr?: string }[],
+            matchType: 'any' as const,
             workloadCount: 0,
-            vpcIds: [] as string[],
           };
           setTopology((prev) => ({ ...prev, smartGroups: [...prev.smartGroups, newSg] }));
           break;
@@ -561,7 +787,14 @@ export default function App() {
       const saved = await loadTopologyFromCloud();
       if (saved) {
         nodePositionsRef.current = new Map();
-        setTopology(saved);
+        setTopology({
+          ...saved,
+          securityDomains: saved.securityDomains ?? [],
+          domainConnections: saved.domainConnections ?? [],
+          webGroups: saved.webGroups ?? [],
+          spokeAttachments: saved.spokeAttachments ?? [],
+          transitPeerings: saved.transitPeerings ?? [],
+        });
         setSelectedNodeId(null);
         setSelectedNodeType(null);
       }
@@ -582,11 +815,16 @@ export default function App() {
         setTopology({
           vpcs: [],
           gateways: [],
-          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], workloadCount: 0, vpcIds: [] }],
+          securityDomains: [],
+          domainConnections: [],
+          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any', workloadCount: 0 }],
+          webGroups: [],
           policies: [],
           threatGroups: [],
           geoGroups: [],
           flows: [],
+          spokeAttachments: [],
+          transitPeerings: [],
         });
         setSelectedNodeId(null);
         setSelectedNodeType(null);

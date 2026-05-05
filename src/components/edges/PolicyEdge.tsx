@@ -1,15 +1,27 @@
 import { memo } from 'react';
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps, type Edge } from '@xyflow/react';
+import { ArrowRight, ArrowLeft, ArrowLeftRight } from 'lucide-react';
+import type { PolicyDirection } from '../../types/dcf';
 
 interface PolicyEdgeData extends Record<string, unknown> {
-  action: 'allow' | 'deny';
+  action: 'allow' | 'deny' | 'learned';
   protocol: string;
   ports?: string;
   logging: boolean;
   decrypt?: boolean;
+  direction?: PolicyDirection;
+  webGroupIds?: string[];
+  srcExcludeGroupIds?: string[];
+  dstExcludeGroupIds?: string[];
 }
 
 type PolicyEdgeType = Edge<PolicyEdgeData, 'policy'>;
+
+function DirectionIcon({ dir }: { dir?: PolicyDirection }) {
+  if (dir === 'inbound') return <ArrowLeft size={10} />;
+  if (dir === 'outbound') return <ArrowRight size={10} />;
+  return <ArrowLeftRight size={10} />;
+}
 
 export default memo(function PolicyEdge({
   id,
@@ -32,7 +44,12 @@ export default memo(function PolicyEdge({
   });
 
   const isAllow = data?.action === 'allow';
-  const color = isAllow ? '#10b981' : '#ef4444';
+  const isLearned = data?.action === 'learned';
+  const color = isAllow ? '#10b981' : isLearned ? '#6366f1' : '#ef4444';
+
+  const hasExclusions =
+    (data?.srcExcludeGroupIds && data.srcExcludeGroupIds.length > 0) ||
+    (data?.dstExcludeGroupIds && data.dstExcludeGroupIds.length > 0);
 
   return (
     <>
@@ -43,7 +60,7 @@ export default memo(function PolicyEdge({
         style={{
           stroke: color,
           strokeWidth: 2,
-          strokeDasharray: isAllow ? undefined : '6 4',
+          strokeDasharray: data?.action === 'deny' ? '6 4' : undefined,
         }}
       />
       <EdgeLabelRenderer>
@@ -62,7 +79,8 @@ export default memo(function PolicyEdge({
               color,
             }}
           >
-            {isAllow ? 'Allow' : 'Deny'}
+            <DirectionIcon dir={data?.direction} />
+            {isAllow ? 'Allow' : isLearned ? 'LEARNED' : 'Deny'}
             {data?.ports && (
               <span className="font-mono normal-case font-medium opacity-80">{data.protocol}/{data.ports}</span>
             )}
@@ -71,6 +89,12 @@ export default memo(function PolicyEdge({
             )}
             {data?.decrypt && (
               <span className="opacity-60" title="TLS Decryption">🔓</span>
+            )}
+            {data?.webGroupIds && data.webGroupIds.length > 0 && (
+              <span className="ml-0.5 px-1 rounded bg-current/20 text-[9px] font-bold" title={`Web Groups: ${data.webGroupIds.join(', ')}`}>WG</span>
+            )}
+            {hasExclusions && (
+              <span className="opacity-80" title="Exclusions applied">¬</span>
             )}
           </div>
         </div>

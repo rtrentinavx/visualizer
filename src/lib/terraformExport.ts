@@ -9,6 +9,22 @@ function escapeHcl(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$\{/g, '\\${');
 }
 
+function getVpcAccount(topology: DcfTopology, vpcId: string): string {
+  const vpc = topology.vpcs.find((v) => v.id === vpcId);
+  return vpc?.account || 'UNKNOWN_ACCOUNT';
+}
+
+function getGatewayName(topology: DcfTopology, gwId: string): string {
+  const gw = topology.gateways.find((g) => g.id === gwId);
+  return gw?.name || gwId;
+}
+
+function getSmartGroupName(topology: DcfTopology, groupId: string): string | null {
+  if (groupId === 'sg-any') return null;
+  const sg = topology.smartGroups.find((g) => g.id === groupId);
+  return sg?.name || null;
+}
+
 export function generateTerraform(topology: DcfTopology): string {
   const lines: string[] = [];
 
@@ -25,57 +41,255 @@ export function generateTerraform(topology: DcfTopology): string {
   lines.push(`  }`);
   lines.push(`}`);
   lines.push('');
-  lines.push(`# ============================================`);
-  lines.push(`# Smart Groups`);
-  lines.push(`# ============================================`);
-  lines.push('');
 
-  // Smart Groups
-  topology.smartGroups.forEach((sg) => {
-    if (sg.id === 'sg-internet') return; // Skip special groups
-    const resourceName = sanitizeName(sg.name);
-    lines.push(`resource "aviatrix_smart_group" "${resourceName}" {`);
-    lines.push(`  name = "${escapeHcl(sg.name)}"`);
+  // ============================================
+  // Transit Gateways
+  // ============================================
+  const transitGws = topology.gateways.filter((g) => g.type === 'transit');
+  if (transitGws.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Transit Gateways`);
+    lines.push(`# ============================================`);
+    lines.push(`# NOTE: VPCs must already exist in the controller.`);
+    lines.push(`#       Set vpc_id to the actual VPC name/ID in the controller.`);
     lines.push('');
-    lines.push(`  selector {`);
-    sg.criteria.forEach((c) => {
-      lines.push(`    match_expressions {`);
-      lines.push(`      type = "vm"`);
-      lines.push(`      key  = "${escapeHcl(c.key)}"`);
-      lines.push(`      val  = "${escapeHcl(c.value)}"`);
-      lines.push(`    }`);
+
+    transitGws.forEach((gw) => {
+      const resourceName = sanitizeName(gw.name);
+      const accountName = getVpcAccount(topology, gw.vpcId);
+      lines.push(`resource "aviatrix_transit_gateway" "${resourceName}" {`);
+      lines.push(`  gw_name     = "${escapeHcl(gw.name)}"`);
+      lines.push(`  vpc_id      = "${escapeHcl(gw.vpcId)}"  # TODO: Replace with actual VPC name/ID`);
+      lines.push(`  account_name = "${escapeHcl(accountName)}"`);
+      if (gw.haEnabled) {
+        lines.push(`  ha_gw_size  = "t3.medium"  # TODO: Adjust HA gateway size as needed`);
+      }
+      if (gw.asn !== undefined) {
+        lines.push(`  local_as_number = ${gw.asn}`);
+      }
+      lines.push(`}`);
+      lines.push('');
     });
-    lines.push(`  }`);
-    lines.push(`}`);
-    lines.push('');
-  });
+  }
 
+  // ============================================
+  // Spoke Gateways
+  // ============================================
+  const spokeGws = topology.gateways.filter((g) => g.type === 'spoke');
+  if (spokeGws.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Spoke Gateways`);
+    lines.push(`# ============================================`);
+    lines.push(`# NOTE: VPCs must already exist in the controller.`);
+    lines.push('');
+
+    spokeGws.forEach((gw) => {
+      const resourceName = sanitizeName(gw.name);
+      const accountName = getVpcAccount(topology, gw.vpcId);
+      lines.push(`resource "aviatrix_spoke_gateway" "${resourceName}" {`);
+      lines.push(`  gw_name     = "${escapeHcl(gw.name)}"`);
+      lines.push(`  vpc_id      = "${escapeHcl(gw.vpcId)}"  # TODO: Replace with actual VPC name/ID`);
+      lines.push(`  account_name = "${escapeHcl(accountName)}"`);
+      if (gw.haEnabled) {
+        lines.push(`  ha_gw_size  = "t3.medium"  # TODO: Adjust HA gateway size as needed`);
+      }
+      lines.push(`}`);
+      lines.push('');
+    });
+  }
+
+  // ============================================
+  // Spoke-Transit Attachments
+  // ============================================
+  if (topology.spokeAttachments.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Spoke-Transit Attachments`);
+    lines.push(`# ============================================`);
+    lines.push('');
+
+    topology.spokeAttachments.forEach((att) => {
+      const spokeName = sanitizeName(getGatewayName(topology, att.spokeGwId));
+      const transitName = sanitizeName(getGatewayName(topology, att.transitGwId));
+      const resourceName = `${spokeName}_${transitName}`;
+      lines.push(`resource "aviatrix_spoke_transit_attachment" "${resourceName}" {`);
+      lines.push(`  spoke_gw_name   = aviatrix_spoke_gateway.${spokeName}.gw_name`);
+      lines.push(`  transit_gw_name = aviatrix_transit_gateway.${transitName}.gw_name`);
+      if (att.securityDomain) {
+        lines.push(`  security_domain_name = "${escapeHcl(att.securityDomain)}"`);
+      }
+      if (att.routeAdvertisement && att.routeAdvertisement.length > 0) {
+        lines.push(`  route_tables = [${att.routeAdvertisement.map((r) => `"${escapeHcl(r)}"`).join(', ')}]`);
+      }
+      lines.push(`}`);
+      lines.push('');
+    });
+  }
+
+  // ============================================
+  // Transit Gateway Peerings
+  // ============================================
+  if (topology.transitPeerings.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Transit Gateway Peerings`);
+    lines.push(`# ============================================`);
+    lines.push('');
+
+    topology.transitPeerings.forEach((tp) => {
+      const gw1Name = sanitizeName(getGatewayName(topology, tp.transitGwId1));
+      const gw2Name = sanitizeName(getGatewayName(topology, tp.transitGwId2));
+      const resourceName = `${gw1Name}_${gw2Name}`;
+      lines.push(`resource "aviatrix_transit_gateway_peering" "${resourceName}" {`);
+      lines.push(`  transit_gateway_name1 = aviatrix_transit_gateway.${gw1Name}.gw_name`);
+      lines.push(`  transit_gateway_name2 = aviatrix_transit_gateway.${gw2Name}.gw_name`);
+      lines.push(`}`);
+      lines.push('');
+    });
+  }
+
+  // ============================================
+  // Smart Groups
+  // ============================================
+  const exportableSmartGroups = topology.smartGroups.filter(
+    (sg) => sg.id !== 'sg-internet' && sg.id !== 'sg-any'
+  );
+
+  if (exportableSmartGroups.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Smart Groups`);
+    lines.push(`# ============================================`);
+    lines.push('');
+
+    exportableSmartGroups.forEach((sg) => {
+      const resourceName = sanitizeName(sg.name);
+      lines.push(`resource "aviatrix_smart_group" "${resourceName}" {`);
+      lines.push(`  name = "${escapeHcl(sg.name)}"`);
+      lines.push('');
+
+      if (sg.matchType === 'any') {
+        // OR logic: multiple selector blocks, each with one match_expressions
+        sg.criteria.forEach((c) => {
+          lines.push(`  selector {`);
+          lines.push(`    match_expressions {`);
+          if (c.type === 'vm') {
+            lines.push(`      type = "vm"`);
+            if (c.key) {
+              lines.push(`      key  = "tag:${escapeHcl(c.key)}"`);
+            }
+            if (c.value !== undefined) {
+              lines.push(`      val  = "${escapeHcl(c.value)}"`);
+            }
+          } else if (c.type === 'subnet') {
+            lines.push(`      type = "subnet"`);
+            if (c.cidr) {
+              lines.push(`      cidr = "${escapeHcl(c.cidr)}"`);
+            }
+          }
+          lines.push(`    }`);
+          lines.push(`  }`);
+        });
+      } else {
+        // AND logic: single selector block with multiple match_expressions
+        lines.push(`  selector {`);
+        sg.criteria.forEach((c) => {
+          lines.push(`    match_expressions {`);
+          if (c.type === 'vm') {
+            lines.push(`      type = "vm"`);
+            if (c.key) {
+              lines.push(`      key  = "tag:${escapeHcl(c.key)}"`);
+            }
+            if (c.value !== undefined) {
+              lines.push(`      val  = "${escapeHcl(c.value)}"`);
+            }
+          } else if (c.type === 'subnet') {
+            lines.push(`      type = "subnet"`);
+            if (c.cidr) {
+              lines.push(`      cidr = "${escapeHcl(c.cidr)}"`);
+            }
+          }
+          lines.push(`    }`);
+        });
+        lines.push(`  }`);
+      }
+
+      lines.push(`}`);
+      lines.push('');
+    });
+  }
+
+  // ============================================
+  // Web Groups
+  // ============================================
+  if (topology.webGroups.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Web Groups`);
+    lines.push(`# ============================================`);
+    lines.push(`# NOTE: Aviatrix provider does not have a native "aviatrix_web_group" resource.`);
+    lines.push(`#       Configure web groups via Controller UI or use aviatrix_fqdn if applicable.`);
+    lines.push(`# TODO: Map these web groups to appropriate Terraform resources or data sources.`);
+    lines.push('');
+
+    topology.webGroups.forEach((wg) => {
+      lines.push(`# WebGroup: ${escapeHcl(wg.name)}`);
+      lines.push(`#   FQDNs: ${wg.fqdns.map((f) => escapeHcl(f)).join(', ')}`);
+      lines.push('');
+    });
+  }
+
+  // ============================================
   // Threat Groups (reference only)
+  // ============================================
   if (topology.threatGroups.length > 0) {
     lines.push(`# ============================================`);
     lines.push(`# Threat Groups (External Groups)`);
     lines.push(`# ============================================`);
-    lines.push(`# Note: Configure ThreatGroups/GeoGroups via Controller UI or`);
+    lines.push(`# Note: Configure ThreatGroups via Controller UI or`);
     lines.push(`#       aviatrix_smart_group with external group selectors.`);
     lines.push('');
   }
 
+  // ============================================
+  // Geo Groups (reference only)
+  // ============================================
+  if (topology.geoGroups.length > 0) {
+    lines.push(`# ============================================`);
+    lines.push(`# Geo Groups (External Groups)`);
+    lines.push(`# ============================================`);
+    lines.push(`# Note: Configure GeoGroups via Controller UI.`);
+    lines.push('');
+  }
+
+  // ============================================
   // DCF Policies
+  // ============================================
   lines.push(`# ============================================`);
   lines.push(`# Distributed Cloud Firewall Policies`);
   lines.push(`# ============================================`);
   lines.push('');
   lines.push(`resource "aviatrix_distributed_firewalling_policy_list" "dcf_policies" {`);
+  lines.push('');
 
   topology.policies.forEach((pol) => {
-    const srcName = sanitizeName(topology.smartGroups.find((g) => g.id === pol.srcGroupId)?.name || pol.srcGroupId);
-    const dstName = sanitizeName(topology.smartGroups.find((g) => g.id === pol.dstGroupId)?.name || pol.dstGroupId);
+    const srcName = getSmartGroupName(topology, pol.srcGroupId);
+    const dstName = getSmartGroupName(topology, pol.dstGroupId);
+
+    const srcExcludeNames = (pol.srcExcludeGroupIds || [])
+      .map((id) => getSmartGroupName(topology, id))
+      .filter((n): n is string => n !== null);
+    const dstExcludeNames = (pol.dstExcludeGroupIds || [])
+      .map((id) => getSmartGroupName(topology, id))
+      .filter((n): n is string => n !== null);
+
+    const actionMap: Record<string, string> = {
+      allow: 'PERMIT',
+      deny: 'DENY',
+      learned: 'LEARNED',
+    };
 
     lines.push(`  policies {`);
     lines.push(`    # ${escapeHcl(pol.name)} (Priority: ${pol.priority})`);
     lines.push(`    name     = "${escapeHcl(pol.name)}"`);
     lines.push(`    priority = ${pol.priority}`);
-    lines.push(`    action   = "${pol.action === 'allow' ? 'PERMIT' : 'DENY'}"`);
+    lines.push(`    action   = "${actionMap[pol.action] || 'DENY'}"`);
     lines.push(`    protocol = "${pol.protocol.toUpperCase()}"`);
     if (pol.ports && pol.ports !== 'any') {
       lines.push(`    port_ranges = [${pol.ports.split(',').map((p) => `"${escapeHcl(p.trim())}"`).join(', ')}]`);
@@ -84,15 +298,49 @@ export function generateTerraform(topology: DcfTopology): string {
     if (pol.decrypt) {
       lines.push(`    decrypt = true`);
     }
-    lines.push(`    src_smart_groups = [aviatrix_smart_group.${srcName}.uuid]`);
-    lines.push(`    dst_smart_groups = [aviatrix_smart_group.${dstName}.uuid]`);
+
+    if (srcName) {
+      lines.push(`    src_smart_groups = [aviatrix_smart_group.${sanitizeName(srcName)}.name]`);
+    } else {
+      lines.push(`    src_smart_groups = []`);
+    }
+
+    if (dstName) {
+      lines.push(`    dst_smart_groups = [aviatrix_smart_group.${sanitizeName(dstName)}.name]`);
+    } else {
+      lines.push(`    dst_smart_groups = []`);
+    }
+
+    if (srcExcludeNames.length > 0) {
+      lines.push(
+        `    src_exclude_smart_groups = [${srcExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`
+      );
+    }
+
+    if (dstExcludeNames.length > 0) {
+      lines.push(
+        `    dst_exclude_smart_groups = [${dstExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`
+      );
+    }
+
+    if (pol.webGroupIds && pol.webGroupIds.length > 0) {
+      const webGroupNames = pol.webGroupIds
+        .map((id) => topology.webGroups.find((wg) => wg.id === id)?.name)
+        .filter((n): n is string => !!n);
+      if (webGroupNames.length > 0) {
+        lines.push(`    # web_groups = [${webGroupNames.map((n) => `"${escapeHcl(n)}"`).join(', ')}]  # TODO: reference once web group resources are defined`);
+      }
+    }
+
     if (pol.threatGroup) {
-      lines.push(`    # threat_group = "${escapeHcl(pol.threatGroup)}"`);
+      lines.push(`    threat_group = "${escapeHcl(pol.threatGroup)}"`);
     }
     if (pol.geoGroup) {
-      lines.push(`    # geo_group = "${escapeHcl(pol.geoGroup)}"`);
+      lines.push(`    geo_group = "${escapeHcl(pol.geoGroup)}"`);
     }
+
     lines.push(`  }`);
+    lines.push('');
   });
 
   lines.push(`}`);

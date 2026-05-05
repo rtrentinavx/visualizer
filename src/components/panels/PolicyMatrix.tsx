@@ -1,34 +1,37 @@
 import { useMemo } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe } from 'lucide-react';
-import type { DcfTopology } from '../../types/dcf';
+import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban } from 'lucide-react';
+import type { DcfPolicy, DcfTopology, PolicyDirection } from '../../types/dcf';
 
 interface PolicyMatrixProps {
   topology: DcfTopology;
 }
 
+function directionIcon(dir: PolicyDirection) {
+  if (dir === 'inbound') return <ArrowLeft size={10} className="opacity-70" />;
+  if (dir === 'outbound') return <ArrowRight size={10} className="opacity-70" />;
+  return <ArrowLeftRight size={10} className="opacity-70" />;
+}
+
+function directionLabel(dir: PolicyDirection) {
+  if (dir === 'inbound') return 'in';
+  if (dir === 'outbound') return 'out';
+  return 'any';
+}
+
 export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
   const { groups, matrix } = useMemo(() => {
     const groups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
-    const matrix: Record<string, Record<string, { action: 'allow' | 'deny'; ports: string; protocol: string } | null>> = {};
+    const matrix: Record<string, Record<string, DcfPolicy[]>> = {};
 
     for (const src of groups) {
       matrix[src.id] = {};
       for (const dst of groups) {
-        const policy = topology.policies.find(
+        const policies = topology.policies.filter(
           (p) =>
-            (p.srcGroupId === src.id && p.dstGroupId === dst.id) ||
-            (p.srcGroupId === src.id && p.dstGroupId === 'sg-internet' && dst.id === 'sg-internet') ||
-            (p.dstGroupId === dst.id && p.srcGroupId === 'sg-internet' && src.id === 'sg-internet')
+            (p.srcGroupId === src.id || p.srcGroupId === 'sg-any') &&
+            (p.dstGroupId === dst.id || p.dstGroupId === 'sg-any')
         );
-        if (policy) {
-          matrix[src.id][dst.id] = {
-            action: policy.action,
-            ports: policy.ports || 'any',
-            protocol: policy.protocol,
-          };
-        } else {
-          matrix[src.id][dst.id] = null;
-        }
+        matrix[src.id][dst.id] = policies;
       }
     }
 
@@ -39,11 +42,11 @@ export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-[var(--color-border-subtle)]">
         <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
-        <p className="text-xs text-[var(--color-text-muted)] mt-1">SmartGroup to SmartGroup DCF policy overview</p>
+        <p className="text-xs text-[var(--color-text-muted)] mt-1">SmartGroup to SmartGroup DCF policy overview (sorted by priority)</p>
       </div>
       <div className="flex-1 overflow-auto p-4">
         <div className="inline-block min-w-full">
-          <div className="grid gap-1" style={{ gridTemplateColumns: `140px repeat(${groups.length}, minmax(100px, 1fr))` }}>
+          <div className="grid gap-1" style={{ gridTemplateColumns: `140px repeat(${groups.length}, minmax(120px, 1fr))` }}>
             {/* Header row */}
             <div className="p-2" />
             {groups.map((g) => (
@@ -63,33 +66,61 @@ export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
                   <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{src.name}</span>
                 </div>
                 {groups.map((dst) => {
-                  const cell = matrix[src.id]?.[dst.id];
+                  const policies = matrix[src.id]?.[dst.id] ?? [];
                   const isSelf = src.id === dst.id;
+                  const sorted = [...policies].sort((a, b) => a.priority - b.priority);
+                  const effective = sorted[0];
+
                   return (
                     <div
                       key={`${src.id}-${dst.id}`}
-                      className={`flex items-center justify-center p-2 rounded border ${
-                        cell
-                          ? cell.action === 'allow'
+                      className={`flex flex-col gap-1 p-2 rounded border ${
+                        effective
+                          ? effective.action === 'allow'
                             ? 'bg-green-500/10 border-green-500/30'
+                            : effective.action === 'learned'
+                            ? 'bg-[var(--color-accent-purple)]/10 border-[var(--color-accent-purple)]/30'
                             : 'bg-red-500/10 border-red-500/30'
                           : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)]'
                       }`}
-                      title={cell ? `${cell.action.toUpperCase()} ${cell.protocol}/${cell.ports}` : 'No explicit policy'}
+                      title={
+                        sorted.length > 0
+                          ? sorted.map((p) => `#${p.priority} ${p.action.toUpperCase()} ${directionLabel(p.direction)} ${p.protocol}/${p.ports || 'any'}`).join(' \n')
+                          : 'No explicit policy'
+                      }
                     >
                       {isSelf ? (
                         <span className="text-[10px] text-[var(--color-text-muted)]">—</span>
-                      ) : cell ? (
-                        <div className="flex flex-col items-center gap-0.5">
-                          {cell.action === 'allow' ? (
-                            <ShieldCheck size={14} className="text-green-400" />
-                          ) : (
-                            <ShieldX size={14} className="text-red-400" />
-                          )}
-                          <span className="text-[9px] font-mono text-[var(--color-text-muted)]">{cell.ports}</span>
-                        </div>
-                      ) : (
+                      ) : sorted.length === 0 ? (
                         <span className="text-[10px] text-[var(--color-text-muted)] opacity-50">∅</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {sorted.map((p) => (
+                            <div key={p.id} className="flex items-center gap-1">
+                              {p.action === 'allow' ? (
+                                <ShieldCheck size={12} className="text-green-400 shrink-0" />
+                              ) : p.action === 'learned' ? (
+                                <Route size={12} className="text-[var(--color-accent-purple)] shrink-0" />
+                              ) : (
+                                <ShieldX size={12} className="text-red-400 shrink-0" />
+                              )}
+                              <span className="text-[9px] font-mono text-[var(--color-text-muted)] leading-tight">
+                                {p.priority}
+                              </span>
+                              {directionIcon(p.direction)}
+                              <span className="text-[9px] font-mono text-[var(--color-text-muted)] leading-tight">
+                                {p.ports || p.protocol}
+                              </span>
+                              {p.decrypt && <Lock size={9} className="text-[var(--color-accent-purple)] shrink-0" />}
+                              {(p.threatGroup || p.geoGroup) && <Globe size={9} className="text-[var(--color-accent-amber)] shrink-0" />}
+                              {(p.srcExcludeGroupIds?.length || p.dstExcludeGroupIds?.length) ? (
+                                <span className="shrink-0" title="Excludes groups">
+                                  <Ban size={9} className="text-[var(--color-accent-red)]" />
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   );
@@ -110,12 +141,24 @@ export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
             <span>Deny</span>
           </div>
           <div className="flex items-center gap-1.5">
+            <Route size={14} className="text-[var(--color-accent-purple)]" />
+            <span>Learned</span>
+          </div>
+          <div className="flex items-center gap-1.5">
             <Lock size={14} className="text-[var(--color-accent-purple)]" />
             <span>TLS Decrypt</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Globe size={14} className="text-[var(--color-accent-amber)]" />
             <span>Geo / Threat</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Ban size={14} className="text-[var(--color-accent-red)]" />
+            <span>Excludes</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <ArrowLeftRight size={14} />
+            <span>Direction</span>
           </div>
         </div>
       </div>
