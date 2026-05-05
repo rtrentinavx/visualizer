@@ -494,17 +494,11 @@ export default function App() {
           break;
         }
         case 'gateway':
-        case 'gateway-spoke':
-        case 'gateway-egress':
-        case 'gateway-edge': {
+        case 'gateway-spoke': {
           const gwType: GatewayType =
             item.type === 'gateway-spoke'
               ? 'spoke'
-              : item.type === 'gateway-egress'
-                ? 'egress'
-                : item.type === 'gateway-edge'
-                  ? 'edge'
-                  : 'transit';
+              : 'transit';
           const firstVpc = topology.vpcs[0]?.id ?? 'vpc-orphan';
           const newGw = {
             id,
@@ -922,8 +916,7 @@ export default function App() {
                   if (node.type === 'gateway') {
                     const type = (node.data as any)?.type;
                     if (type === 'transit') return '#3b82f6';
-                    if (type === 'egress') return '#f59e0b';
-                    return '#8b5cf6';
+                    return '#06b6d4';
                   }
                   if (node.type === 'smartGroup') return (node.data as any)?.color || '#666';
                   return '#666';
@@ -937,9 +930,8 @@ export default function App() {
                   {viewMode === 'topology' ? (
                     <div className="space-y-1">
                       <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#06b6d4]" /> VPC / VNet</div>
-                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#e4002b]" /> DCF Gateway</div>
-                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#f59e0b]" /> Egress Gateway</div>
-                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#8b5cf6]" /> Transit / Spoke</div>
+                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#3b82f6]" /> Transit GW</div>
+                      <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-[#06b6d4]" /> Spoke GW</div>
                     </div>
                   ) : (
                     <div className="space-y-1">

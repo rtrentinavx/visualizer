@@ -1,4 +1,4 @@
-import { Network, Router, Globe, Shield, Server, Boxes } from 'lucide-react';
+import { Network, Router, Server, Boxes } from 'lucide-react';
 
 interface PaletteItem {
   type: string;
@@ -12,8 +12,6 @@ const items: PaletteItem[] = [
   { type: 'vpc', label: 'VPC / VNet', icon: Network, color: '#06b6d4', category: 'Infrastructure' },
   { type: 'gateway', label: 'Transit GW', icon: Router, color: '#3b82f6', category: 'Gateway' },
   { type: 'gateway-spoke', label: 'Spoke GW', icon: Server, color: '#06b6d4', category: 'Gateway' },
-  { type: 'gateway-egress', label: 'Egress GW', icon: Globe, color: '#f59e0b', category: 'Gateway' },
-  { type: 'gateway-edge', label: 'Edge GW', icon: Shield, color: '#8b5cf6', category: 'Gateway' },
   { type: 'smartGroup', label: 'Smart Group', icon: Boxes, color: '#10b981', category: 'Policy' },
 ];
 

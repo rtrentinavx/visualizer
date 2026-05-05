@@ -18,8 +18,8 @@ export const demoTopology: DcfTopology = {
     { id: 'gw-spoke-gcp', name: 'spoke-gw-gcp', type: 'spoke', vpcId: 'vpc-gcp-prod', haEnabled: false, ip: '192.168.1.10' },
     { id: 'gw-transit-dcf-east', name: 'transit-gw-useast-dcf', type: 'transit', vpcId: 'vpc-prod-1', haEnabled: true, ip: '10.1.2.10' },
     { id: 'gw-transit-dcf-west', name: 'transit-gw-uswest-dcf', type: 'transit', vpcId: 'vpc-prod-2', haEnabled: true, ip: '10.65.2.10' },
-    { id: 'gw-egress', name: 'egress-gw-shared', type: 'egress', vpcId: 'vpc-shared', haEnabled: true, ip: '10.0.2.10' },
-    { id: 'gw-edge', name: 'edge-dc01', type: 'edge', vpcId: 'vpc-shared', haEnabled: true },
+    { id: 'gw-egress', name: 'egress-gw-shared', type: 'transit', vpcId: 'vpc-shared', haEnabled: true, ip: '10.0.2.10' },
+    { id: 'gw-edge', name: 'edge-dc01', type: 'transit', vpcId: 'vpc-shared', haEnabled: true },
     { id: 'gw-spoke-dev', name: 'spoke-gw-dev', type: 'spoke', vpcId: 'vpc-dev', haEnabled: false, ip: '10.2.1.10' },
   ],
   smartGroups: [

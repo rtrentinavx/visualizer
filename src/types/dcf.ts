@@ -5,7 +5,7 @@ export interface Vpc {
   account: string;
 }
 
-export type GatewayType = 'transit' | 'spoke' | 'egress' | 'edge';
+export type GatewayType = 'transit' | 'spoke';
 
 export interface Gateway {
   id: string;

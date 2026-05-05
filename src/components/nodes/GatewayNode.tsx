@@ -1,13 +1,11 @@
 import { memo } from 'react';
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react';
-import { Shield, Router, Globe, Server } from 'lucide-react';
+import { Router, Server } from 'lucide-react';
 import type { GatewayType } from '../../types/dcf';
 
-const gatewayConfig: Record<GatewayType, { icon: typeof Shield; label: string; color: string }> = {
+const gatewayConfig: Record<GatewayType, { icon: typeof Router; label: string; color: string }> = {
   transit: { icon: Router, label: 'Transit GW', color: '#3b82f6' },
   spoke: { icon: Server, label: 'Spoke GW', color: '#06b6d4' },
-  egress: { icon: Globe, label: 'Egress GW', color: '#f59e0b' },
-  edge: { icon: Shield, label: 'Edge GW', color: '#8b5cf6' },
 };
 
 interface GatewayNodeData extends Record<string, unknown> {

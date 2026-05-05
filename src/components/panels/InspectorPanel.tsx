@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Shield, Globe, Router, Server, Trash2, Save, Plus, Minus } from 'lucide-react';
+import { X, Router, Server, Trash2, Save, Plus, Minus } from 'lucide-react';
 import type { DcfTopology, GatewayType, SmartGroupCriteria } from '../../types/dcf';
 
 interface InspectorPanelProps {
@@ -11,14 +11,12 @@ interface InspectorPanelProps {
   onDeleteNode: (nodeId: string, nodeType: string) => void;
 }
 
-const gatewayIcons: Record<GatewayType, typeof Shield> = {
+const gatewayIcons: Record<GatewayType, typeof Router> = {
   transit: Router,
   spoke: Server,
-  egress: Globe,
-  edge: Shield,
 };
 
-const gatewayTypes: GatewayType[] = ['transit', 'spoke', 'egress', 'edge'];
+const gatewayTypes: GatewayType[] = ['transit', 'spoke'];
 
 export default function InspectorPanel({ topology, selectedNodeId, selectedNodeType, onClose, onUpdateNode, onDeleteNode }: InspectorPanelProps) {
   const [form, setForm] = useState<Record<string, unknown>>({});
