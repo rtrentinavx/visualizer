@@ -9,7 +9,12 @@ import { ThemeProvider } from './lib/ThemeContext'
 Sentry.init({
   dsn: 'https://41bfd7e597c2524b769374972e269ee1@o4511332226891776.ingest.us.sentry.io/4511338342580224',
   sendDefaultPii: true,
-  integrations: [Sentry.browserTracingIntegration()],
+  integrations: [
+    Sentry.browserTracingIntegration(),
+    Sentry.feedbackIntegration({
+      colorScheme: 'system',
+    }),
+  ],
   tracesSampleRate: 1.0,
   tracePropagationTargets: ['localhost', /^https:\/\/yourserver\.io\/api/],
 })
