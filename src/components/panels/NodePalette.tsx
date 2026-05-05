@@ -29,7 +29,7 @@ export default function NodePalette() {
 
   return (
     <div
-      className="w-52 border-r border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-col shrink-0 select-none"
+      className="w-48 border-r border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-col shrink-0 select-none z-20"
       onDragOver={(e) => e.preventDefault()}
     >
       <div className="p-3 border-b border-[var(--color-border-subtle)]">
@@ -52,7 +52,7 @@ export default function NodePalette() {
                       key={item.type}
                       draggable
                       onDragStart={(e) => onDragStart(e, item)}
-                      className="flex items-center gap-2 px-2.5 py-2 rounded-md cursor-grab active:cursor-grabbing border transition-colors hover:bg-[var(--color-button-hover)]"
+                      className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab active:cursor-grabbing border transition-colors hover:bg-[var(--color-button-hover)]"
                       style={{
                         backgroundColor: 'var(--color-surface)',
                         borderColor: 'var(--color-border-subtle)',

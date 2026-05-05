@@ -52,6 +52,7 @@ import {
   Zap,
   RotateCcw,
   Trash2,
+  PanelLeft,
 } from 'lucide-react';
 
 type ViewMode = 'topology' | 'policies' | 'traffic';
@@ -267,8 +268,10 @@ export default function App() {
   const [showTerraformModal, setShowTerraformModal] = useState(false);
   const [terraformCopied, setTerraformCopied] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showPalette, setShowPalette] = useState(true);
 
   const nodePositionsRef = useRef<Map<string, XYPosition>>(new Map());
+  const dropCountRef = useRef(0);
 
   // Persist topology to localStorage
   useEffect(() => {
@@ -498,10 +501,15 @@ export default function App() {
       }
       if (!item) return;
 
-      const position = reactFlowInstance.screenToFlowPosition({
+      const basePosition = reactFlowInstance.screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
       });
+      // Stagger drops so nodes don't stack exactly on top of each other
+      const offsetX = (dropCountRef.current % 5) * 24;
+      const offsetY = Math.floor(dropCountRef.current / 5) * 24;
+      dropCountRef.current += 1;
+      const position = { x: basePosition.x + offsetX, y: basePosition.y + offsetY };
       const id = `${item.type}-${Date.now()}`;
       nodePositionsRef.current.set(id, position);
 
@@ -602,7 +610,7 @@ export default function App() {
   return (
     <div className="flex h-full w-full">
       {/* Node Palette */}
-      {viewMode !== 'traffic' && <NodePalette />}
+      {viewMode !== 'traffic' && showPalette && <NodePalette />}
 
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -652,15 +660,38 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Palette Toggle */}
+            {viewMode !== 'traffic' && (
+              <button
+                onClick={() => setShowPalette((v) => !v)}
+                className={`p-1.5 rounded-md border transition-colors ${showPalette ? 'text-[var(--color-aviatrix)]' : 'text-[var(--color-text-secondary)]'}`}
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  borderColor: 'var(--color-border-subtle)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                  e.currentTarget.style.color = 'var(--color-text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                  e.currentTarget.style.color = showPalette ? 'var(--color-aviatrix)' : 'var(--color-text-secondary)';
+                }}
+                title="Toggle Palette"
+              >
+                <PanelLeft size={14} />
+              </button>
+            )}
+
             {/* Search */}
-            <div className="relative hidden md:block">
+            <div className="relative hidden lg:block">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-48 border outline-none transition-colors"
+                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-40 border outline-none transition-colors"
                 style={{
                   backgroundColor: 'var(--color-input-bg)',
                   borderColor: 'var(--color-input-border)',
@@ -735,7 +766,7 @@ export default function App() {
               title="Export Terraform"
             >
               <FileCode size={14} />
-              <span className="hidden sm:inline">TF Export</span>
+              <span className="hidden lg:inline">TF Export</span>
             </button>
 
             {/* Theme Toggle */}
@@ -848,7 +879,7 @@ export default function App() {
                 maskColor={theme === 'dark' ? 'rgba(15, 17, 23, 0.7)' : 'rgba(248, 249, 250, 0.7)'}
                 className="!bg-[var(--color-surface-raised)] !border-[var(--color-border-subtle)]"
               />
-              <Panel position="top-left" className="m-4">
+              <Panel position="top-right" className="m-4">
                 <div className="bg-[var(--color-surface-raised)] border border-[var(--color-border-subtle)] rounded-lg px-3 py-2 text-xs shadow-lg" style={{ color: 'var(--color-text-muted)' }}>
                   <div className="font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>Legend</div>
                   {viewMode === 'topology' ? (
