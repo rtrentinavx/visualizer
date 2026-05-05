@@ -37,6 +37,11 @@ import {
   X,
   Copy,
   Check,
+  HelpCircle,
+  Sparkles,
+  Map,
+  Shield,
+  Zap,
 } from 'lucide-react';
 
 type ViewMode = 'topology' | 'policies' | 'traffic';
@@ -232,6 +237,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [showTerraformModal, setShowTerraformModal] = useState(false);
   const [terraformCopied, setTerraformCopied] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
 
   const nodes = useMemo(() => {
     if (viewMode === 'topology') return buildTopologyNodes(demoTopology, searchQuery);
@@ -388,10 +394,26 @@ export default function App() {
               {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
             </button>
 
-            <div className="flex items-center gap-1.5 text-[var(--color-text-muted)] pl-1">
-              <Info size={14} />
-              <span className="text-[10px] hidden lg:inline">Demo Data</span>
-            </div>
+            <button
+              onClick={() => setShowAboutModal(true)}
+              className="p-1.5 rounded-md border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="About DCF Visualizer"
+            >
+              <HelpCircle size={14} />
+            </button>
           </div>
         </div>
 
@@ -490,6 +512,114 @@ export default function App() {
           selectedNodeType={selectedNodeType}
           onClose={() => { setSelectedNodeId(null); setSelectedNodeType(null); }}
         />
+      )}
+
+      {/* About Modal */}
+      {showAboutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--color-border-subtle)' }}>
+              <div className="flex items-center gap-2">
+                <img src="/logo-header.png" alt="DCF Visualizer" className="h-5 w-auto rounded" />
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>About DCF Visualizer</h3>
+              </div>
+              <button
+                onClick={() => setShowAboutModal(false)}
+                className="p-1 rounded hover:bg-[var(--color-button-hover)] transition-colors"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto p-5 space-y-5 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              <div>
+                <p className="text-sm font-medium mb-1" style={{ color: 'var(--color-text-primary)' }}>What is this?</p>
+                <p>
+                  DCF Visualizer is an interactive demo application for exploring{' '}
+                  <span className="font-semibold" style={{ color: 'var(--color-aviatrix)' }}>Aviatrix Distributed Cloud Firewall (DCF)</span>{' '}
+                  topologies, micro-segmentation policies, and traffic flows. It helps network and security engineers visualize cloud network architectures, smart groups, and policy enforcement across multi-cloud environments.
+                </p>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium mb-2 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                  <Sparkles size={14} className="text-amber-400" /> Current Features
+                </p>
+                <ul className="space-y-1.5 pl-1">
+                  <li className="flex items-start gap-2">
+                    <Map size={13} className="mt-0.5 shrink-0 text-blue-400" />
+                    <span><strong>Topology View</strong> — Interactive graph of cloud regions, VPCs/VNets, and gateways (DCF, Transit, Egress, Edge).</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Shield size={13} className="mt-0.5 shrink-0 text-green-400" />
+                    <span><strong>Policies View</strong> — Visual policy matrix showing allow/deny rules between Smart Groups with edge inspection.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Zap size={13} className="mt-0.5 shrink-0 text-yellow-400" />
+                    <span><strong>Traffic Flow</strong> — Simulated traffic analysis across regions, protocols, and workload types.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Search size={13} className="mt-0.5 shrink-0 text-purple-400" />
+                    <span><strong>Global Search</strong> — Filter nodes, policies, protocols, and CIDRs across all views.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <FileCode size={13} className="mt-0.5 shrink-0 text-cyan-400" />
+                    <span><strong>Terraform Export</strong> — Generate HCL for Aviatrix provider from the demo topology.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Sun size={13} className="mt-0.5 shrink-0 text-orange-400" />
+                    <span><strong>Dark &amp; Light Mode</strong> — Full theme support with system-aware defaults.</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium mb-2 flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                  <Info size={14} className="text-blue-400" /> Planned Features
+                </p>
+                <ul className="space-y-1 pl-1">
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Live API integration with Aviatrix Controller</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Real-time traffic simulation &amp; flow logs</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Cost estimation dashboard per region/gateway</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Multi-tenant &amp; RBAC policy visualization</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Custom topology import (YAML/JSON/Terraform)</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Policy change history &amp; audit timeline</span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <div className="w-1 h-1 rounded-full bg-[var(--color-text-muted)]" />
+                    <span>Alerting &amp; SIEM integration hooks</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="pt-2 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                <p className="text-[10px] text-[var(--color-text-muted)]">
+                  Built with React, Tailwind CSS, and @xyflow. Deployed on Vercel.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Terraform Export Modal */}

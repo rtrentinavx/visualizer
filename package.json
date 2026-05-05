@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@sentry/react": "^10.51.0",
+    "@sentry/vite-plugin": "^5.2.1",
+    "@vercel/analytics": "^2.0.1",
     "@xyflow/react": "^12.10.2",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",
