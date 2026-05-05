@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   ReactFlow,
   Background,
@@ -7,12 +7,19 @@ import {
   type Node,
   type Edge,
   type ReactFlowInstance,
+  type Connection,
+  type XYPosition,
   Panel,
   MarkerType,
+  applyNodeChanges,
+  applyEdgeChanges,
+  type NodeChange,
+  type EdgeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
 import { demoTopology } from './data/demoTopology';
+import type { DcfTopology, DcfPolicy, GatewayType, CloudProvider } from './types/dcf';
 import CloudRegionNode from './components/nodes/CloudRegionNode';
 import VpcNode from './components/nodes/VpcNode';
 import GatewayNode from './components/nodes/GatewayNode';
@@ -21,6 +28,7 @@ import PolicyEdge from './components/edges/PolicyEdge';
 import InspectorPanel from './components/panels/InspectorPanel';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
+import NodePalette from './components/panels/NodePalette';
 import { downloadTerraform, generateTerraform } from './lib/terraformExport';
 import { useTheme } from './lib/ThemeContext';
 
@@ -39,12 +47,34 @@ import {
   Check,
   HelpCircle,
   Sparkles,
-  Map,
+  Map as MapIcon,
   Shield,
   Zap,
+  RotateCcw,
+  Trash2,
 } from 'lucide-react';
 
 type ViewMode = 'topology' | 'policies' | 'traffic';
+
+const STORAGE_KEY = 'dcf-topology-v1';
+
+function loadTopology(): DcfTopology {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch {
+    // ignore parse errors
+  }
+  return demoTopology;
+}
+
+function saveTopology(topology: DcfTopology) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
+  } catch {
+    // ignore quota errors
+  }
+}
 
 const nodeTypes = {
   cloudRegion: CloudRegionNode,
@@ -57,12 +87,11 @@ const edgeTypes = {
   policy: PolicyEdge,
 };
 
-function buildTopologyNodes(topology: typeof demoTopology, filter: string): Node[] {
+function buildTopologyNodes(topology: DcfTopology, filter: string): Node[] {
   const f = filter.toLowerCase();
   const nodes: Node[] = [];
   const xGap = 280;
 
-  // Cloud regions at top
   topology.regions.forEach((region, i) => {
     const match = !f || region.name.toLowerCase().includes(f) || region.provider.toLowerCase().includes(f);
     nodes.push({
@@ -74,7 +103,6 @@ function buildTopologyNodes(topology: typeof demoTopology, filter: string): Node
     });
   });
 
-  // VPCs below regions
   const vpcsByRegion: Record<string, typeof topology.vpcs> = {};
   topology.vpcs.forEach((vpc) => {
     if (!vpcsByRegion[vpc.regionId]) vpcsByRegion[vpc.regionId] = [];
@@ -95,7 +123,6 @@ function buildTopologyNodes(topology: typeof demoTopology, filter: string): Node
     });
   });
 
-  // Gateways below VPCs
   const gatewaysByVpc: Record<string, typeof topology.gateways> = {};
   topology.gateways.forEach((gw) => {
     if (!gatewaysByVpc[gw.vpcId]) gatewaysByVpc[gw.vpcId] = [];
@@ -120,7 +147,7 @@ function buildTopologyNodes(topology: typeof demoTopology, filter: string): Node
   return nodes;
 }
 
-function buildTopologyEdges(topology: typeof demoTopology, filter: string): Edge[] {
+function buildTopologyEdges(topology: DcfTopology, filter: string): Edge[] {
   const f = filter.toLowerCase();
   const edges: Edge[] = [];
 
@@ -151,7 +178,7 @@ function buildTopologyEdges(topology: typeof demoTopology, filter: string): Edge
   return edges;
 }
 
-function buildPolicyNodes(topology: typeof demoTopology, filter: string): Node[] {
+function buildPolicyNodes(topology: DcfTopology, filter: string): Node[] {
   const f = filter.toLowerCase();
   const nodes: Node[] = [];
   const sgList = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
@@ -179,7 +206,6 @@ function buildPolicyNodes(topology: typeof demoTopology, filter: string): Node[]
     });
   });
 
-  // Internet node in center-bottom
   const internetMatch = !f || 'internet'.includes(f);
   nodes.push({
     id: 'sg-internet',
@@ -197,7 +223,7 @@ function buildPolicyNodes(topology: typeof demoTopology, filter: string): Node[]
   return nodes;
 }
 
-function buildPolicyEdges(topology: typeof demoTopology, filter: string): Edge[] {
+function buildPolicyEdges(topology: DcfTopology, filter: string): Edge[] {
   const f = filter.toLowerCase();
   const edges: Edge[] = [];
 
@@ -230,6 +256,9 @@ function buildPolicyEdges(topology: typeof demoTopology, filter: string): Edge[]
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
+  const [topology, setTopology] = useState<DcfTopology>(loadTopology);
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('topology');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeType, setSelectedNodeType] = useState<string | null>(null);
@@ -239,17 +268,76 @@ export default function App() {
   const [terraformCopied, setTerraformCopied] = useState(false);
   const [showAboutModal, setShowAboutModal] = useState(false);
 
-  const nodes = useMemo(() => {
-    if (viewMode === 'topology') return buildTopologyNodes(demoTopology, searchQuery);
-    if (viewMode === 'policies') return buildPolicyNodes(demoTopology, searchQuery);
-    return [];
-  }, [viewMode, searchQuery]);
+  const nodePositionsRef = useRef<Map<string, XYPosition>>(new Map());
 
-  const edges = useMemo(() => {
-    if (viewMode === 'topology') return buildTopologyEdges(demoTopology, searchQuery);
-    if (viewMode === 'policies') return buildPolicyEdges(demoTopology, searchQuery);
-    return [];
-  }, [viewMode, searchQuery]);
+  // Persist topology to localStorage
+  useEffect(() => {
+    saveTopology(topology);
+  }, [topology]);
+
+  // Derive nodes/edges from topology, preserving positions
+  useEffect(() => {
+    if (viewMode === 'topology') {
+      const built = buildTopologyNodes(topology, searchQuery);
+      const builtEdges = buildTopologyEdges(topology, searchQuery);
+      setNodes((prev) => {
+        const posMap = nodePositionsRef.current;
+        const prevMap = new Map(prev.map((n) => [n.id, n]));
+        return built.map((n) => {
+          const pos = posMap.get(n.id);
+          const prevNode = prevMap.get(n.id);
+          return {
+            ...n,
+            position: pos ?? n.position,
+            selected: prevNode?.selected ?? false,
+          };
+        });
+      });
+      setEdges(builtEdges);
+    } else if (viewMode === 'policies') {
+      const built = buildPolicyNodes(topology, searchQuery);
+      const builtEdges = buildPolicyEdges(topology, searchQuery);
+      setNodes((prev) => {
+        const posMap = nodePositionsRef.current;
+        const prevMap = new Map(prev.map((n) => [n.id, n]));
+        return built.map((n) => {
+          const pos = posMap.get(n.id);
+          const prevNode = prevMap.get(n.id);
+          return {
+            ...n,
+            position: pos ?? n.position,
+            selected: prevNode?.selected ?? false,
+          };
+        });
+      });
+      setEdges(builtEdges);
+    } else {
+      setNodes([]);
+      setEdges([]);
+    }
+  }, [topology, viewMode, searchQuery]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      changes.forEach((c) => {
+        if (c.type === 'position' && c.position) {
+          nodePositionsRef.current.set(c.id, c.position);
+        }
+        if (c.type === 'remove') {
+          nodePositionsRef.current.delete(c.id);
+        }
+      });
+      setNodes((nds) => applyNodeChanges(changes, nds));
+    },
+    []
+  );
+
+  const onEdgesChange = useCallback(
+    (changes: EdgeChange[]) => {
+      setEdges((eds) => applyEdgeChanges(changes, eds));
+    },
+    []
+  );
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
@@ -271,17 +359,251 @@ export default function App() {
   };
 
   const handleCopyTerraform = () => {
-    navigator.clipboard.writeText(generateTerraform(demoTopology));
+    navigator.clipboard.writeText(generateTerraform(topology));
     setTerraformCopied(true);
     setTimeout(() => setTerraformCopied(false), 2000);
   };
 
   const handleDownloadTerraform = () => {
-    downloadTerraform(demoTopology);
+    downloadTerraform(topology);
+  };
+
+  const handleUpdateNode = useCallback(
+    (nodeId: string, nodeType: string, data: Record<string, unknown>) => {
+      setTopology((prev) => {
+        switch (nodeType) {
+          case 'cloudRegion':
+            return {
+              ...prev,
+              regions: prev.regions.map((r) => (r.id === nodeId ? { ...r, ...data } : r)),
+            };
+          case 'vpc':
+            return {
+              ...prev,
+              vpcs: prev.vpcs.map((v) => (v.id === nodeId ? { ...v, ...data } : v)),
+            };
+          case 'gateway':
+            return {
+              ...prev,
+              gateways: prev.gateways.map((g) => (g.id === nodeId ? { ...g, ...data } : g)),
+            };
+          case 'smartGroup':
+            return {
+              ...prev,
+              smartGroups: prev.smartGroups.map((s) => (s.id === nodeId ? { ...s, ...data } : s)),
+            };
+          default:
+            return prev;
+        }
+      });
+      // Immediate feedback: also patch node data directly
+      setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n)));
+    },
+    []
+  );
+
+  const handleDeleteNode = useCallback(
+    (nodeId: string, nodeType: string) => {
+      setTopology((prev) => {
+        switch (nodeType) {
+          case 'cloudRegion':
+            return {
+              ...prev,
+              regions: prev.regions.filter((r) => r.id !== nodeId),
+              vpcs: prev.vpcs.filter((v) => v.regionId !== nodeId),
+            };
+          case 'vpc':
+            return {
+              ...prev,
+              vpcs: prev.vpcs.filter((v) => v.id !== nodeId),
+              gateways: prev.gateways.filter((g) => g.vpcId !== nodeId),
+            };
+          case 'gateway':
+            return { ...prev, gateways: prev.gateways.filter((g) => g.id !== nodeId) };
+          case 'smartGroup':
+            return {
+              ...prev,
+              smartGroups: prev.smartGroups.filter((s) => s.id !== nodeId),
+              policies: prev.policies.filter((p) => p.srcGroupId !== nodeId && p.dstGroupId !== nodeId),
+            };
+          default:
+            return prev;
+        }
+      });
+      nodePositionsRef.current.delete(nodeId);
+      setSelectedNodeId(null);
+      setSelectedNodeType(null);
+    },
+    []
+  );
+
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return;
+
+      if (viewMode === 'topology') {
+        const sourceNode = nodes.find((n) => n.id === connection.source);
+        const targetNode = nodes.find((n) => n.id === connection.target);
+
+        if (sourceNode?.type === 'cloudRegion' && targetNode?.type === 'vpc') {
+          setTopology((prev) => ({
+            ...prev,
+            vpcs: prev.vpcs.map((v) => (v.id === connection.target ? { ...v, regionId: connection.source! } : v)),
+          }));
+        } else if (sourceNode?.type === 'vpc' && targetNode?.type === 'gateway') {
+          setTopology((prev) => ({
+            ...prev,
+            gateways: prev.gateways.map((g) => (g.id === connection.target ? { ...g, vpcId: connection.source! } : g)),
+          }));
+        }
+      } else if (viewMode === 'policies') {
+        const newPolicy: DcfPolicy = {
+          id: `pol-${Date.now()}`,
+          name: 'New Policy',
+          priority: 100,
+          srcGroupId: connection.source,
+          dstGroupId: connection.target,
+          action: 'allow',
+          direction: 'any',
+          protocol: 'tcp',
+          ports: 'any',
+          logging: false,
+        };
+        setTopology((prev) => ({
+          ...prev,
+          policies: [...prev.policies, newPolicy],
+        }));
+      }
+    },
+    [viewMode, nodes]
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      if (!reactFlowInstance) return;
+
+      const raw = event.dataTransfer.getData('application/reactflow');
+      if (!raw) return;
+      let item: { type: string; label: string } | null = null;
+      try {
+        item = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (!item) return;
+
+      const position = reactFlowInstance.screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+      const id = `${item.type}-${Date.now()}`;
+      nodePositionsRef.current.set(id, position);
+
+      switch (item.type) {
+        case 'cloudRegion': {
+          const newRegion = {
+            id,
+            name: 'New Region',
+            provider: 'aws' as CloudProvider,
+            cidr: '10.0.0.0/8',
+          };
+          setTopology((prev) => ({ ...prev, regions: [...prev.regions, newRegion] }));
+          break;
+        }
+        case 'vpc': {
+          const firstRegion = topology.regions[0]?.id ?? 'region-orphan';
+          const newVpc = {
+            id,
+            name: 'New VPC',
+            regionId: firstRegion,
+            cidr: '10.0.0.0/16',
+            account: 'default',
+          };
+          setTopology((prev) => ({ ...prev, vpcs: [...prev.vpcs, newVpc] }));
+          break;
+        }
+        case 'gateway':
+        case 'gateway-spoke':
+        case 'gateway-dcf':
+        case 'gateway-egress':
+        case 'gateway-edge': {
+          const gwType: GatewayType =
+            item.type === 'gateway-spoke'
+              ? 'spoke'
+              : item.type === 'gateway-dcf'
+                ? 'dcf'
+                : item.type === 'gateway-egress'
+                  ? 'egress'
+                  : item.type === 'gateway-edge'
+                    ? 'edge'
+                    : 'transit';
+          const firstVpc = topology.vpcs[0]?.id ?? 'vpc-orphan';
+          const newGw = {
+            id,
+            name: `New ${gwType.charAt(0).toUpperCase() + gwType.slice(1)} GW`,
+            type: gwType,
+            vpcId: firstVpc,
+            haEnabled: false,
+            ip: '',
+          };
+          setTopology((prev) => ({ ...prev, gateways: [...prev.gateways, newGw] }));
+          break;
+        }
+        case 'smartGroup': {
+          const newSg = {
+            id,
+            name: 'New Smart Group',
+            color: '#3b82f6',
+            criteria: [] as { key: string; operator: 'equals' | 'contains' | 'startsWith'; value: string }[],
+            workloadCount: 0,
+            vpcIds: [] as string[],
+          };
+          setTopology((prev) => ({ ...prev, smartGroups: [...prev.smartGroups, newSg] }));
+          break;
+        }
+      }
+    },
+    [reactFlowInstance, topology]
+  );
+
+  const handleResetDemo = () => {
+    if (confirm('Reset to demo topology? All unsaved changes will be lost.')) {
+      nodePositionsRef.current = new Map();
+      setTopology(demoTopology);
+      setSelectedNodeId(null);
+      setSelectedNodeType(null);
+    }
+  };
+
+  const handleClearCanvas = () => {
+    if (confirm('Clear the entire canvas? This cannot be undone.')) {
+      nodePositionsRef.current = new Map();
+      setTopology({
+        regions: [],
+        vpcs: [],
+        gateways: [],
+        smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], workloadCount: 0, vpcIds: [] }],
+        policies: [],
+        threatGroups: [],
+        geoGroups: [],
+        flows: [],
+      });
+      setSelectedNodeId(null);
+      setSelectedNodeType(null);
+    }
   };
 
   return (
     <div className="flex h-full w-full">
+      {/* Node Palette */}
+      {viewMode !== 'traffic' && <NodePalette />}
+
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
@@ -348,6 +670,50 @@ export default function App() {
                 onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
               />
             </div>
+
+            {/* Reset Demo */}
+            <button
+              onClick={handleResetDemo}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Reset to Demo"
+            >
+              <RotateCcw size={14} />
+            </button>
+
+            {/* Clear Canvas */}
+            <button
+              onClick={handleClearCanvas}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = '#ef4444';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Clear Canvas"
+            >
+              <Trash2 size={14} />
+            </button>
 
             {/* Terraform Export */}
             <button
@@ -441,7 +807,7 @@ export default function App() {
         {/* Content */}
         <div className="flex-1 relative overflow-hidden">
           {viewMode === 'traffic' ? (
-            <TrafficFlowPanel topology={demoTopology} filter={searchQuery} />
+            <TrafficFlowPanel topology={topology} filter={searchQuery} />
           ) : (
             <ReactFlow
               nodes={nodes}
@@ -451,6 +817,11 @@ export default function App() {
               onInit={setReactFlowInstance}
               onNodeClick={onNodeClick}
               onPaneClick={onPaneClick}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
               fitView
               fitViewOptions={{ padding: 0.2 }}
               minZoom={0.2}
@@ -504,13 +875,15 @@ export default function App() {
 
       {/* Right Panel */}
       {viewMode === 'policies' ? (
-        <PolicyMatrix topology={demoTopology} />
+        <PolicyMatrix topology={topology} />
       ) : (
         <InspectorPanel
-          topology={demoTopology}
+          topology={topology}
           selectedNodeId={selectedNodeId}
           selectedNodeType={selectedNodeType}
           onClose={() => { setSelectedNodeId(null); setSelectedNodeType(null); }}
+          onUpdateNode={handleUpdateNode}
+          onDeleteNode={handleDeleteNode}
         />
       )}
 
@@ -550,7 +923,7 @@ export default function App() {
                 </p>
                 <ul className="space-y-1.5 pl-1">
                   <li className="flex items-start gap-2">
-                    <Map size={13} className="mt-0.5 shrink-0 text-blue-400" />
+                    <MapIcon size={13} className="mt-0.5 shrink-0 text-blue-400" />
                     <span><strong>Topology View</strong> — Interactive graph of cloud regions, VPCs/VNets, and gateways (DCF, Transit, Egress, Edge).</span>
                   </li>
                   <li className="flex items-start gap-2">
@@ -651,7 +1024,7 @@ export default function App() {
                 className="text-xs font-mono p-4 rounded-lg overflow-auto leading-relaxed"
                 style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border-subtle)' }}
               >
-                {generateTerraform(demoTopology)}
+                {generateTerraform(topology)}
               </pre>
             </div>
             <div className="flex items-center justify-end gap-2 px-4 py-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
