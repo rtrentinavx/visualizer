@@ -297,7 +297,7 @@ export default function App() {
         <div className="min-h-14 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex items-center justify-between px-4 shrink-0 gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex items-center gap-2 shrink-0">
-              <img src="/logo-header.png" alt="DCF Visualizer" className="h-8 w-auto rounded-md" />
+              <img src="/logo-header.png" alt="DCF Visualizer" className="h-10 w-auto rounded-md" />
               <h1 className="text-sm font-bold text-[var(--color-text-primary)] tracking-wide hidden sm:inline">visualizer</h1>
             </div>
             <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-1 shrink-0" />
