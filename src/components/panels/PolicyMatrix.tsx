@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban } from 'lucide-react';
+import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban, LayoutGrid } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel, PolicyDirection } from '../../types/dcf';
 
 interface PolicyMatrixProps {
@@ -66,6 +66,18 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
         </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
+        {filteredGroups.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-elevated)] flex items-center justify-center mb-4">
+              <LayoutGrid size={24} className="text-[var(--color-text-muted)]" />
+            </div>
+            <p className="text-sm font-medium text-[var(--color-text-secondary)]">No SmartGroups yet</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs">
+              Create at least two SmartGroups to start building your policy matrix.
+              Use the <strong>+ Group</strong> button in the header.
+            </p>
+          </div>
+        ) : (
         <div className="inline-block min-w-full">
           <div
             className="grid gap-1"
@@ -167,6 +179,7 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
             ))}
           </div>
         </div>
+        )}
 
         {/* Legend */}
         <div className="mt-6 flex flex-wrap items-center gap-4 text-xs text-[var(--color-text-muted)]">

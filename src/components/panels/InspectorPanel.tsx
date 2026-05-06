@@ -281,7 +281,7 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
   }, [topology, selectedItem]);
 
   const [form, setForm] = useState<Record<string, unknown>>(initialForm);
-  const [dirty, setDirty] = useState(false);
+  const [dirty, setDirty] = useState(selectedItem.id === '__new__');
 
   const updateField = (key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [key]: value }));
