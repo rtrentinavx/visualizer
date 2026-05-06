@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
+import { GitGraph, PenLine, X } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from '../../types/dcf';
 
 interface PolicyGraphProps {
   topology: DcfPolicyModel;
   onSelectNode: (groupId: string) => void;
   onSelectPolicy: (policyId: string) => void;
+  onCreatePolicy: (srcId: string, dstId: string) => void;
 }
 
 interface NodePos {
@@ -13,6 +15,7 @@ interface NodePos {
   y: number;
   name: string;
   color: string;
+  workloadCount: number;
 }
 
 interface EdgePos {
@@ -32,7 +35,11 @@ function getActionColor(action: string): string {
   return '#ef4444';
 }
 
-export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: PolicyGraphProps) {
+function getInitial(name: string): string {
+  return name.charAt(0).toUpperCase();
+}
+
+export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, onCreatePolicy }: PolicyGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
@@ -52,7 +59,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
     const groups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
     const cx = size.w / 2;
     const cy = size.h / 2;
-    const r = Math.min(size.w, size.h) / 2 - 80;
+    const r = Math.min(size.w, size.h) / 2 - 100;
 
     const nodeMap = new Map<string, NodePos>();
     groups.forEach((g, i) => {
@@ -63,6 +70,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
         y: cy + r * Math.sin(angle),
         name: g.name,
         color: g.color,
+        workloadCount: g.workloadCount,
       });
     });
 
@@ -93,7 +101,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
         y2: dst.y,
         label: `${p.priority}`,
         isSelfLoop,
-        offset: isSelfLoop ? 0 : (idx - ((pairCount.get(key) || 1) - 1) / 2) * 6,
+        offset: isSelfLoop ? 0 : (idx - ((pairCount.get(key) || 1) - 1) / 2) * 8,
       });
     });
 
@@ -102,25 +110,89 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
 
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  const [connectMode, setConnectMode] = useState(false);
+  const [connectSource, setConnectSource] = useState<string | null>(null);
 
-  const nodeRadius = 24;
+  const nodeRadius = 28;
+
+  const handleNodeClick = (nodeId: string) => {
+    if (!connectMode) {
+      onSelectNode(nodeId);
+      return;
+    }
+    if (!connectSource) {
+      setConnectSource(nodeId);
+      return;
+    }
+    if (connectSource === nodeId) {
+      // Cancel if clicking same node
+      setConnectSource(null);
+      return;
+    }
+    // Create policy from connectSource to nodeId
+    onCreatePolicy(connectSource, nodeId);
+    setConnectSource(null);
+    setConnectMode(false);
+  };
 
   return (
     <div ref={containerRef} className="flex flex-col h-full">
+      {/* Header */}
       <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between">
-        <div>
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Graph</h2>
-          <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            SmartGroups as nodes, policies as edges
-          </p>
+        <div className="flex items-center gap-3">
+          <GitGraph size={18} className="text-[var(--color-accent-blue)]" />
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Graph</h2>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              Click a node to edit. {connectMode ? 'Select source, then destination.' : 'Toggle Draw Policy to connect groups.'}
+            </p>
+          </div>
         </div>
-        <div className="text-xs text-[var(--color-text-muted)]">
-          {nodes.length} groups · {edges.length} policies
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              setConnectMode((v) => !v);
+              setConnectSource(null);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              connectMode
+                ? 'text-white border-transparent'
+                : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
+            }`}
+            style={{
+              backgroundColor: connectMode ? 'var(--color-aviatrix)' : 'var(--color-surface)',
+              borderColor: connectMode ? 'var(--color-aviatrix)' : 'var(--color-border-subtle)',
+            }}
+          >
+            {connectMode ? <X size={13} /> : <PenLine size={13} />}
+            {connectMode ? 'Cancel' : 'Draw Policy'}
+          </button>
+          <div className="text-xs text-[var(--color-text-muted)]">
+            {nodes.length} groups · {edges.length} policies
+          </div>
         </div>
       </div>
+
+      {/* Graph Canvas */}
       <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: 'var(--color-surface)' }}>
         <svg width={size.w} height={size.h} className="absolute inset-0">
           <defs>
+            {/* Drop shadow filter */}
+            <filter id="node-shadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.3" />
+            </filter>
+            <filter id="node-shadow-hover" x="-50%" y="-50%" width="200%" height="200%">
+              <feDropShadow dx="0" dy="4" stdDeviation="6" floodOpacity="0.5" />
+            </filter>
+            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+              <feMerge>
+                <feMergeNode in="coloredBlur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+
+            {/* Arrow markers */}
             <marker id="arrow-allow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
               <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
             </marker>
@@ -140,8 +212,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
             const dim = hoveredNode && !isRelatedToHoveredNode && !isHovered;
 
             if (e.isSelfLoop) {
-              // Self loop arc
-              const arcR = nodeRadius + 20;
+              const arcR = nodeRadius + 24;
               return (
                 <g
                   key={e.policy.id}
@@ -160,7 +231,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
                   />
                   <text
                     x={e.x1}
-                    y={e.y1 - nodeRadius - 18}
+                    y={e.y1 - nodeRadius - 22}
                     textAnchor="middle"
                     fill={isHovered ? 'var(--color-text-primary)' : 'var(--color-text-muted)'}
                     fontSize="10"
@@ -172,7 +243,6 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
               );
             }
 
-            // Offset parallel edges
             const dx = e.x2 - e.x1;
             const dy = e.y2 - e.y1;
             const len = Math.sqrt(dx * dx + dy * dy);
@@ -181,8 +251,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
             const offX = nx * e.offset;
             const offY = ny * e.offset;
 
-            // Shorten line so arrow doesn't overlap node
-            const shorten = nodeRadius + 8;
+            const shorten = nodeRadius + 10;
             const ratio = (len - shorten) / len;
             const sx1 = e.x1 + offX;
             const sy1 = e.y1 + offY;
@@ -228,31 +297,88 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy }: 
           {/* Nodes */}
           {nodes.map((n) => {
             const isHovered = hoveredNode === n.id;
+            const isConnectSource = connectSource === n.id;
             const isRelatedToHoveredEdge = hoveredEdge && edges.some((e) => e.policy.id === hoveredEdge && (e.policy.srcGroupId === n.id || e.policy.dstGroupId === n.id));
             const dim = hoveredEdge && !isRelatedToHoveredEdge && !isHovered;
+            const isSelectableDest = connectMode && connectSource && connectSource !== n.id;
 
             return (
               <g
                 key={n.id}
                 transform={`translate(${n.x}, ${n.y})`}
-                onClick={() => onSelectNode(n.id)}
+                onClick={() => handleNodeClick(n.id)}
                 onMouseEnter={() => setHoveredNode(n.id)}
                 onMouseLeave={() => setHoveredNode(null)}
                 className="cursor-pointer"
                 opacity={dim ? 0.3 : 1}
+                style={{ transition: 'opacity 0.2s' }}
               >
+                {/* Outer glow ring for connect source */}
+                {isConnectSource && (
+                  <circle r={nodeRadius + 6} fill="none" stroke="#3b82f6" strokeWidth="2" strokeDasharray="4 2" opacity="0.8">
+                    <animate attributeName="r" values={`${nodeRadius + 4};${nodeRadius + 8};${nodeRadius + 4}`} dur="1.5s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.6;1;0.6" dur="1.5s" repeatCount="indefinite" />
+                  </circle>
+                )}
+
+                {/* Hover ring */}
+                {isHovered && !isConnectSource && (
+                  <circle r={nodeRadius + 4} fill="none" stroke="var(--color-text-muted)" strokeWidth="1" opacity="0.5" />
+                )}
+
+                {/* Dest highlight in connect mode */}
+                {isSelectableDest && (
+                  <circle r={nodeRadius + 4} fill="none" stroke="#22c55e" strokeWidth="2" strokeDasharray="3 3" opacity="0.6" />
+                )}
+
+                {/* Main node circle with shadow */}
                 <circle
                   r={nodeRadius}
                   fill={n.color}
-                  stroke={isHovered ? 'var(--color-text-primary)' : 'var(--color-surface-raised)'}
-                  strokeWidth={isHovered ? 3 : 2}
-                  style={{ transition: 'all 0.15s' }}
+                  stroke={isConnectSource ? '#3b82f6' : isHovered ? 'var(--color-text-primary)' : 'rgba(255,255,255,0.15)'}
+                  strokeWidth={isConnectSource ? 3 : 2}
+                  filter={isHovered ? 'url(#node-shadow-hover)' : 'url(#node-shadow)'}
+                  style={{ transition: 'all 0.2s' }}
                 />
+
+                {/* Inner white circle with initial */}
+                <circle r={nodeRadius * 0.45} fill="rgba(255,255,255,0.2)" stroke="rgba(255,255,255,0.3)" strokeWidth="1" />
                 <text
-                  y={nodeRadius + 14}
+                  y={1}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="white"
+                  fontSize="14"
+                  fontWeight="700"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {getInitial(n.name)}
+                </text>
+
+                {/* Workload count badge */}
+                {n.workloadCount > 0 && (
+                  <g transform={`translate(${nodeRadius - 4}, ${nodeRadius - 4})`}>
+                    <circle r={9} fill="var(--color-surface-raised)" stroke="var(--color-border-subtle)" strokeWidth="1" />
+                    <text
+                      y={1}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill="var(--color-text-secondary)"
+                      fontSize="8"
+                      fontWeight="600"
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      {n.workloadCount > 99 ? '99+' : n.workloadCount}
+                    </text>
+                  </g>
+                )}
+
+                {/* Label */}
+                <text
+                  y={nodeRadius + 18}
                   textAnchor="middle"
                   fill="var(--color-text-secondary)"
-                  fontSize="11"
+                  fontSize="12"
                   fontWeight="500"
                   style={{ pointerEvents: 'none' }}
                 >

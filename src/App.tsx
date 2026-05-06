@@ -590,6 +590,10 @@ export default function App() {
               topology={topology}
               onSelectNode={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
               onSelectPolicy={(policyId) => setSelectedItem({ type: 'policy', id: policyId })}
+              onCreatePolicy={(srcId, dstId) => {
+                setSelectedCell({ srcId, dstId });
+                setSelectedItem({ type: 'policy', id: '__new__', srcId, dstId });
+              }}
             />
           ) : (
             <TrafficFlowPanel topology={topology} filter={searchQuery} />
