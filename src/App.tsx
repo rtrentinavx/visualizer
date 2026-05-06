@@ -22,9 +22,10 @@ import { generateTerraform, downloadTerraform } from './lib/terraformExport';
 import { useTheme } from './lib/useTheme';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
+import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 
-type ViewMode = 'matrix' | 'traffic';
+type ViewMode = 'matrix' | 'graph' | 'traffic';
 
 interface SelectedItem {
   type: 'policy' | 'smartGroup' | 'webGroup' | 'threatGroup' | 'geoGroup';
@@ -313,6 +314,17 @@ export default function App() {
                 <span className="hidden sm:inline">Matrix</span>
               </button>
               <button
+                onClick={() => handleViewChange('graph')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'graph'
+                    ? 'bg-[var(--color-aviatrix)] text-white'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
+                }`}
+              >
+                <GitGraph size={14} />
+                <span className="hidden sm:inline">Graph</span>
+              </button>
+              <button
                 onClick={() => handleViewChange('traffic')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   viewMode === 'traffic'
@@ -571,6 +583,12 @@ export default function App() {
               searchQuery={searchQuery}
               selectedCell={selectedCell}
               onSelectCell={handleSelectCell}
+            />
+          ) : viewMode === 'graph' ? (
+            <PolicyGraph
+              topology={topology}
+              onSelectNode={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+              onSelectPolicy={(policyId) => setSelectedItem({ type: 'policy', id: policyId })}
             />
           ) : (
             <TrafficFlowPanel topology={topology} filter={searchQuery} />
