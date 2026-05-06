@@ -41,7 +41,7 @@ export async function encryptTopology<T>(data: T): Promise<string> {
   const key = await deriveKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoder = new TextEncoder();
-  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv } as any, key, encoder.encode(JSON.stringify(data)));
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv } as AlgorithmIdentifier, key, encoder.encode(JSON.stringify(data)));
   const payload = { iv: arrayBufferToBase64(iv.buffer), data: arrayBufferToBase64(ciphertext) };
   return btoa(JSON.stringify(payload));
 }

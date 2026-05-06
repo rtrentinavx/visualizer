@@ -60,61 +60,6 @@ html, body, #root {
   overflow: hidden;
 }
 
-/* React Flow customizations */
-.react-flow__node {
-  border-radius: 8px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-raised);
-  color: var(--color-text-primary);
-  font-size: 12px;
-  transition: box-shadow 0.2s, border-color 0.2s;
-}
-
-.react-flow__node.selected {
-  border-color: var(--color-accent-blue);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-}
-
-.react-flow__edge-path {
-  stroke-width: 2;
-  transition: stroke 0.2s;
-}
-
-.react-flow__handle {
-  width: 8px;
-  height: 8px;
-  background: var(--color-accent-blue);
-  border: 2px solid var(--color-surface-raised);
-}
-
-.react-flow__controls {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.react-flow__controls button {
-  background: var(--color-surface-raised);
-  color: var(--color-text-secondary);
-  border-bottom: 1px solid var(--color-border-subtle);
-}
-
-.react-flow__controls button:hover {
-  background: var(--color-surface-elevated);
-  color: var(--color-text-primary);
-}
-
-.react-flow__controls button svg {
-  fill: currentColor;
-}
-
-.react-flow__minimap {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 6px;
-}
-
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -132,9 +77,4 @@ html, body, #root {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scroll-thumb-hover);
-}
-
-/* Light theme React Flow overrides */
-[data-theme="light"] .react-flow__background {
-  background-color: var(--color-surface);
 }

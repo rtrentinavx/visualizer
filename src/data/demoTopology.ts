@@ -1,36 +1,6 @@
-import type { DcfTopology } from '../types/dcf';
+import type { DcfPolicyModel } from '../types/dcf';
 
-export const demoTopology: DcfTopology = {
-  vpcs: [
-    { id: 'vpc-transit-east', name: 'transit-vpc-east', cidr: '10.0.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-transit-west', name: 'transit-vpc-west', cidr: '10.64.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-prod-1', name: 'prod-vpc-01', cidr: '10.1.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-prod-2', name: 'prod-vpc-02', cidr: '10.65.0.0/16', account: 'aws-prod' },
-    { id: 'vpc-shared', name: 'shared-services-vpc', cidr: '10.2.0.0/16', account: 'aws-prod' },
-    { id: 'vnet-azure-prod', name: 'prod-vnet', cidr: '172.16.0.0/16', account: 'azure-prod' },
-    { id: 'vpc-gcp-prod', name: 'prod-vpc', cidr: '192.168.0.0/16', account: 'gcp-prod' },
-    { id: 'vpc-dev', name: 'dev-vpc', cidr: '10.3.0.0/16', account: 'aws-dev' },
-  ],
-  gateways: [
-    { id: 'gw-transit-east', name: 'transit-gw-useast', type: 'transit', vpcId: 'vpc-transit-east', haEnabled: true, primaryIp: '10.0.1.10', haIp: '10.0.2.10', asn: 65001 },
-    { id: 'gw-transit-west', name: 'transit-gw-uswest', type: 'transit', vpcId: 'vpc-transit-west', haEnabled: true, primaryIp: '10.64.1.10', haIp: '10.64.2.10', asn: 65002 },
-    { id: 'gw-spoke-prod1', name: 'spoke-gw-prod1', type: 'spoke', vpcId: 'vpc-prod-1', haEnabled: true, primaryIp: '10.1.1.10', haIp: '10.1.2.10' },
-    { id: 'gw-spoke-prod2', name: 'spoke-gw-prod2', type: 'spoke', vpcId: 'vpc-prod-2', haEnabled: true, primaryIp: '10.65.1.10', haIp: '10.65.2.10' },
-    { id: 'gw-spoke-shared', name: 'spoke-gw-shared', type: 'spoke', vpcId: 'vpc-shared', haEnabled: true, primaryIp: '10.2.1.10', haIp: '10.2.2.10' },
-    { id: 'gw-spoke-azure', name: 'spoke-gw-azure', type: 'spoke', vpcId: 'vnet-azure-prod', haEnabled: true, primaryIp: '172.16.1.10', haIp: '172.16.2.10' },
-    { id: 'gw-spoke-gcp', name: 'spoke-gw-gcp', type: 'spoke', vpcId: 'vpc-gcp-prod', haEnabled: false, primaryIp: '192.168.1.10' },
-    { id: 'gw-spoke-dev', name: 'spoke-gw-dev', type: 'spoke', vpcId: 'vpc-dev', haEnabled: false, primaryIp: '10.3.1.10' },
-  ],
-  securityDomains: [
-    { id: 'dom-prod', name: 'Production', color: '#10b981' },
-    { id: 'dom-dev', name: 'Development', color: '#f59e0b' },
-    { id: 'dom-shared', name: 'Shared-Services', color: '#3b82f6' },
-  ],
-  domainConnections: [
-    { id: 'dc-1', domain1Id: 'dom-prod', domain2Id: 'dom-shared', connected: true },
-    { id: 'dc-2', domain1Id: 'dom-dev', domain2Id: 'dom-shared', connected: true },
-    { id: 'dc-3', domain1Id: 'dom-prod', domain2Id: 'dom-dev', connected: false },
-  ],
+export const demoTopology: DcfPolicyModel = {
   smartGroups: [
     {
       id: 'sg-web',
@@ -104,6 +74,15 @@ export const demoTopology: DcfTopology = {
     { id: 'wg-saas', name: 'SaaS Allowlist', fqdns: ['*.salesforce.com', '*.slack.com', '*.github.com'] },
     { id: 'wg-updates', name: 'OS Updates', fqdns: ['*.windowsupdate.com', '*.ubuntu.com', '*.amazonaws.com'] },
   ],
+  threatGroups: [
+    { id: 'tg-malware', name: 'Known Malware', category: 'malware', entryCount: 15420 },
+    { id: 'tg-botnet', name: 'Botnet C2', category: 'botnet', entryCount: 8930 },
+    { id: 'tg-phishing', name: 'Phishing IPs', category: 'phishing', entryCount: 4210 },
+  ],
+  geoGroups: [
+    { id: 'gg-non-us', name: 'Non-US Traffic', countries: ['CN', 'RU', 'KP', 'IR'] },
+    { id: 'gg-eu', name: 'European Union', countries: ['DE', 'FR', 'IT', 'ES', 'NL'] },
+  ],
   policies: [
     { id: 'pol-1', name: 'Allow Web to App', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', direction: 'any', protocol: 'tcp', ports: '8080,8443', logging: true },
     { id: 'pol-2', name: 'Allow App to DB', priority: 110, srcGroupId: 'sg-app', dstGroupId: 'sg-db', action: 'allow', direction: 'any', protocol: 'tcp', ports: '3306,5432', logging: true },
@@ -118,32 +97,12 @@ export const demoTopology: DcfTopology = {
     { id: 'pol-11', name: 'Learned Routes from Peer', priority: 10, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'learned', direction: 'any', protocol: 'any', logging: false },
     { id: 'pol-12', name: 'SaaS Egress via WebGroup', priority: 70, srcGroupId: 'sg-app', dstGroupId: 'sg-internet', action: 'allow', direction: 'outbound', protocol: 'tcp', ports: '443', logging: true, webGroupIds: ['wg-saas'] },
   ],
-  threatGroups: [
-    { id: 'tg-malware', name: 'Known Malware', category: 'malware', entryCount: 15420 },
-    { id: 'tg-botnet', name: 'Botnet C2', category: 'botnet', entryCount: 8930 },
-    { id: 'tg-phishing', name: 'Phishing IPs', category: 'phishing', entryCount: 4210 },
-  ],
-  geoGroups: [
-    { id: 'gg-non-us', name: 'Non-US Traffic', countries: ['CN', 'RU', 'KP', 'IR'] },
-    { id: 'gg-eu', name: 'European Union', countries: ['DE', 'FR', 'IT', 'ES', 'NL'] },
-  ],
   flows: [
-    { id: 'flow-1', srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 1245000, packets: 8500, allowed: true, timestamp: '2026-05-05T10:00:00Z', gatewayPath: ['gw-spoke-prod1', 'gw-transit-east'] },
-    { id: 'flow-2', srcGroupId: 'sg-web', dstGroupId: 'sg-db', protocol: 'tcp', port: 3306, bytes: 0, packets: 45, allowed: false, timestamp: '2026-05-05T10:01:00Z', gatewayPath: ['gw-spoke-prod1', 'gw-transit-east'] },
-    { id: 'flow-3', srcGroupId: 'sg-app', dstGroupId: 'sg-db', protocol: 'tcp', port: 5432, bytes: 890000, packets: 4200, allowed: true, timestamp: '2026-05-05T10:02:00Z', gatewayPath: ['gw-spoke-prod1', 'gw-transit-east'] },
-    { id: 'flow-4', srcGroupId: 'sg-monitoring', dstGroupId: 'sg-internet', protocol: 'tcp', port: 443, bytes: 450000, packets: 3200, allowed: true, timestamp: '2026-05-05T10:03:00Z', gatewayPath: ['gw-spoke-shared', 'gw-transit-east'] },
-    { id: 'flow-5', srcGroupId: 'sg-dev', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 0, packets: 12, allowed: false, timestamp: '2026-05-05T10:04:00Z', gatewayPath: ['gw-spoke-dev', 'gw-transit-east'] },
-    { id: 'flow-6', srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 980000, packets: 6200, allowed: true, timestamp: '2026-05-05T10:05:00Z', gatewayPath: ['gw-spoke-prod2', 'gw-transit-west', 'gw-transit-east'] },
-  ],
-  spokeAttachments: [
-    { id: 'att-1', spokeGwId: 'gw-spoke-prod1', transitGwId: 'gw-transit-east', securityDomain: 'dom-prod', routeAdvertisement: ['10.1.0.0/16'] },
-    { id: 'att-2', spokeGwId: 'gw-spoke-prod2', transitGwId: 'gw-transit-west', securityDomain: 'dom-prod', routeAdvertisement: ['10.65.0.0/16'] },
-    { id: 'att-3', spokeGwId: 'gw-spoke-shared', transitGwId: 'gw-transit-east', securityDomain: 'dom-shared', routeAdvertisement: ['10.2.0.0/16'] },
-    { id: 'att-4', spokeGwId: 'gw-spoke-azure', transitGwId: 'gw-transit-east', securityDomain: 'dom-prod', routeAdvertisement: ['172.16.0.0/16'] },
-    { id: 'att-5', spokeGwId: 'gw-spoke-gcp', transitGwId: 'gw-transit-west', securityDomain: 'dom-prod', routeAdvertisement: ['192.168.0.0/16'] },
-    { id: 'att-6', spokeGwId: 'gw-spoke-dev', transitGwId: 'gw-transit-east', securityDomain: 'dom-dev', routeAdvertisement: ['10.3.0.0/16'] },
-  ],
-  transitPeerings: [
-    { id: 'peer-1', transitGwId1: 'gw-transit-east', transitGwId2: 'gw-transit-west' },
+    { id: 'flow-1', srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 1245000, packets: 8500, allowed: true, timestamp: '2026-05-05T10:00:00Z' },
+    { id: 'flow-2', srcGroupId: 'sg-web', dstGroupId: 'sg-db', protocol: 'tcp', port: 3306, bytes: 0, packets: 45, allowed: false, timestamp: '2026-05-05T10:01:00Z' },
+    { id: 'flow-3', srcGroupId: 'sg-app', dstGroupId: 'sg-db', protocol: 'tcp', port: 5432, bytes: 890000, packets: 4200, allowed: true, timestamp: '2026-05-05T10:02:00Z' },
+    { id: 'flow-4', srcGroupId: 'sg-monitoring', dstGroupId: 'sg-internet', protocol: 'tcp', port: 443, bytes: 450000, packets: 3200, allowed: true, timestamp: '2026-05-05T10:03:00Z' },
+    { id: 'flow-5', srcGroupId: 'sg-dev', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 0, packets: 12, allowed: false, timestamp: '2026-05-05T10:04:00Z' },
+    { id: 'flow-6', srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', port: 8080, bytes: 980000, packets: 6200, allowed: true, timestamp: '2026-05-05T10:05:00Z' },
   ],
 };

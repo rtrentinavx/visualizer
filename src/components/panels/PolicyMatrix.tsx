@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban } from 'lucide-react';
-import type { DcfPolicy, DcfTopology, PolicyDirection } from '../../types/dcf';
+import type { DcfPolicy, DcfPolicyModel, PolicyDirection } from '../../types/dcf';
 
 interface PolicyMatrixProps {
-  topology: DcfTopology;
+  topology: DcfPolicyModel;
+  searchQuery: string;
+  selectedCell: { srcId: string; dstId: string } | null;
+  onSelectCell: (srcId: string, dstId: string) => void;
 }
 
 function directionIcon(dir: PolicyDirection) {
@@ -18,7 +21,9 @@ function directionLabel(dir: PolicyDirection) {
   return 'any';
 }
 
-export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
+export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell }: PolicyMatrixProps) {
+  const f = searchQuery.toLowerCase();
+
   const { groups, matrix } = useMemo(() => {
     const groups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
     const matrix: Record<string, Record<string, DcfPolicy[]>> = {};
@@ -38,18 +43,36 @@ export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
     return { groups, matrix };
   }, [topology]);
 
+  const filteredGroups = useMemo(() => {
+    if (!f) return groups;
+    return groups.filter((g) =>
+      g.name.toLowerCase().includes(f) ||
+      g.criteria.some((c) => c.key?.toLowerCase().includes(f) || c.value?.toLowerCase().includes(f))
+    );
+  }, [groups, f]);
+
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-[var(--color-border-subtle)]">
-        <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
-        <p className="text-xs text-[var(--color-text-muted)] mt-1">SmartGroup to SmartGroup DCF policy overview (sorted by priority)</p>
+      <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">
+            Click any cell to view or edit policies
+          </p>
+        </div>
+        <div className="text-xs text-[var(--color-text-muted)]">
+          {topology.policies.length} policies · {groups.length} groups
+        </div>
       </div>
       <div className="flex-1 overflow-auto p-4">
         <div className="inline-block min-w-full">
-          <div className="grid gap-1" style={{ gridTemplateColumns: `140px repeat(${groups.length}, minmax(120px, 1fr))` }}>
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `140px repeat(${filteredGroups.length}, minmax(120px, 1fr))` }}
+          >
             {/* Header row */}
             <div className="p-2" />
-            {groups.map((g) => (
+            {filteredGroups.map((g) => (
               <div key={g.id} className="p-2 text-center">
                 <div className="flex flex-col items-center gap-1">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: g.color }} />
@@ -59,34 +82,40 @@ export default function PolicyMatrix({ topology }: PolicyMatrixProps) {
             ))}
 
             {/* Rows */}
-            {groups.map((src) => (
+            {filteredGroups.map((src) => (
               <>
                 <div key={`row-${src.id}`} className="flex items-center gap-2 px-2 py-2">
                   <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: src.color }} />
                   <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{src.name}</span>
                 </div>
-                {groups.map((dst) => {
+                {filteredGroups.map((dst) => {
                   const policies = matrix[src.id]?.[dst.id] ?? [];
                   const isSelf = src.id === dst.id;
                   const sorted = [...policies].sort((a, b) => a.priority - b.priority);
                   const effective = sorted[0];
+                  const isSelected = selectedCell?.srcId === src.id && selectedCell?.dstId === dst.id;
 
                   return (
                     <div
                       key={`${src.id}-${dst.id}`}
-                      className={`flex flex-col gap-1 p-2 rounded border ${
+                      onClick={() => onSelectCell(src.id, dst.id)}
+                      className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'ring-2 ring-[var(--color-accent-blue)]'
+                          : ''
+                      } ${
                         effective
                           ? effective.action === 'allow'
                             ? 'bg-green-500/10 border-green-500/30'
                             : effective.action === 'learned'
                             ? 'bg-[var(--color-accent-purple)]/10 border-[var(--color-accent-purple)]/30'
                             : 'bg-red-500/10 border-red-500/30'
-                          : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)]'
+                          : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)] hover:border-[var(--color-text-muted)]'
                       }`}
                       title={
                         sorted.length > 0
                           ? sorted.map((p) => `#${p.priority} ${p.action.toUpperCase()} ${directionLabel(p.direction)} ${p.protocol}/${p.ports || 'any'}`).join(' \n')
-                          : 'No explicit policy'
+                          : 'No explicit policy — click to create one'
                       }
                     >
                       {isSelf ? (

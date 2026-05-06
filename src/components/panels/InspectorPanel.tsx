@@ -1,22 +1,17 @@
-import { useState, useEffect } from 'react';
-import { X, Router, Server, Trash2, Save, Plus, Minus } from 'lucide-react';
-import type { DcfTopology, GatewayType, SmartGroupCriteria } from '../../types/dcf';
+import { useState, useMemo } from 'react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock } from 'lucide-react';
+import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
 
 interface InspectorPanelProps {
-  topology: DcfTopology;
-  selectedNodeId: string | null;
-  selectedNodeType: string | null;
+  topology: DcfPolicyModel;
+  selectedCell: { srcId: string; dstId: string } | null;
+  selectedItem: { type: string; id: string; srcId?: string; dstId?: string } | null;
   onClose: () => void;
-  onUpdateNode: (nodeId: string, nodeType: string, data: Record<string, unknown>) => void;
-  onDeleteNode: (nodeId: string, nodeType: string) => void;
+  onUpdateItem: (itemType: string, itemId: string, data: Record<string, unknown>) => void;
+  onDeleteItem: (itemType: string, itemId: string) => void;
+  onCreateItem: (itemType: string, data: Record<string, unknown>) => void;
+  onSelectPolicy: (policyId: string | null, srcId?: string, dstId?: string) => void;
 }
-
-const gatewayIcons: Record<GatewayType, typeof Router> = {
-  transit: Router,
-  spoke: Server,
-};
-
-const gatewayTypes: GatewayType[] = ['transit', 'spoke'];
 
 const Input = ({ label, value, onChange, type = 'text', placeholder = '' }: { label: string; value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string }) => (
   <div className="mb-3">
@@ -73,6 +68,28 @@ const Toggle = ({ label, checked, onChange }: { label: string; checked: boolean;
         className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`}
       />
     </button>
+  </div>
+);
+
+const MultiSelect = ({ label, selected, options, onChange }: { label: string; selected: string[]; options: { value: string; label: string }[]; onChange: (v: string[]) => void }) => (
+  <div className="mb-3">
+    <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">{label}</label>
+    <div className="space-y-1 max-h-28 overflow-y-auto">
+      {options.map((o) => (
+        <label key={o.value} className="flex items-center gap-2 text-xs cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selected.includes(o.value)}
+            onChange={(e) => {
+              if (e.target.checked) onChange([...selected, o.value]);
+              else onChange(selected.filter((id) => id !== o.value));
+            }}
+            className="rounded"
+          />
+          <span className="text-[var(--color-text-secondary)]">{o.label}</span>
+        </label>
+      ))}
+    </div>
   </div>
 );
 
@@ -171,207 +188,232 @@ const CriteriaEditor = ({ criteria, onChange }: { criteria: SmartGroupCriteria[]
   </div>
 );
 
-export default function InspectorPanel({ topology, selectedNodeId, selectedNodeType, onClose, onUpdateNode, onDeleteNode }: InspectorPanelProps) {
-  const [form, setForm] = useState<Record<string, unknown>>({});
-  const [dirty, setDirty] = useState(false);
+const StringListEditor = ({ label, items, onChange, placeholder }: { label: string; items: string[]; onChange: (v: string[]) => void; placeholder?: string }) => (
+  <div className="mb-3">
+    <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">{label}</label>
+    <div className="space-y-1">
+      {items.map((item, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <input
+            type="text"
+            value={item}
+            onChange={(e) => {
+              const next = [...items];
+              next[i] = e.target.value;
+              onChange(next);
+            }}
+            placeholder={placeholder}
+            className="flex-1 min-w-0 px-2 py-1 rounded text-xs border outline-none"
+            style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+          />
+          <button
+            onClick={() => onChange(items.filter((_, idx) => idx !== i))}
+            className="p-1 rounded hover:bg-red-500/20 text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
+          >
+            <Minus size={12} />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange([...items, ''])}
+        className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline"
+      >
+        <Plus size={12} /> Add
+      </button>
+    </div>
+  </div>
+);
 
-  useEffect(() => {
-    if (!selectedNodeId || !selectedNodeType) {
-      setForm({});
-      setDirty(false);
-      return;
-    }
-    let data: Record<string, unknown> = {};
-    switch (selectedNodeType) {
-      case 'vpc': {
-        const v = topology.vpcs.find((x) => x.id === selectedNodeId);
-        if (v) data = { name: v.name, cidr: v.cidr, account: v.account };
-        break;
-      }
-      case 'gateway': {
-        const g = topology.gateways.find((x) => x.id === selectedNodeId);
-        if (g) data = { name: g.name, type: g.type, vpcId: g.vpcId, haEnabled: g.haEnabled, primaryIp: g.primaryIp ?? '', haIp: g.haIp ?? '', asn: g.asn ?? '' };
-        break;
+function directionLabel(dir: string) {
+  if (dir === 'inbound') return 'in';
+  if (dir === 'outbound') return 'out';
+  return 'any';
+}
+
+// ---------- Item Editor (keyed for fresh state on item change) ----------
+
+interface ItemEditorProps {
+  topology: DcfPolicyModel;
+  selectedItem: { type: string; id: string; srcId?: string; dstId?: string };
+  onBack: () => void;
+  onSave: (data: Record<string, unknown>) => void;
+  onDelete: () => void;
+}
+
+function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEditorProps) {
+  const initialForm = useMemo(() => {
+    switch (selectedItem.type) {
+      case 'policy': {
+        if (selectedItem.id === '__new__') {
+          return {
+            name: 'New Policy',
+            priority: 100,
+            srcGroupId: selectedItem.srcId || 'sg-any',
+            dstGroupId: selectedItem.dstId || 'sg-any',
+            action: 'allow',
+            direction: 'any',
+            protocol: 'tcp',
+            logging: false,
+          };
+        }
+        const p = topology.policies.find((x) => x.id === selectedItem.id);
+        return p ? { ...p } : {};
       }
       case 'smartGroup': {
-        const s = topology.smartGroups.find((x) => x.id === selectedNodeId);
-        if (s) data = { name: s.name, color: s.color, workloadCount: s.workloadCount, matchType: s.matchType, criteria: s.criteria };
-        break;
+        const g = topology.smartGroups.find((x) => x.id === selectedItem.id);
+        return g ? { ...g } : {};
       }
+      case 'webGroup': {
+        const g = topology.webGroups.find((x) => x.id === selectedItem.id);
+        return g ? { ...g } : {};
+      }
+      case 'threatGroup': {
+        const g = topology.threatGroups.find((x) => x.id === selectedItem.id);
+        return g ? { ...g } : {};
+      }
+      case 'geoGroup': {
+        const g = topology.geoGroups.find((x) => x.id === selectedItem.id);
+        return g ? { ...g } : {};
+      }
+      default:
+        return {};
     }
-    setForm(data);
-    setDirty(false);
-  }, [selectedNodeId, selectedNodeType, topology]);
+  }, [topology, selectedItem]);
+
+  const [form, setForm] = useState<Record<string, unknown>>(initialForm);
+  const [dirty, setDirty] = useState(false);
 
   const updateField = (key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
   };
 
-  const handleSave = () => {
-    if (!selectedNodeId || !selectedNodeType) return;
-    onUpdateNode(selectedNodeId, selectedNodeType, form);
-    setDirty(false);
-  };
+  const smartGroupOptions = topology.smartGroups.map((g) => ({ value: g.id, label: g.name }));
+  const webGroupOptions = topology.webGroups.map((g) => ({ value: g.id, label: g.name }));
+  const threatGroupOptions = topology.threatGroups.map((g) => ({ value: g.id, label: g.name }));
+  const geoGroupOptions = topology.geoGroups.map((g) => ({ value: g.id, label: g.name }));
 
-  const handleDelete = () => {
-    if (!selectedNodeId || !selectedNodeType) return;
-    onDeleteNode(selectedNodeId, selectedNodeType);
-  };
+  const p = form;
+  const isNew = selectedItem.id === '__new__';
 
-  if (!selectedNodeId || !selectedNodeType) {
+  const renderPolicyForm = () => (
+    <div className="space-y-1">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline mb-2"
+      >
+        <ArrowLeft size={12} /> Back to policies
+      </button>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
+        {isNew ? 'New Policy' : 'Edit Policy'}
+      </div>
+      <Input label="Name" value={String(p.name ?? '')} onChange={(v) => updateField('name', v)} />
+      <Input label="Priority" value={String(p.priority ?? 100)} onChange={(v) => updateField('priority', Number(v))} type="number" />
+      <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
+      <Select label="Destination Group" value={String(p.dstGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('dstGroupId', v)} />
+      <Select label="Action" value={String(p.action ?? 'allow')} options={[{ value: 'allow', label: 'Allow' }, { value: 'deny', label: 'Deny' }, { value: 'learned', label: 'Learned' }]} onChange={(v) => updateField('action', v)} />
+      <Select label="Direction" value={String(p.direction ?? 'any')} options={[{ value: 'inbound', label: 'Inbound' }, { value: 'outbound', label: 'Outbound' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('direction', v)} />
+      <Select label="Protocol" value={String(p.protocol ?? 'tcp')} options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }, { value: 'icmp', label: 'ICMP' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('protocol', v)} />
+      <Input label="Ports" value={String(p.ports ?? '')} onChange={(v) => updateField('ports', v)} placeholder="8080,8443 or any" />
+      <Toggle label="Logging" checked={!!p.logging} onChange={(v) => updateField('logging', v)} />
+      <Toggle label="TLS Decrypt" checked={!!p.decrypt} onChange={(v) => updateField('decrypt', v)} />
+      <MultiSelect label="WebGroups" selected={(p.webGroupIds as string[]) || []} options={webGroupOptions} onChange={(v) => updateField('webGroupIds', v)} />
+      <Select label="ThreatGroup" value={String(p.threatGroup ?? '')} options={[{ value: '', label: 'None' }, ...threatGroupOptions]} onChange={(v) => updateField('threatGroup', v || undefined)} />
+      <Select label="GeoGroup" value={String(p.geoGroup ?? '')} options={[{ value: '', label: 'None' }, ...geoGroupOptions]} onChange={(v) => updateField('geoGroup', v || undefined)} />
+      <MultiSelect label="Exclude Source Groups" selected={(p.srcExcludeGroupIds as string[]) || []} options={smartGroupOptions} onChange={(v) => updateField('srcExcludeGroupIds', v)} />
+      <MultiSelect label="Exclude Destination Groups" selected={(p.dstExcludeGroupIds as string[]) || []} options={smartGroupOptions} onChange={(v) => updateField('dstExcludeGroupIds', v)} />
+    </div>
+  );
+
+  const renderSmartGroupForm = () => {
+    const g = topology.smartGroups.find((x) => x.id === selectedItem.id);
+    if (!g) return null;
     return (
-      <div className="w-80 border-l border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-col">
-        <div className="p-4 border-b border-[var(--color-border-subtle)]">
-          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Inspector</h2>
-        </div>
-        <div className="flex-1 flex items-center justify-center p-6 text-center">
-          <div className="text-[var(--color-text-muted)] text-sm">
-            Select a node on the canvas to edit its configuration
+      <div className="space-y-1">
+        <button onClick={onBack} className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline mb-2">
+          <ArrowLeft size={12} /> Back
+        </button>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">SmartGroup</div>
+        <Input label="Name" value={String(form.name ?? g.name)} onChange={(v) => updateField('name', v)} />
+        <div className="mb-3">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Color</label>
+          <div className="flex items-center gap-2">
+            <input type="color" value={String(form.color ?? g.color)} onChange={(e) => updateField('color', e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
+            <span className="text-xs text-[var(--color-text-muted)] font-mono">{String(form.color ?? g.color)}</span>
           </div>
         </div>
+        <Input label="Workload Count" value={String(form.workloadCount ?? g.workloadCount)} onChange={(v) => updateField('workloadCount', Number(v))} type="number" />
+        <Select label="Match Type" value={String(form.matchType ?? g.matchType)} options={[{ value: 'any', label: 'Match Any' }, { value: 'all', label: 'Match All' }]} onChange={(v) => updateField('matchType', v)} />
+        <CriteriaEditor criteria={(form.criteria as SmartGroupCriteria[]) || g.criteria} onChange={(v) => updateField('criteria', v)} />
       </div>
     );
-  }
+  };
+
+  const renderWebGroupForm = () => {
+    const g = topology.webGroups.find((x) => x.id === selectedItem.id);
+    if (!g) return null;
+    return (
+      <div className="space-y-1">
+        <button onClick={onBack} className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline mb-2">
+          <ArrowLeft size={12} /> Back
+        </button>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">WebGroup</div>
+        <Input label="Name" value={String(form.name ?? g.name)} onChange={(v) => updateField('name', v)} />
+        <StringListEditor label="FQDNs" items={(form.fqdns as string[]) || g.fqdns} onChange={(v) => updateField('fqdns', v)} placeholder="*.example.com" />
+      </div>
+    );
+  };
+
+  const renderThreatGroupForm = () => {
+    const g = topology.threatGroups.find((x) => x.id === selectedItem.id);
+    if (!g) return null;
+    return (
+      <div className="space-y-1">
+        <button onClick={onBack} className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline mb-2">
+          <ArrowLeft size={12} /> Back
+        </button>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">ThreatGroup</div>
+        <Input label="Name" value={String(form.name ?? g.name)} onChange={(v) => updateField('name', v)} />
+        <Select label="Category" value={String(form.category ?? g.category)} options={[{ value: 'malware', label: 'Malware' }, { value: 'botnet', label: 'Botnet' }, { value: 'phishing', label: 'Phishing' }, { value: 'anonymous', label: 'Anonymous' }, { value: 'custom', label: 'Custom' }]} onChange={(v) => updateField('category', v)} />
+        <Input label="Entry Count" value={String(form.entryCount ?? g.entryCount)} onChange={(v) => updateField('entryCount', Number(v))} type="number" />
+      </div>
+    );
+  };
+
+  const renderGeoGroupForm = () => {
+    const g = topology.geoGroups.find((x) => x.id === selectedItem.id);
+    if (!g) return null;
+    return (
+      <div className="space-y-1">
+        <button onClick={onBack} className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline mb-2">
+          <ArrowLeft size={12} /> Back
+        </button>
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">GeoGroup</div>
+        <Input label="Name" value={String(form.name ?? g.name)} onChange={(v) => updateField('name', v)} />
+        <StringListEditor label="Countries (ISO codes)" items={(form.countries as string[]) || g.countries} onChange={(v) => updateField('countries', v)} placeholder="US" />
+      </div>
+    );
+  };
 
   const renderForm = () => {
-    switch (selectedNodeType) {
-      case 'vpc': {
-        const vpc = topology.vpcs.find((v) => v.id === selectedNodeId);
-        if (!vpc) return null;
-        return (
-          <div className="space-y-1">
-            <Input label="Name" value={String(form.name ?? '')} onChange={(v) => updateField('name', v)} />
-            <Input label="CIDR" value={String(form.cidr ?? '')} onChange={(v) => updateField('cidr', v)} />
-            <Input label="Account" value={String(form.account ?? '')} onChange={(v) => updateField('account', v)} />
-            <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Gateways</div>
-              <div className="space-y-1.5">
-                {topology.gateways
-                  .filter((g) => g.vpcId === vpc.id)
-                  .map((gw) => {
-                    const Icon = gatewayIcons[gw.type];
-                    return (
-                      <div key={gw.id} className="flex items-center justify-between px-2 py-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
-                        <div className="flex items-center gap-2">
-                          <Icon size={12} className="text-[var(--color-accent-blue)]" />
-                          <span className="text-xs text-[var(--color-text-primary)]">{gw.name}</span>
-                        </div>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${gw.haEnabled ? 'bg-green-500/20 text-green-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                          {gw.haEnabled ? 'HA' : 'Single'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                {topology.gateways.filter((g) => g.vpcId === vpc.id).length === 0 && (
-                  <div className="text-[10px] text-[var(--color-text-muted)] italic">No gateways assigned</div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      }
-      case 'gateway': {
-        const gw = topology.gateways.find((g) => g.id === selectedNodeId);
-        if (!gw) return null;
-        return (
-          <div className="space-y-1">
-            <Input label="Name" value={String(form.name ?? '')} onChange={(v) => updateField('name', v)} />
-            <Select
-              label="Type"
-              value={String(form.type ?? 'spoke')}
-              options={gatewayTypes.map((t) => ({ value: t, label: t.charAt(0).toUpperCase() + t.slice(1) }))}
-              onChange={(v) => updateField('type', v)}
-            />
-            <Select
-              label="VPC"
-              value={String(form.vpcId ?? '')}
-              options={topology.vpcs.map((v) => ({ value: v.id, label: v.name }))}
-              onChange={(v) => updateField('vpcId', v)}
-            />
-            <Toggle label="HA Enabled" checked={!!form.haEnabled} onChange={(v) => updateField('haEnabled', v)} />
-            <Input label="Primary IP" value={String(form.primaryIp ?? '')} onChange={(v) => updateField('primaryIp', v)} placeholder="10.0.0.1" />
-            {!!form.haEnabled && (
-              <Input label="HA IP" value={String(form.haIp ?? '')} onChange={(v) => updateField('haIp', v)} placeholder="10.0.0.2" />
-            )}
-            {form.type === 'transit' && (
-              <Input label="ASN" value={String(form.asn ?? '')} onChange={(v) => updateField('asn', v ? Number(v) : undefined)} type="number" placeholder="65001" />
-            )}
-          </div>
-        );
-      }
-      case 'smartGroup': {
-        const sg = topology.smartGroups.find((s) => s.id === selectedNodeId);
-        if (!sg) return null;
-        const relatedPolicies = topology.policies.filter((p) => p.srcGroupId === sg.id || p.dstGroupId === sg.id);
-        return (
-          <div className="space-y-1">
-            <Input label="Name" value={String(form.name ?? '')} onChange={(v) => updateField('name', v)} />
-            <div className="mb-3">
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Color</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={String(form.color ?? '#3b82f6')}
-                  onChange={(e) => updateField('color', e.target.value)}
-                  className="w-8 h-8 rounded cursor-pointer border-0 p-0"
-                />
-                <span className="text-xs text-[var(--color-text-muted)] font-mono">{String(form.color ?? '#3b82f6')}</span>
-              </div>
-            </div>
-            <Input label="Workload Count" value={String(form.workloadCount ?? 0)} onChange={(v) => updateField('workloadCount', Number(v))} type="number" />
-            <Select
-              label="Match Type"
-              value={String(form.matchType ?? 'any')}
-              options={[
-                { value: 'any', label: 'Match Any' },
-                { value: 'all', label: 'Match All' },
-              ]}
-              onChange={(v) => updateField('matchType', v)}
-            />
-            <CriteriaEditor criteria={(form.criteria as SmartGroupCriteria[]) || []} onChange={(v) => updateField('criteria', v)} />
-
-            <div className="pt-3 border-t" style={{ borderColor: 'var(--color-border-subtle)' }}>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Related Policies ({relatedPolicies.length})</div>
-              <div className="space-y-1.5">
-                {relatedPolicies.map((p) => (
-                  <div key={p.id} className="px-2 py-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-[var(--color-text-primary)]">{p.name}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${p.action === 'allow' ? 'bg-green-500/20 text-green-400' : p.action === 'learned' ? 'bg-[var(--color-accent-purple)]/20 text-[var(--color-accent-purple)]' : 'bg-red-500/20 text-red-400'}`}>
-                        {p.action}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-                      {p.protocol.toUpperCase()} {p.ports && `:${p.ports}`} • Priority {p.priority}
-                    </div>
-                  </div>
-                ))}
-                {relatedPolicies.length === 0 && <div className="text-[10px] text-[var(--color-text-muted)] italic">No related policies</div>}
-              </div>
-            </div>
-          </div>
-        );
-      }
-      default:
-        return null;
+    switch (selectedItem.type) {
+      case 'policy': return renderPolicyForm();
+      case 'smartGroup': return renderSmartGroupForm();
+      case 'webGroup': return renderWebGroupForm();
+      case 'threatGroup': return renderThreatGroupForm();
+      case 'geoGroup': return renderGeoGroupForm();
+      default: return null;
     }
   };
 
   return (
-    <div className="w-80 border-l border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-col">
-      <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-        <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Inspector</h2>
-        <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
-          <X size={14} />
-        </button>
-      </div>
+    <>
       <div className="flex-1 overflow-y-auto p-4">
         {renderForm()}
       </div>
       <div className="p-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2">
         <button
-          onClick={handleSave}
+          onClick={() => onSave(form)}
           disabled={!dirty}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors disabled:opacity-40"
           style={{ backgroundColor: 'var(--color-aviatrix)' }}
@@ -382,7 +424,7 @@ export default function InspectorPanel({ topology, selectedNodeId, selectedNodeT
           Save
         </button>
         <button
-          onClick={handleDelete}
+          onClick={onDelete}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
           style={{
             backgroundColor: 'var(--color-surface)',
@@ -401,6 +443,164 @@ export default function InspectorPanel({ topology, selectedNodeId, selectedNodeT
           <Trash2 size={13} />
         </button>
       </div>
+    </>
+  );
+}
+
+// ---------- Main Inspector Panel ----------
+
+export default function InspectorPanel({ topology, selectedCell, selectedItem, onClose, onUpdateItem, onDeleteItem, onCreateItem, onSelectPolicy }: InspectorPanelProps) {
+  const cellPolicies = useMemo(() => {
+    if (!selectedCell) return [];
+    return topology.policies
+      .filter(
+        (p) =>
+          (p.srcGroupId === selectedCell.srcId || p.srcGroupId === 'sg-any') &&
+          (p.dstGroupId === selectedCell.dstId || p.dstGroupId === 'sg-any')
+      )
+      .sort((a, b) => a.priority - b.priority);
+  }, [topology.policies, selectedCell]);
+
+  const srcGroup = topology.smartGroups.find((g) => g.id === selectedCell?.srcId);
+  const dstGroup = topology.smartGroups.find((g) => g.id === selectedCell?.dstId);
+
+  const renderCellView = () => (
+    <div className="space-y-4">
+      {selectedCell && srcGroup && dstGroup && (
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Policies</div>
+          <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)] mb-3">
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: srcGroup.color }} />
+              {srcGroup.name}
+            </span>
+            <ArrowRight size={14} className="text-[var(--color-text-muted)]" />
+            <span className="flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: dstGroup.color }} />
+              {dstGroup.name}
+            </span>
+          </div>
+          {cellPolicies.length === 0 ? (
+            <div className="text-xs text-[var(--color-text-muted)] py-2">
+              No policies for this pair. Create one below.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {cellPolicies.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onSelectPolicy(p.id)}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 rounded text-xs text-left transition-colors"
+                  style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
+                >
+                  {p.action === 'allow' ? (
+                    <ShieldCheck size={14} className="text-green-400 shrink-0" />
+                  ) : p.action === 'learned' ? (
+                    <Route size={14} className="text-[var(--color-accent-purple)] shrink-0" />
+                  ) : (
+                    <ShieldX size={14} className="text-red-400 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 truncate">
+                      <span className="font-medium text-[var(--color-text-primary)] truncate">{p.name}</span>
+                      <span className="text-[10px] text-[var(--color-text-muted)] font-mono">#{p.priority}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)]">
+                      {directionLabel(p.direction)}
+                      <span>·</span>
+                      {p.protocol}
+                      <span>·</span>
+                      {p.ports || 'any'}
+                      {p.decrypt && <Lock size={9} className="text-[var(--color-accent-purple)]" />}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-[var(--color-accent-blue)] shrink-0">Edit</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {selectedCell && (
+        <button
+          onClick={() => onSelectPolicy('__new__', selectedCell?.srcId, selectedCell?.dstId)}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium text-white transition-colors"
+          style={{ backgroundColor: 'var(--color-aviatrix)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-aviatrix-dark)')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'var(--color-aviatrix)')}
+        >
+          <Plus size={13} />
+          New Policy
+        </button>
+      )}
+      <div className="space-y-2">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Groups</div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => onCreateItem('smartGroup', {})}
+            className="flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors"
+            style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+          >
+            <Boxes size={14} /> SmartGroup
+          </button>
+          <button
+            onClick={() => onCreateItem('webGroup', {})}
+            className="flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors"
+            style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+          >
+            <Globe size={14} /> WebGroup
+          </button>
+          <button
+            onClick={() => onCreateItem('threatGroup', {})}
+            className="flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors"
+            style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+          >
+            <ShieldAlert size={14} /> ThreatGroup
+          </button>
+          <button
+            onClick={() => onCreateItem('geoGroup', {})}
+            className="flex items-center gap-2 px-3 py-2 rounded-md border text-xs transition-colors"
+            style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+          >
+            <MapPin size={14} /> GeoGroup
+          </button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Summary</div>
+        <div className="space-y-1 text-xs text-[var(--color-text-secondary)]">
+          <div className="flex justify-between"><span>SmartGroups</span><span>{topology.smartGroups.length}</span></div>
+          <div className="flex justify-between"><span>WebGroups</span><span>{topology.webGroups.length}</span></div>
+          <div className="flex justify-between"><span>ThreatGroups</span><span>{topology.threatGroups.length}</span></div>
+          <div className="flex justify-between"><span>GeoGroups</span><span>{topology.geoGroups.length}</span></div>
+          <div className="flex justify-between"><span>Policies</span><span>{topology.policies.length}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="w-80 border-l border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-col">
+      <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
+        <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Inspector</h2>
+        <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+      {selectedItem ? (
+        <ItemEditor
+          key={`${selectedItem.type}:${selectedItem.id}`}
+          topology={topology}
+          selectedItem={selectedItem}
+          onBack={() => onSelectPolicy(null)}
+          onSave={(data) => onUpdateItem(selectedItem.type, selectedItem.id, data)}
+          onDelete={() => onDeleteItem(selectedItem.type, selectedItem.id)}
+        />
+      ) : (
+        <div className="flex-1 overflow-y-auto p-4">
+          {renderCellView()}
+        </div>
+      )}
     </div>
   );
 }
