@@ -671,6 +671,7 @@ export default function App() {
         topology={topology}
         selectedCell={selectedCell}
         selectedItem={selectedItem}
+        aiProfile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)}
         onClose={() => {
           setSelectedCell(null);
           setSelectedItem(null);

@@ -1,11 +1,15 @@
 import { useState, useMemo } from 'react';
-import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock } from 'lucide-react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock, Sparkles, Loader2 } from 'lucide-react';
 import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
+import type { AIProfile, AIMessage } from '../../lib/ai/types';
+import { streamChat } from '../../lib/ai/client';
+import { SYSTEM_PROMPT_EXPLAIN, buildExplainPrompt } from '../../lib/ai/prompts';
 
 interface InspectorPanelProps {
   topology: DcfPolicyModel;
   selectedCell: { srcId: string; dstId: string } | null;
   selectedItem: { type: string; id: string; srcId?: string; dstId?: string } | null;
+  aiProfile?: AIProfile | null;
   onClose: () => void;
   onUpdateItem: (itemType: string, itemId: string, data: Record<string, unknown>) => void;
   onDeleteItem: (itemType: string, itemId: string) => void;
@@ -235,12 +239,13 @@ function directionLabel(dir: string) {
 interface ItemEditorProps {
   topology: DcfPolicyModel;
   selectedItem: { type: string; id: string; srcId?: string; dstId?: string };
+  aiProfile?: AIProfile | null;
   onBack: () => void;
   onSave: (data: Record<string, unknown>) => void;
   onDelete: () => void;
 }
 
-function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEditorProps) {
+function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelete }: ItemEditorProps) {
   const initialForm = useMemo(() => {
     switch (selectedItem.type) {
       case 'policy': {
@@ -285,6 +290,8 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
 
   const [form, setForm] = useState<Record<string, unknown>>(initialForm);
   const [dirty, setDirty] = useState(selectedItem.id === '__new__');
+  const [explanation, setExplanation] = useState('');
+  const [explaining, setExplaining] = useState(false);
 
   const updateField = (key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -298,6 +305,28 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
 
   const p = form;
   const isNew = selectedItem.id === '__new__';
+
+  const handleExplain = async () => {
+    if (!aiProfile) return;
+    setExplaining(true);
+    setExplanation('');
+
+    const systemMsg: AIMessage = { role: 'system', content: SYSTEM_PROMPT_EXPLAIN };
+    const userMsg: AIMessage = { role: 'user', content: buildExplainPrompt(JSON.stringify(form, null, 2)) };
+
+    let text = '';
+    try {
+      for await (const chunk of streamChat(aiProfile, [systemMsg, userMsg])) {
+        if (chunk.done) break;
+        text += chunk.content;
+        setExplanation(text);
+      }
+    } catch (err) {
+      setExplanation(err instanceof Error ? err.message : 'Failed to explain');
+    } finally {
+      setExplaining(false);
+    }
+  };
 
   const renderPolicyForm = () => (
     <div className="space-y-1">
@@ -325,6 +354,25 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
       <Select label="GeoGroup" value={String(p.geoGroup ?? '')} options={[{ value: '', label: 'None' }, ...geoGroupOptions]} onChange={(v) => updateField('geoGroup', v || undefined)} />
       <MultiSelect label="Exclude Source Groups" selected={(p.srcExcludeGroupIds as string[]) || []} options={smartGroupOptions} onChange={(v) => updateField('srcExcludeGroupIds', v)} />
       <MultiSelect label="Exclude Destination Groups" selected={(p.dstExcludeGroupIds as string[]) || []} options={smartGroupOptions} onChange={(v) => updateField('dstExcludeGroupIds', v)} />
+
+      {/* AI Explain */}
+      {aiProfile && selectedItem.id !== '__new__' && (
+        <div className="pt-2">
+          <button
+            onClick={handleExplain}
+            disabled={explaining}
+            className="flex items-center gap-1.5 text-[10px] text-[var(--color-accent-purple)] hover:underline disabled:opacity-50"
+          >
+            {explaining ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+            {explaining ? 'Analyzing...' : 'Explain this policy'}
+          </button>
+          {explanation && (
+            <div className="mt-2 p-2.5 rounded text-xs text-[var(--color-text-secondary)] bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20">
+              {explanation}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -452,7 +500,7 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
 
 // ---------- Main Inspector Panel ----------
 
-export default function InspectorPanel({ topology, selectedCell, selectedItem, onClose, onUpdateItem, onDeleteItem, onCreateItem, onSelectPolicy }: InspectorPanelProps) {
+export default function InspectorPanel({ topology, selectedCell, selectedItem, aiProfile, onClose, onUpdateItem, onDeleteItem, onCreateItem, onSelectPolicy }: InspectorPanelProps) {
   const cellPolicies = useMemo(() => {
     if (!selectedCell) return [];
     return topology.policies
@@ -595,6 +643,7 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, o
           key={`${selectedItem.type}:${selectedItem.id}`}
           topology={topology}
           selectedItem={selectedItem}
+          aiProfile={aiProfile}
           onBack={() => onSelectPolicy(null)}
           onSave={(data) => onUpdateItem(selectedItem.type, selectedItem.id, data)}
           onDelete={() => onDeleteItem(selectedItem.type, selectedItem.id)}
