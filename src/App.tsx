@@ -800,7 +800,9 @@ export default function App() {
       {/* Policy Evaluator */}
       {showEvaluator && (
         <EvaluatorPanel
+          topology={topology}
           findings={evaluateTopology(topology)}
+          aiProfile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)}
           onClose={() => setShowEvaluator(false)}
           onSelectPolicy={(policyId) => {
             setShowEvaluator(false);
@@ -809,6 +811,54 @@ export default function App() {
           onSelectGroup={(groupId) => {
             setShowEvaluator(false);
             setSelectedItem({ type: 'smartGroup', id: groupId });
+          }}
+          onApplyFix={(finding) => {
+            // Apply simple fixes automatically
+            if (finding.id.startsWith('shadow-')) {
+              const shadowedId = finding.affectedPolicyIds?.[0];
+              if (shadowedId) {
+                setTopology((prev) => ({ ...prev, policies: prev.policies.filter((p) => p.id !== shadowedId) }));
+              }
+            } else if (finding.id.startsWith('missing-deny')) {
+              const maxPriority = topology.policies.length > 0
+                ? Math.max(...topology.policies.map((p) => p.priority))
+                : 0;
+              const newPolicy: DcfPolicy = {
+                id: `pol-${Date.now()}`,
+                name: 'Catch-All Deny',
+                priority: maxPriority + 10,
+                srcGroupId: 'sg-any',
+                dstGroupId: 'sg-any',
+                action: 'deny',
+                direction: 'any',
+                protocol: 'any',
+                logging: true,
+              };
+              setTopology((prev) => ({ ...prev, policies: [...prev.policies, newPolicy] }));
+            } else if (finding.id.startsWith('unused-')) {
+              const groupId = finding.affectedGroupIds?.[0];
+              if (groupId) {
+                setTopology((prev) => ({
+                  ...prev,
+                  smartGroups: prev.smartGroups.filter((g) => g.id !== groupId),
+                }));
+              }
+            } else if (finding.id.startsWith('missing-log-')) {
+              const policyId = finding.affectedPolicyIds?.[0];
+              if (policyId) {
+                setTopology((prev) => ({
+                  ...prev,
+                  policies: prev.policies.map((p) => (p.id === policyId ? { ...p, logging: true } as DcfPolicy : p)),
+                }));
+              }
+            } else {
+              // For complex fixes, just open the affected item
+              if (finding.affectedPolicyIds?.[0]) {
+                setSelectedItem({ type: 'policy', id: finding.affectedPolicyIds[0] });
+              } else if (finding.affectedGroupIds?.[0]) {
+                setSelectedItem({ type: 'smartGroup', id: finding.affectedGroupIds[0] });
+              }
+            }
           }}
         />
       )}
