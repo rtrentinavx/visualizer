@@ -14,6 +14,7 @@ import {
   X,
   GitGraph,
   ShieldAlert,
+  Bot,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -21,12 +22,15 @@ import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
 import { evaluateTopology } from './lib/policyEvaluator';
+import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
+import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
+import AISettingsPanel from './components/panels/AISettingsPanel';
 
 type ViewMode = 'matrix' | 'graph' | 'traffic';
 
@@ -62,6 +66,15 @@ export default function App() {
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [showEvaluator, setShowEvaluator] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
+  const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
+
+  // Load AI settings on mount
+  useEffect(() => {
+    loadAISettings().then((saved) => {
+      if (saved) setAISettings(saved);
+    }).catch(() => {});
+  }, []);
 
   // Load encrypted topology on mount
   useEffect(() => {
@@ -508,6 +521,29 @@ export default function App() {
               <span className="hidden lg:inline">Evaluate</span>
             </button>
 
+            {/* AI Settings */}
+            <button
+              onClick={() => setShowAISettings(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="AI Settings"
+            >
+              <Bot size={14} />
+              <span className="hidden lg:inline">AI</span>
+            </button>
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -746,6 +782,19 @@ export default function App() {
             setShowEvaluator(false);
             setSelectedItem({ type: 'smartGroup', id: groupId });
           }}
+        />
+      )}
+
+      {/* AI Settings */}
+      {showAISettings && (
+        <AISettingsPanel
+          settings={aiSettings}
+          onSave={(settings) => {
+            setAISettings(settings);
+            saveAISettings(settings).catch(() => {});
+            setShowAISettings(false);
+          }}
+          onClose={() => setShowAISettings(false)}
         />
       )}
     </div>
