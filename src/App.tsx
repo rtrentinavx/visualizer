@@ -15,6 +15,7 @@ import {
   GitGraph,
   ShieldAlert,
   Bot,
+  Sparkles,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -31,6 +32,7 @@ import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
 import AISettingsPanel from './components/panels/AISettingsPanel';
+import AIChatPanel from './components/panels/AIChatPanel';
 
 type ViewMode = 'matrix' | 'graph' | 'traffic';
 
@@ -67,6 +69,7 @@ export default function App() {
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [showEvaluator, setShowEvaluator] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
+  const [showAIChat, setShowAIChat] = useState(false);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
 
   // Load AI settings on mount
@@ -544,6 +547,31 @@ export default function App() {
               <span className="hidden lg:inline">AI</span>
             </button>
 
+            {/* Ask AI */}
+            {aiSettings.activeProfileId && (
+              <button
+                onClick={() => setShowAIChat(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  borderColor: 'var(--color-border-subtle)',
+                  color: 'var(--color-text-secondary)',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                  e.currentTarget.style.color = 'var(--color-text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                  e.currentTarget.style.color = 'var(--color-text-secondary)';
+                }}
+                title="Ask AI to create a policy"
+              >
+                <Sparkles size={14} />
+                <span className="hidden lg:inline">Ask AI</span>
+              </button>
+            )}
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -795,6 +823,45 @@ export default function App() {
             setShowAISettings(false);
           }}
           onClose={() => setShowAISettings(false)}
+        />
+      )}
+
+      {/* AI Chat */}
+      {showAIChat && aiSettings.activeProfileId && (
+        <AIChatPanel
+          topology={topology}
+          profile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)!}
+          onClose={() => setShowAIChat(false)}
+          onApplyPolicy={(data) => {
+            // Resolve group names to IDs
+            const srcName = String(data.srcGroupName || '');
+            const dstName = String(data.dstGroupName || '');
+            const srcGroup = topology.smartGroups.find((g) => g.name.toLowerCase() === srcName.toLowerCase());
+            const dstGroup = topology.smartGroups.find((g) => g.name.toLowerCase() === dstName.toLowerCase());
+
+            if (!srcGroup || !dstGroup) {
+              alert(`Groups not found: ${srcName} → ${dstName}. Create them first.`);
+              return;
+            }
+
+            const newPolicy: DcfPolicy = {
+              id: `pol-${Date.now()}`,
+              name: String(data.name || 'AI Policy'),
+              priority: Number(data.priority) || 100,
+              srcGroupId: srcGroup.id,
+              dstGroupId: dstGroup.id,
+              action: (String(data.action || 'allow') as 'allow' | 'deny' | 'learned'),
+              direction: (String(data.direction || 'any') as 'inbound' | 'outbound' | 'any'),
+              protocol: (String(data.protocol || 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any'),
+              ports: data.ports ? String(data.ports) : undefined,
+              logging: Boolean(data.logging),
+              decrypt: Boolean(data.decrypt),
+            };
+
+            setTopology((prev) => ({ ...prev, policies: [...prev.policies, newPolicy] }));
+            setShowAIChat(false);
+            setSelectedItem({ type: 'policy', id: newPolicy.id });
+          }}
         />
       )}
     </div>
