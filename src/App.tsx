@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  Network,
   LayoutGrid,
   Activity,
   Search,
@@ -16,7 +15,7 @@ import {
   GitGraph,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
-import { demoTopology } from './data/demoTopology';
+
 import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
@@ -37,7 +36,14 @@ interface SelectedItem {
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const [topology, setTopology] = useState<DcfPolicyModel>(demoTopology);
+  const [topology, setTopology] = useState<DcfPolicyModel>({
+    smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any', workloadCount: 0 }],
+    webGroups: [],
+    threatGroups: [],
+    geoGroups: [],
+    policies: [],
+    flows: [],
+  });
   const [viewMode, setViewMode] = useState<ViewMode>('matrix');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ srcId: string; dstId: string } | null>(null);
@@ -257,19 +263,6 @@ export default function App() {
     });
   };
 
-  const handleResetDemo = () => {
-    setConfirmModal({
-      open: true,
-      title: 'Reset to Demo',
-      message: 'This will replace your current policy model with the demo data. This action cannot be undone.',
-      onConfirm: () => {
-        setTopology(demoTopology);
-        setSelectedItem(null);
-        setConfirmModal((prev) => ({ ...prev, open: false }));
-      },
-    });
-  };
-
   const handleClearAll = () => {
     setConfirmModal({
       open: true,
@@ -382,27 +375,6 @@ export default function App() {
               <span className="hidden lg:inline">Group</span>
             </button>
 
-            {/* Reset Demo */}
-            <button
-              onClick={handleResetDemo}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
-              title="Reset to Demo"
-            >
-              <Network size={14} />
-            </button>
 
             {/* Clear All */}
             <button
