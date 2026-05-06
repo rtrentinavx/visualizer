@@ -13,17 +13,20 @@ import {
   Plus,
   X,
   GitGraph,
+  ShieldAlert,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
 import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
+import { evaluateTopology } from './lib/policyEvaluator';
 import { useTheme } from './lib/useTheme';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
+import EvaluatorPanel from './components/panels/EvaluatorPanel';
 
 type ViewMode = 'matrix' | 'graph' | 'traffic';
 
@@ -58,6 +61,7 @@ export default function App() {
     message: string;
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  const [showEvaluator, setShowEvaluator] = useState(false);
 
   // Load encrypted topology on mount
   useEffect(() => {
@@ -481,6 +485,29 @@ export default function App() {
               <span className="hidden lg:inline">TF Export</span>
             </button>
 
+            {/* Evaluator */}
+            <button
+              onClick={() => setShowEvaluator(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Policy Evaluator"
+            >
+              <ShieldAlert size={14} />
+              <span className="hidden lg:inline">Evaluate</span>
+            </button>
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
@@ -703,6 +730,22 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Policy Evaluator */}
+      {showEvaluator && (
+        <EvaluatorPanel
+          findings={evaluateTopology(topology)}
+          onClose={() => setShowEvaluator(false)}
+          onSelectPolicy={(policyId) => {
+            setShowEvaluator(false);
+            setSelectedItem({ type: 'policy', id: policyId });
+          }}
+          onSelectGroup={(groupId) => {
+            setShowEvaluator(false);
+            setSelectedItem({ type: 'smartGroup', id: groupId });
+          }}
+        />
       )}
     </div>
   );
