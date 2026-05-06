@@ -7,6 +7,7 @@ interface PolicyMatrixProps {
   searchQuery: string;
   selectedCell: { srcId: string; dstId: string } | null;
   onSelectCell: (srcId: string, dstId: string) => void;
+  onSelectGroup: (groupId: string) => void;
 }
 
 function directionIcon(dir: PolicyDirection) {
@@ -21,7 +22,7 @@ function directionLabel(dir: PolicyDirection) {
   return 'any';
 }
 
-export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell }: PolicyMatrixProps) {
+export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell, onSelectGroup }: PolicyMatrixProps) {
   const f = searchQuery.toLowerCase();
 
   const { groups, matrix } = useMemo(() => {
@@ -73,21 +74,29 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
             {/* Header row */}
             <div className="p-2" />
             {filteredGroups.map((g) => (
-              <div key={g.id} className="p-2 text-center">
+              <button
+                key={g.id}
+                onClick={() => onSelectGroup(g.id)}
+                className="p-2 text-center rounded hover:bg-[var(--color-surface-elevated)] transition-colors cursor-pointer"
+              >
                 <div className="flex flex-col items-center gap-1">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: g.color }} />
                   <span className="text-[10px] font-medium text-[var(--color-text-secondary)] leading-tight">{g.name}</span>
                 </div>
-              </div>
+              </button>
             ))}
 
             {/* Rows */}
             {filteredGroups.map((src) => (
               <>
-                <div key={`row-${src.id}`} className="flex items-center gap-2 px-2 py-2">
+                <button
+                  key={`row-${src.id}`}
+                  onClick={() => onSelectGroup(src.id)}
+                  className="flex items-center gap-2 px-2 py-2 rounded hover:bg-[var(--color-surface-elevated)] transition-colors text-left cursor-pointer"
+                >
                   <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: src.color }} />
                   <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{src.name}</span>
-                </div>
+                </button>
                 {filteredGroups.map((dst) => {
                   const policies = matrix[src.id]?.[dst.id] ?? [];
                   const isSelf = src.id === dst.id;
