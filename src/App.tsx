@@ -584,6 +584,7 @@ export default function App() {
               selectedCell={selectedCell}
               onSelectCell={handleSelectCell}
               onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+              onSelectPolicy={handleSelectPolicy}
             />
           ) : viewMode === 'graph' ? (
             <PolicyGraph

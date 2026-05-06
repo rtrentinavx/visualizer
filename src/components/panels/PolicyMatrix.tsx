@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban, LayoutGrid } from 'lucide-react';
+import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban, LayoutGrid, Plus } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel, PolicyDirection } from '../../types/dcf';
 
 interface PolicyMatrixProps {
@@ -8,6 +8,7 @@ interface PolicyMatrixProps {
   selectedCell: { srcId: string; dstId: string } | null;
   onSelectCell: (srcId: string, dstId: string) => void;
   onSelectGroup: (groupId: string) => void;
+  onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
 }
 
 function directionIcon(dir: PolicyDirection) {
@@ -22,7 +23,7 @@ function directionLabel(dir: PolicyDirection) {
   return 'any';
 }
 
-export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell, onSelectGroup }: PolicyMatrixProps) {
+export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
   const f = searchQuery.toLowerCase();
 
   const { groups, matrix } = useMemo(() => {
@@ -52,13 +53,21 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
     );
   }, [groups, f]);
 
+  const handleCellClick = (srcId: string, dstId: string, hasPolicies: boolean) => {
+    if (hasPolicies) {
+      onSelectCell(srcId, dstId);
+    } else {
+      onSelectPolicy('__new__', srcId, dstId);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            Click any cell to view or edit policies
+            Click a cell with policies to view them. Click an empty cell to create one.
           </p>
         </div>
         <div className="text-xs text-[var(--color-text-muted)]">
@@ -115,12 +124,13 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
                   const sorted = [...policies].sort((a, b) => a.priority - b.priority);
                   const effective = sorted[0];
                   const isSelected = selectedCell?.srcId === src.id && selectedCell?.dstId === dst.id;
+                  const isEmpty = !isSelf && sorted.length === 0;
 
                   return (
                     <div
                       key={`${src.id}-${dst.id}`}
-                      onClick={() => onSelectCell(src.id, dst.id)}
-                      className={`flex flex-col gap-1 p-2 rounded border cursor-pointer transition-colors ${
+                      onClick={() => handleCellClick(src.id, dst.id, !isEmpty)}
+                      className={`group relative flex flex-col gap-1 p-2 rounded border cursor-pointer transition-colors ${
                         isSelected
                           ? 'ring-2 ring-[var(--color-accent-blue)]'
                           : ''
@@ -131,18 +141,29 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
                             : effective.action === 'learned'
                             ? 'bg-[var(--color-accent-purple)]/10 border-[var(--color-accent-purple)]/30'
                             : 'bg-red-500/10 border-red-500/30'
-                          : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)] hover:border-[var(--color-text-muted)]'
+                          : isEmpty
+                          ? 'bg-[var(--color-surface)] border-dashed border-[var(--color-border-subtle)] hover:border-[var(--color-accent-blue)] hover:bg-[var(--color-accent-blue)]/5'
+                          : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)]'
                       }`}
                       title={
-                        sorted.length > 0
+                        isEmpty
+                          ? 'Click to create a new policy'
+                          : sorted.length > 0
                           ? sorted.map((p) => `#${p.priority} ${p.action.toUpperCase()} ${directionLabel(p.direction)} ${p.protocol}/${p.ports || 'any'}`).join(' \n')
-                          : 'No explicit policy — click to create one'
+                          : ''
                       }
                     >
+                      {/* Empty cell hover: + icon */}
+                      {isEmpty && (
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus size={16} className="text-[var(--color-accent-blue)]" />
+                        </div>
+                      )}
+
                       {isSelf ? (
                         <span className="text-[10px] text-[var(--color-text-muted)]">—</span>
-                      ) : sorted.length === 0 ? (
-                        <span className="text-[10px] text-[var(--color-text-muted)] opacity-50">∅</span>
+                      ) : isEmpty ? (
+                        <span className="text-[10px] text-[var(--color-text-muted)] opacity-50 group-hover:opacity-0 transition-opacity">∅</span>
                       ) : (
                         <div className="flex flex-col gap-1">
                           {sorted.map((p) => (

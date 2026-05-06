@@ -245,9 +245,12 @@ function ItemEditor({ topology, selectedItem, onBack, onSave, onDelete }: ItemEd
     switch (selectedItem.type) {
       case 'policy': {
         if (selectedItem.id === '__new__') {
+          const maxPriority = topology.policies.length > 0
+            ? Math.max(...topology.policies.map((p) => p.priority))
+            : 0;
           return {
             name: 'New Policy',
-            priority: 100,
+            priority: maxPriority + 10,
             srcGroupId: selectedItem.srcId || 'sg-any',
             dstGroupId: selectedItem.dstId || 'sg-any',
             action: 'allow',
