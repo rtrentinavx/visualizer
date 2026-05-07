@@ -1,8 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { BedrockRuntimeClient, ConverseStreamCommand, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 
 interface ProxyRequest {
   provider: string;
   apiKey: string;
+  apiSecret?: string;
   apiBaseUrl?: string;
   model: string;
   messages: Array<{ role: string; content: string }>;
@@ -15,10 +17,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { provider, apiKey, apiBaseUrl, model, messages, temperature, stream } = req.body as ProxyRequest;
+  const { provider, apiKey, apiSecret, apiBaseUrl, model, messages, temperature, stream } = req.body as ProxyRequest;
 
-  if (!provider || !apiKey || !model) {
-    return res.status(400).json({ error: 'Missing required fields: provider, apiKey, model' });
+  if (!provider || !model) {
+    return res.status(400).json({ error: 'Missing required fields: provider, model' });
+  }
+
+  const needsKey = provider !== 'ollama' && provider !== 'lmstudio';
+  if (needsKey && !apiKey) {
+    return res.status(400).json({ error: 'Missing required field: apiKey' });
+  }
+  if (provider === 'bedrock' && !apiSecret) {
+    return res.status(400).json({ error: 'Missing required field: apiSecret for Bedrock' });
   }
 
   try {
@@ -31,6 +41,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return await proxyGoogle(res, apiKey, model, messages, temperature);
       case 'ollama':
         return await proxyOllama(res, apiBaseUrl, model, messages, temperature, stream);
+      case 'lmstudio':
+        return await proxyLMStudio(res, apiBaseUrl, apiKey, model, messages, temperature, stream);
+      case 'bedrock':
+        return await proxyBedrock(res, apiKey, apiSecret!, apiBaseUrl, model, messages, temperature, stream);
       case 'custom':
         return await proxyCustom(res, apiBaseUrl, apiKey, model, messages, temperature, stream);
       default:
@@ -273,6 +287,117 @@ async function proxyOllama(
     reader.releaseLock();
   }
 
+  res.end();
+}
+
+// ---------- LM Studio (OpenAI-compatible local) ----------
+
+async function proxyLMStudio(
+  res: VercelResponse,
+  apiBaseUrl: string,
+  apiKey: string,
+  model: string,
+  messages: Array<{ role: string; content: string }>,
+  temperature: number,
+  stream: boolean
+) {
+  const base = apiBaseUrl || 'http://localhost:1234';
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers['Authorization'] = `Bearer ${apiKey}`;
+  }
+
+  const response = await fetch(`${base}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ model, messages, temperature, stream }),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    return res.status(response.status).send(error);
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const reader = response.body!.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  res.end();
+}
+
+// ---------- AWS Bedrock ----------
+
+async function proxyBedrock(
+  res: VercelResponse,
+  accessKeyId: string,
+  secretAccessKey: string,
+  region: string | undefined,
+  modelId: string,
+  messages: Array<{ role: string; content: string }>,
+  temperature: number,
+  stream: boolean
+) {
+  const client = new BedrockRuntimeClient({
+    region: region || 'us-east-1',
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  const systemMsg = messages.find((m) => m.role === 'system');
+  const chatMessages = messages
+    .filter((m) => m.role !== 'system')
+    .map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: [{ text: m.content }],
+    }));
+
+  if (!stream) {
+    const command = new ConverseCommand({
+      modelId,
+      messages: chatMessages,
+      system: systemMsg ? [{ text: systemMsg.content }] : undefined,
+      inferenceConfig: { temperature },
+    });
+    const response = await client.send(command);
+    const text = response.output?.message?.content?.[0]?.text || '';
+    return res.json({ content: text });
+  }
+
+  const command = new ConverseStreamCommand({
+    modelId,
+    messages: chatMessages,
+    system: systemMsg ? [{ text: systemMsg.content }] : undefined,
+    inferenceConfig: { temperature },
+  });
+
+  const response = await client.send(command);
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  for await (const chunk of response.stream) {
+    if (chunk.contentBlockDelta) {
+      const text = chunk.contentBlockDelta.delta?.text || '';
+      if (text) {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] }) }\n\n`);
+      }
+    }
+  }
+
+  res.write('data: [DONE]\n\n');
   res.end();
 }
 

@@ -1,4 +1,4 @@
-export type AIProvider = 'openai' | 'anthropic' | 'google' | 'ollama' | 'custom';
+export type AIProvider = 'openai' | 'anthropic' | 'google' | 'ollama' | 'lmstudio' | 'bedrock' | 'custom';
 
 export interface AIProfile {
   id: string;
@@ -7,6 +7,7 @@ export interface AIProfile {
   model: string;
   apiKey: string;
   apiBaseUrl?: string;
+  apiSecret?: string;
   temperature: number;
 }
 

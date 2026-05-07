@@ -95,7 +95,9 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
     });
   };
 
-  const canSaveEditing = editingProfile && editingProfile.name.trim() && editingProfile.apiKey.trim();
+  const needsKey = editingProfile && editingProfile.provider !== 'ollama' && editingProfile.provider !== 'lmstudio';
+  const needsSecret = editingProfile && editingProfile.provider === 'bedrock';
+  const canSaveEditing = editingProfile && editingProfile.name.trim() && (!needsKey || editingProfile.apiKey.trim()) && (!needsSecret || (editingProfile.apiSecret || '').trim());
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -216,7 +218,7 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                     type={showKey ? 'text' : 'password'}
                     value={editingProfile.apiKey}
                     onChange={(e) => updateEditingField('apiKey', e.target.value)}
-                    placeholder="sk-..."
+                    placeholder={editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' ? 'Optional for local models' : editingProfile.provider === 'bedrock' ? 'AKIA...' : 'sk-...'}
                     className="flex-1 px-2 py-1.5 rounded text-xs border outline-none font-mono"
                     style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
                   />
@@ -230,15 +232,41 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                 </div>
               </div>
 
-              {/* Base URL (Ollama/Custom) */}
-              {(editingProfile.provider === 'ollama' || editingProfile.provider === 'custom') && (
+              {/* Secret Access Key (Bedrock) */}
+              {editingProfile.provider === 'bedrock' && (
                 <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Base URL</label>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Secret Access Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      type={showKey ? 'text' : 'password'}
+                      value={editingProfile.apiSecret || ''}
+                      onChange={(e) => updateEditingField('apiSecret', e.target.value)}
+                      placeholder='...'
+                      className="flex-1 px-2 py-1.5 rounded text-xs border outline-none font-mono"
+                      style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    />
+                    <button
+                      onClick={() => setShowKey((v) => !v)}
+                      className="px-2 py-1 rounded text-[10px] border"
+                      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
+                    >
+                      {showKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Base URL / Region */}
+              {(editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' || editingProfile.provider === 'bedrock' || editingProfile.provider === 'custom') && (
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">
+                    {editingProfile.provider === 'bedrock' ? 'AWS Region' : 'Base URL'}
+                  </label>
                   <input
                     type="text"
                     value={editingProfile.apiBaseUrl || providerConfig?.defaultBaseUrl || ''}
                     onChange={(e) => updateEditingField('apiBaseUrl', e.target.value)}
-                    placeholder="http://localhost:11434"
+                    placeholder={editingProfile.provider === 'bedrock' ? 'us-east-1' : editingProfile.provider === 'lmstudio' ? 'http://localhost:1234' : 'http://localhost:11434'}
                     className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
                     style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
                   />
