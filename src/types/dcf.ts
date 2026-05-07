@@ -66,6 +66,7 @@ export interface TrafficFlow {
   bytes: number;
   packets: number;
   allowed: boolean;
+  direction?: PolicyDirection;
   timestamp: string;
 }
 

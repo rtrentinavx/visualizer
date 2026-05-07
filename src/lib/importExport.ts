@@ -403,3 +403,96 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     flows: [],
   };
 }
+
+
+// ---------- Traffic Flow Import / Export ----------
+
+import type { TrafficFlow } from '../types/dcf';
+
+export function exportFlowsJSON(flows: TrafficFlow[]): string {
+  return JSON.stringify(flows, null, 2);
+}
+
+export function downloadFlowsJSON(flows: TrafficFlow[]): void {
+  const content = exportFlowsJSON(flows);
+  const blob = new Blob([content], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dcf-flows.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function exportFlowsCSV(flows: TrafficFlow[], topology: DcfPolicyModel): string {
+  const headers = ['timestamp', 'src_group', 'dst_group', 'protocol', 'port', 'bytes', 'packets', 'allowed'];
+  const rows = flows.map((f) => {
+    const src = topology.smartGroups.find((g) => g.id === f.srcGroupId)?.name || f.srcGroupId;
+    const dst = topology.smartGroups.find((g) => g.id === f.dstGroupId)?.name || f.dstGroupId;
+    return [f.timestamp, src, dst, f.protocol, f.port, f.bytes, f.packets, f.allowed].join(',');
+  });
+  return [headers.join(','), ...rows].join('\n');
+}
+
+export function downloadFlowsCSV(flows: TrafficFlow[], topology: DcfPolicyModel): void {
+  const content = exportFlowsCSV(flows, topology);
+  const blob = new Blob([content], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'dcf-flows.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function importFlowsJSON(json: string): TrafficFlow[] {
+  const parsed = JSON.parse(json);
+  if (!Array.isArray(parsed)) throw new Error('Expected an array of flows');
+  return parsed.map((f, i) => ({
+    id: f.id || `flow-${Date.now()}-${i}`,
+    srcGroupId: f.srcGroupId || 'sg-any',
+    dstGroupId: f.dstGroupId || 'sg-any',
+    protocol: f.protocol || 'tcp',
+    port: Number(f.port) || 0,
+    bytes: Number(f.bytes) || 0,
+    packets: Number(f.packets) || 0,
+    allowed: Boolean(f.allowed),
+    timestamp: f.timestamp || new Date().toISOString(),
+  }));
+}
+
+export function importFlowsCSV(csv: string): TrafficFlow[] {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const rows = lines.slice(1);
+
+  const getIndex = (name: string) => headers.findIndex((h) => h.includes(name));
+  const srcIdx = getIndex('src');
+  const dstIdx = getIndex('dst');
+  const protoIdx = getIndex('protocol');
+  const portIdx = getIndex('port');
+  const bytesIdx = getIndex('bytes');
+  const pktsIdx = getIndex('packet');
+  const allowedIdx = getIndex('allowed');
+  const tsIdx = getIndex('timestamp');
+
+  return rows.map((row, i) => {
+    const cols = row.split(',').map((c) => c.trim());
+    return {
+      id: `flow-${Date.now()}-${i}`,
+      srcGroupId: srcIdx >= 0 ? cols[srcIdx] : 'sg-any',
+      dstGroupId: dstIdx >= 0 ? cols[dstIdx] : 'sg-any',
+      protocol: (protoIdx >= 0 ? cols[protoIdx] : 'tcp') as TrafficFlow['protocol'],
+      port: Number(portIdx >= 0 ? cols[portIdx] : 0) || 0,
+      bytes: Number(bytesIdx >= 0 ? cols[bytesIdx] : 0) || 0,
+      packets: Number(pktsIdx >= 0 ? cols[pktsIdx] : 0) || 0,
+      allowed: allowedIdx >= 0 ? cols[allowedIdx].toLowerCase() === 'true' || cols[allowedIdx].toLowerCase() === 'yes' || cols[allowedIdx] === '1' : false,
+      timestamp: tsIdx >= 0 ? cols[tsIdx] : new Date().toISOString(),
+    };
+  });
+}

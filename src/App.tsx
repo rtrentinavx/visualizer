@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   LayoutGrid,
+  Activity,
   Search,
   Sun,
   Moon,
@@ -37,6 +38,7 @@ import AISettingsPanel from './components/panels/AISettingsPanel';
 import AIChatPanel from './components/panels/AIChatPanel';
 import ImportPanel from './components/panels/ImportPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
+import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 
 type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator';
 
@@ -372,7 +374,17 @@ export default function App() {
                 <GitGraph size={14} />
                 <span className="hidden sm:inline">Graph</span>
               </button>
-              {/* Traffic tab disabled — see ROADMAP.md */}
+              <button
+                onClick={() => handleViewChange('traffic')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'traffic'
+                    ? 'bg-[var(--color-aviatrix)] text-white'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
+                }`}
+              >
+                <Activity size={14} />
+                <span className="hidden sm:inline">Traffic</span>
+              </button>
               <button
                 onClick={() => handleViewChange('simulator')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -743,6 +755,24 @@ export default function App() {
             />
           ) : viewMode === 'simulator' ? (
             <PolicySimulator topology={topology} />
+          ) : viewMode === 'traffic' ? (
+            <TrafficFlowPanel
+              topology={topology}
+              filter={searchQuery}
+              onCreateFlow={(flow) => {
+                const newFlow = { ...flow, id: `flow-${Date.now()}` };
+                setTopology((prev) => ({ ...prev, flows: [...prev.flows, newFlow] }));
+              }}
+              onUpdateFlow={(id, data) => {
+                setTopology((prev) => ({
+                  ...prev,
+                  flows: prev.flows.map((f) => (f.id === id ? { ...f, ...data } : f)),
+                }));
+              }}
+              onDeleteFlow={(id) => {
+                setTopology((prev) => ({ ...prev, flows: prev.flows.filter((f) => f.id !== id) }));
+              }}
+            />
           ) : (
             <PolicyMatrix
               topology={topology}
