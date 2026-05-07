@@ -399,16 +399,16 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap justify-end max-w-[50%]">
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Search */}
-            <div className="relative hidden lg:block">
+            <div className="relative hidden xl:block">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search..."
-                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-40 border outline-none transition-colors"
+                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-36 border outline-none transition-colors"
                 style={{
                   backgroundColor: 'var(--color-input-bg)',
                   borderColor: 'var(--color-input-border)',
@@ -419,72 +419,44 @@ export default function App() {
               />
             </div>
 
+            {/* Divider */}
+            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
+
             {/* Add Group */}
             <button
               onClick={() => handleCreateItem('smartGroup', {})}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Add Group"
             >
               <Plus size={14} />
-              <span className="hidden lg:inline">Group</span>
             </button>
-
 
             {/* Clear All */}
             <button
               onClick={handleClearAll}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = '#ef4444';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = '#ef4444'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Clear All"
             >
               <X size={14} />
             </button>
 
+            {/* Divider */}
+            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
+
             {/* Cloud Save */}
             <button
               onClick={handleSaveToCloud}
               disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') {
-                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors disabled:opacity-50 hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)'; }}
               title={cloudSyncStatus === 'saved' ? 'Saved to cloud' : cloudSyncStatus === 'error' ? 'Sync failed' : 'Save to Cloud'}
             >
               {cloudSyncStatus === 'saving' ? (
@@ -500,22 +472,10 @@ export default function App() {
             <button
               onClick={handleLoadFromCloud}
               disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') {
-                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors disabled:opacity-50 hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Load from Cloud"
             >
               {cloudSyncStatus === 'loading' ? (
@@ -525,162 +485,96 @@ export default function App() {
               )}
             </button>
 
+            {/* Divider */}
+            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
+
+            {/* Import */}
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="Import Topology"
+            >
+              <Upload size={14} />
+            </button>
+
             {/* JSON Export */}
             <button
               onClick={() => downloadTopologyJSON(topology)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Export JSON"
             >
               <FileCode size={14} />
             </button>
 
-            {/* Import */}
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
-              title="Import Topology"
-            >
-              <Upload size={14} />
-              <span className="hidden lg:inline">Import</span>
-            </button>
-
             {/* Terraform Export */}
             <button
               onClick={() => setShowTerraformModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Export Terraform"
             >
               <FileCode size={14} />
-              <span className="hidden lg:inline">TF Export</span>
             </button>
+
+            {/* Divider */}
+            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
 
             {/* Evaluator */}
             <button
               onClick={() => setShowEvaluator(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="Policy Evaluator"
             >
               <ShieldAlert size={14} />
-              <span className="hidden lg:inline">Evaluate</span>
             </button>
 
             {/* AI Settings */}
             <button
               onClick={() => setShowAISettings(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              className="p-1.5 rounded-md border transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title="AI Settings"
             >
               <Bot size={14} />
-              <span className="hidden lg:inline">AI</span>
             </button>
 
             {/* Ask AI */}
             {aiSettings.activeProfileId && (
               <button
                 onClick={() => setShowAIChat(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-border-subtle)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                  e.currentTarget.style.color = 'var(--color-text-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                  e.currentTarget.style.color = 'var(--color-text-secondary)';
-                }}
-                title="Ask AI to create a policy"
+                className="p-1.5 rounded-md border transition-colors"
+                style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                title="Ask AI"
               >
                 <Sparkles size={14} />
-                <span className="hidden lg:inline">Ask AI</span>
               </button>
             )}
+
+            {/* Divider */}
+            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5" />
 
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
               className="p-1.5 rounded-md border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
               title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
               {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
@@ -690,20 +584,10 @@ export default function App() {
             <button
               onClick={() => setShowAboutModal(true)}
               className="p-1.5 rounded-md border transition-colors"
-              style={{
-                backgroundColor: 'var(--color-surface)',
-                borderColor: 'var(--color-border-subtle)',
-                color: 'var(--color-text-secondary)',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
-                e.currentTarget.style.color = 'var(--color-text-primary)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
-                e.currentTarget.style.color = 'var(--color-text-secondary)';
-              }}
-              title="About DCF Visualizer"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="About"
             >
               <HelpCircle size={14} />
             </button>
