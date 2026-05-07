@@ -807,24 +807,40 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <p>
-                The <strong>DCF Visualizer</strong> is an interactive design tool for Aviatrix Distributed Cloud Firewall policies.
-                It lets you model SmartGroups, WebGroups, ThreatGroups, GeoGroups, and the policies that govern traffic between them.
+                <strong>DCF Visualizer</strong> is an interactive design and validation tool for Aviatrix Distributed Cloud Firewall (DCF) policies.
+                Model SmartGroups, WebGroups, ThreatGroups, GeoGroups, and the policies that govern traffic between them — with real-time scoring and best-practice validation aligned to the official Aviatrix DCF Rule Configuration Guide.
               </p>
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Current Features</h3>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Policy Matrix with priority-aware cell rendering</li>
-                  <li>Traffic flow visualization</li>
-                  <li>Full policy editor with direction, protocol, ports, decrypt, threat/geo groups, web groups</li>
-                  <li>Terraform export for Aviatrix provider</li>
-                  <li>Encrypted localStorage persistence</li>
-                  <li>Cloud sync via Upstash Redis</li>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Views</h3>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li><strong>Matrix</strong> — Grid view of SmartGroup → SmartGroup policies with priority-aware rendering</li>
+                  <li><strong>Graph</strong> — Circular node layout with directed policy edges and Draw Policy mode</li>
+                  <li><strong>Traffic</strong> — Manual traffic flow logging with add/edit/delete and JSON/CSV import-export</li>
+                  <li><strong>Simulator</strong> — What-If traffic tester: pick src/dst/protocol/port and see which policy matches first</li>
                 </ul>
               </div>
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Security</h3>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Policy Lifecycle</h3>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li><strong>Create & Edit</strong> — Full policy editor with live score (0-100) and grade (F/D/C/B/A/S)</li>
+                  <li><strong>Evaluate</strong> — Built-in evaluator checks for shadowed rules, missing deny-all, overly permissive rules, logging gaps, L7 compliance, and more</li>
+                  <li><strong>AI Assist</strong> — Natural language policy creation, policy explanation, and evaluator fix suggestions via OpenAI, Anthropic, Google, Ollama, LM Studio, or AWS Bedrock</li>
+                  <li><strong>Export</strong> — Terraform (Aviatrix provider), JSON topology, CSV flows</li>
+                  <li><strong>Import</strong> — JSON round-trip or Terraform HCL (aviatrix_smart_group + aviatrix_distributed_firewalling_policy_list)</li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Gamification</h3>
                 <p className="text-xs">
-                  Topology data is encrypted with AES-GCM before storage. No data leaves your browser unless you explicitly use cloud sync.
+                  Earn achievements as you build: Policy Creator, Deny Master, Specificity King, Zero Shadow, High Performer, and more.
+                  Track your progress via the medal icon in the header.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Security & Privacy</h3>
+                <p className="text-xs">
+                  Topology data is encrypted with AES-GCM in your browser's localStorage. API keys for AI providers are encrypted and never logged.
+                  Cloud sync (optional) uses Upstash Redis. No data leaves your browser unless you explicitly enable cloud sync or AI features.
                 </p>
               </div>
             </div>
