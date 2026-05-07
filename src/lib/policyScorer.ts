@@ -29,23 +29,24 @@ function getGrade(total: number): { grade: PolicyScore['grade']; color: string }
 }
 
 /**
- * Score an individual policy (0-100).
+ * Score an individual policy (0-100) based on Aviatrix DCF best practices.
+ * Reference: Aviatrix DCF Rule Configuration Guide
  */
 export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): PolicyScore {
   const tips: string[] = [];
 
-  // ---- Naming (0-20) ----
+  // ---- Naming (0-15) ----
   let naming = 0;
   const name = policy.name.trim();
   const genericNames = ['new policy', 'policy', 'allow', 'deny', 'rule', 'untitled'];
   const isGeneric = genericNames.some((g) => name.toLowerCase().includes(g));
   if (name.length >= 5 && !isGeneric) {
-    naming = 20;
+    naming = 15;
   } else if (name.length >= 3 && !isGeneric) {
-    naming = 12;
+    naming = 10;
     tips.push('Give the policy a more descriptive name (e.g. "Allow-Web-to-App-HTTPS").');
   } else {
-    naming = 5;
+    naming = 3;
     tips.push('Policy name is too generic. Use a descriptive name that explains intent.');
   }
 
@@ -56,17 +57,43 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   const usesSpecificProto = policy.protocol !== 'any';
   const usesSpecificPorts = policy.ports && policy.ports !== 'any';
 
-  if (usesSpecificSrc) specificity += 7;
-  else tips.push('Using "Any" as source is broad. Consider a specific SmartGroup.');
+  if (usesSpecificSrc) specificity += 6;
+  else tips.push('Using "Any" as source is broad. Consider a specific SmartGroup (Aviatrix Best Practice).');
 
-  if (usesSpecificDst) specificity += 7;
-  else tips.push('Using "Any" as destination is broad. Consider a specific SmartGroup.');
+  if (usesSpecificDst) specificity += 6;
+  else tips.push('Using "Any" as destination is broad. Consider a specific SmartGroup (Aviatrix Best Practice).');
 
   if (usesSpecificProto) specificity += 6;
-  else tips.push('Protocol is "Any". Narrowing to TCP/UDP/ICMP improves security.');
+  else tips.push('Protocol is "Any". Per Aviatrix guide: separate Layer 4 rules by protocol when possible.');
 
   if (usesSpecificPorts) specificity += 5;
-  else tips.push('No specific ports defined. Consider restricting to required ports.');
+  else if (policy.webGroupIds && policy.webGroupIds.length > 0) {
+    // WebGroup rules don't need explicit ports since they target HTTPS implicitly
+    specificity += 5;
+  } else {
+    tips.push('No specific ports defined. Aviatrix guide: explicitly set ports and protocols.');
+  }
+
+  // ---- L7 Compliance (0-10) — Aviatrix Best Practice ----
+  let l7Compliance = 10;
+  const hasWebGroup = policy.webGroupIds && policy.webGroupIds.length > 0;
+  const hasTlsDecrypt = policy.decrypt;
+
+  if (hasWebGroup && policy.direction !== 'outbound') {
+    l7Compliance = 0;
+    tips.push('CRITICAL: WebGroup rules must be egress-only (outbound). Per Aviatrix guide, L7 web filtering is not supported for East/West traffic.');
+  }
+
+  if (hasTlsDecrypt) {
+    if (policy.protocol !== 'tcp') {
+      l7Compliance = 0;
+      tips.push('CRITICAL: TLS Decryption only applies to TCP traffic. Per Aviatrix guide: ensure protocol is TCP.');
+    }
+    if (!policy.ports || !policy.ports.includes('443')) {
+      l7Compliance = 0;
+      tips.push('CRITICAL: TLS Decryption only applies to TCP:443 (HTTPS). Per Aviatrix guide: ensure port is 443.');
+    }
+  }
 
   // ---- Security (0-25) ----
   let security = 0;
@@ -77,29 +104,29 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   const hasThreatOrGeo = !!policy.threatGroup || !!policy.geoGroup;
 
   if (isDeny) {
-    security += 15;
-    if (policy.logging) security += 10;
-    else tips.push('Deny policies should have logging enabled for auditability.');
+    security += 18;
+    if (policy.logging) security += 7;
+    else tips.push('Deny policies should have logging enabled for auditability (Aviatrix Best Practice).');
   } else if (isAllow) {
     if (isOverlyPermissive) {
       security += 0;
-      tips.push('CRITICAL: Allow-any-to-any is extremely dangerous.');
+      tips.push('CRITICAL: Allow-any-to-any violates Aviatrix best practices. Set Post Rules to deny all non-defined items.');
     } else {
       security += 15;
       if (isInternetFacing && !hasThreatOrGeo) {
-        security -= 5;
-        tips.push('Internet-facing allow policies benefit from ThreatGroup or GeoGroup protection.');
+        security -= 3;
+        tips.push('Internet-facing allow policies benefit from ThreatGroup or GeoGroup protection (Aviatrix Best Practice).');
       }
       if (usesSpecificProto && usesSpecificPorts) {
         security += 10;
       } else {
         security += 5;
-        tips.push('Tighten protocol and ports to reduce attack surface.');
+        tips.push('Tighten protocol and ports to reduce attack surface (Aviatrix Best Practice).');
       }
     }
   } else {
     // learned
-    security = 15;
+    security = 12;
   }
 
   // ---- Priority (0-15) ----
@@ -114,19 +141,34 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   });
   if (shadows.length > 0) {
     priority = 5;
-    tips.push(`This policy is shadowed by ${shadows.length} higher-priority rule(s). It may never match.`);
+    tips.push(`This policy is shadowed by ${shadows.length} higher-priority rule(s). It may never match. Aviatrix guide: rules are first-enforced-match.`);
   }
 
-  // ---- Logging (0-15) ----
-  let logging = policy.logging ? 15 : 0;
-  if (!policy.logging) {
-    tips.push('Enable logging for visibility and auditability.');
+  // ---- Logging (0-10) ----
+  let logging = policy.logging ? 10 : 0;
+  if (!policy.logging && isAllow) {
+    logging = 3; // partial credit for allow without logging
+    tips.push('Enable logging for visibility. Aviatrix guide: configure SIEM as destination for logs.');
+  } else if (!policy.logging && isDeny) {
+    logging = 0;
+    tips.push('CRITICAL: Deny policies must have logging enabled for auditability (Aviatrix Best Practice).');
   }
 
-  const total = naming + specificity + security + priority + logging;
+  // Sum up with L7 compliance included in security bucket for display
+  const total = naming + specificity + Math.min(security + l7Compliance, 30) + priority + logging;
   const { grade, color } = getGrade(total);
 
-  return { total, naming, specificity, security, priority, logging, grade, color, tips };
+  return {
+    total,
+    naming,
+    specificity,
+    security: Math.min(security + l7Compliance, 30),
+    priority,
+    logging,
+    grade,
+    color,
+    tips,
+  };
 }
 
 /**

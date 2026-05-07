@@ -20,13 +20,11 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
       const high = sorted[i];
       const low = sorted[j];
 
-      // Check if high priority policy shadows low priority one
       const sameSrc = high.srcGroupId === low.srcGroupId || high.srcGroupId === 'sg-any' || low.srcGroupId === 'sg-any';
       const sameDst = high.dstGroupId === low.dstGroupId || high.dstGroupId === 'sg-any' || low.dstGroupId === 'sg-any';
       const sameProto = high.protocol === low.protocol || high.protocol === 'any' || low.protocol === 'any';
       const sameDir = high.direction === low.direction || high.direction === 'any' || low.direction === 'any';
 
-      // Port overlap check
       const portOverlap = (() => {
         if (high.ports === undefined || high.ports === 'any' || low.ports === undefined || low.ports === 'any') {
           return true;
@@ -41,7 +39,7 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
           id: `shadow-${low.id}`,
           severity: 'warning',
           title: 'Shadowed Policy',
-          description: `Policy "${low.name}" (priority ${low.priority}) is shadowed by "${high.name}" (priority ${high.priority}). It will never be evaluated.`,
+          description: `Policy "${low.name}" (priority ${low.priority}) is shadowed by "${high.name}" (priority ${high.priority}). It will never be evaluated. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: [low.id, high.id],
         });
       }
@@ -59,9 +57,9 @@ function findMissingDenyAll(policies: DcfPolicy[]): Finding[] {
   if (!hasDenyAll && policies.length > 0) {
     return [{
       id: 'missing-deny-all',
-      severity: 'warning',
+      severity: 'error',
       title: 'Missing Catch-All Deny',
-      description: 'No deny-all policy found. Without a catch-all deny at the lowest priority, unmatched traffic may be implicitly allowed.',
+      description: 'No deny-all policy found. Per Aviatrix Best Practices: set the Post Rules Policy List to block all non-defined items. Unmatched traffic may be implicitly allowed.',
     }];
   }
 
@@ -75,7 +73,7 @@ function findOverlyPermissive(policies: DcfPolicy[]): Finding[] {
       id: `overly-permissive-${p.id}`,
       severity: 'error',
       title: 'Overly Permissive Policy',
-      description: `Policy "${p.name}" allows all traffic (any → any). Consider narrowing source/destination groups.`,
+      description: `Policy "${p.name}" allows all traffic (any → any). Aviatrix Best Practice: narrow source/destination to specific SmartGroups and set a Post Rules deny-all.`,
       affectedPolicyIds: [p.id],
     }));
 }
@@ -107,7 +105,7 @@ function findMissingLogging(policies: DcfPolicy[]): Finding[] {
       id: `missing-log-${p.id}`,
       severity: 'warning',
       title: 'Deny Policy Without Logging',
-      description: `Policy "${p.name}" denies traffic but has logging disabled. You won't see hits in your traffic logs.`,
+      description: `Policy "${p.name}" denies traffic but has logging disabled. Aviatrix Best Practice: enable logging on deny rules for auditability. Send logs to CoPilot and SIEM.`,
       affectedPolicyIds: [p.id],
     }));
 }
@@ -129,7 +127,7 @@ function findMissingThreatProtection(topology: DcfPolicyModel): Finding[] {
         id: `missing-threat-${p.id}`,
         severity: 'info',
         title: 'Internet Policy Lacks Threat/Geo Filtering',
-        description: `Policy "${p.name}" allows internet traffic without threat intelligence or geo restrictions. Consider adding a ThreatGroup or GeoGroup.`,
+        description: `Policy "${p.name}" allows internet traffic without threat intelligence or geo restrictions. Aviatrix Best Practice: add ExternalGroups (ThreatGroups or GeoGroups) for protection.`,
         affectedPolicyIds: [p.id],
       });
     }
@@ -158,7 +156,7 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
           id: `conflict-${group[0].id}`,
           severity: 'warning',
           title: 'Conflicting Actions',
-          description: `Multiple policies between ${group[0].srcGroupId} → ${group[0].dstGroupId} have conflicting actions. Priority order determines the winner.`,
+          description: `Multiple policies between ${group[0].srcGroupId} → ${group[0].dstGroupId} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: group.map((p) => p.id),
         });
       }
@@ -166,6 +164,71 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
   });
 
   return findings;
+}
+
+// ---- Aviatrix Best Practice: L7 Rules ----
+
+function findWebGroupEgressViolation(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && p.direction !== 'outbound')
+    .map((p) => ({
+      id: `webgroup-egress-${p.id}`,
+      severity: 'error',
+      title: 'WebGroup Rule Must Be Egress-Only',
+      description: `Policy "${p.name}" uses WebGroups but direction is "${p.direction}". Aviatrix Best Practice: WebGroup (Layer 7) rules are stateful and ONLY supported for egress (outbound) traffic. East/West L7 filtering is not supported.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findTlsDecryptPortViolation(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.decrypt && (!p.ports || !p.ports.includes('443')))
+    .map((p) => ({
+      id: `tls-decrypt-port-${p.id}`,
+      severity: 'warning',
+      title: 'TLS Decryption Should Target Port 443',
+      description: `Policy "${p.name}" has TLS Decryption enabled but does not target port 443. Aviatrix Best Practice: TLS decryption only applies to TCP:443 (HTTPS) traffic.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findTlsDecryptProtocolViolation(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.decrypt && p.protocol !== 'tcp')
+    .map((p) => ({
+      id: `tls-decrypt-proto-${p.id}`,
+      severity: 'error',
+      title: 'TLS Decryption Requires TCP Protocol',
+      description: `Policy "${p.name}" has TLS Decryption enabled with protocol "${p.protocol}". Aviatrix Best Practice: TLS decryption only applies to TCP traffic. Set protocol to TCP.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findBroadAllowWithoutPorts(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.action === 'allow' && p.protocol === 'any' && (!p.ports || p.ports === 'any') && !p.webGroupIds)
+    .map((p) => ({
+      id: `broad-allow-${p.id}`,
+      severity: 'warning',
+      title: 'Overly Broad Allow Rule',
+      description: `Policy "${p.name}" allows any protocol on any port. Aviatrix Best Practice: separate Layer 4 rules by protocol and explicitly set ports when possible.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findLearnedWithoutDenyAll(policies: DcfPolicy[]): Finding[] {
+  const hasDenyAll = policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any');
+  const hasLearned = policies.some((p) => p.action === 'learned');
+
+  if (hasLearned && !hasDenyAll) {
+    return [{
+      id: 'learned-without-deny-all',
+      severity: 'warning',
+      title: 'Learned Rules Without Deny-All',
+      description: 'You have learned-mode policies but no catch-all deny. Aviatrix Best Practice: learned policies discover traffic patterns; pair them with a Post Rules deny-all to block undefined traffic.',
+    }];
+  }
+  return [];
 }
 
 export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
@@ -178,6 +241,13 @@ export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
   findings.push(...findMissingLogging(topology.policies));
   findings.push(...findMissingThreatProtection(topology));
   findings.push(...findConflictingActions(topology.policies));
+
+  // Aviatrix Best Practice checks from Configuration Guide
+  findings.push(...findWebGroupEgressViolation(topology.policies));
+  findings.push(...findTlsDecryptPortViolation(topology.policies));
+  findings.push(...findTlsDecryptProtocolViolation(topology.policies));
+  findings.push(...findBroadAllowWithoutPorts(topology.policies));
+  findings.push(...findLearnedWithoutDenyAll(topology.policies));
 
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };
