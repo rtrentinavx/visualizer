@@ -26,6 +26,7 @@ The current 3-column layout breaks on screens smaller than ~1024px.
 ## Backlog
 
 ### Data & Integration
+- [ ] **Traffic Flow ingestion** — Ingest live or historical flow logs (NetFlow/sFlow/pcap) to validate policies against real traffic. Re-enable the Traffic tab once this is built.
 - [ ] **Aviatrix Controller API import** — Pull live SmartGroups and policies from a real controller
 - [ ] **CSV/Excel import/export** — Bulk policy editing in spreadsheets
 - [ ] **Version history / diff view** — Show what changed between saves

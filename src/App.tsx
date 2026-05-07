@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
   LayoutGrid,
-  Activity,
   Search,
   Sun,
   Moon,
@@ -30,7 +29,7 @@ import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/s
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
 import PolicyMatrix from './components/panels/PolicyMatrix';
-import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
+
 import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
@@ -373,17 +372,7 @@ export default function App() {
                 <GitGraph size={14} />
                 <span className="hidden sm:inline">Graph</span>
               </button>
-              <button
-                onClick={() => handleViewChange('traffic')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'traffic'
-                    ? 'bg-[var(--color-aviatrix)] text-white'
-                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
-                }`}
-              >
-                <Activity size={14} />
-                <span className="hidden sm:inline">Traffic</span>
-              </button>
+              {/* Traffic tab disabled — see ROADMAP.md */}
               <button
                 onClick={() => handleViewChange('simulator')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -755,7 +744,14 @@ export default function App() {
           ) : viewMode === 'simulator' ? (
             <PolicySimulator topology={topology} />
           ) : (
-            <TrafficFlowPanel topology={topology} filter={searchQuery} />
+            <PolicyMatrix
+              topology={topology}
+              searchQuery={searchQuery}
+              selectedCell={selectedCell}
+              onSelectCell={handleSelectCell}
+              onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+              onSelectPolicy={handleSelectPolicy}
+            />
           )}
         </div>
       </div>
