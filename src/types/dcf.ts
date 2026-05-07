@@ -4,7 +4,6 @@ export interface SmartGroup {
   color: string;
   criteria: SmartGroupCriteria[];
   matchType: 'any' | 'all';
-  workloadCount: number;
 }
 
 export interface SmartGroupCriteria {

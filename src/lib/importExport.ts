@@ -262,7 +262,6 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
   const resources = findBlocks(root, 'resource');
 
   const smartGroups: SmartGroup[] = [
-    { id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any', workloadCount: 0 },
   ];
   const policies: DcfPolicy[] = [];
 
@@ -309,7 +308,6 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       color: randomColor(),
       criteria,
       matchType: selectors.length > 1 ? 'any' : 'all',
-      workloadCount: 0,
     });
   }
 

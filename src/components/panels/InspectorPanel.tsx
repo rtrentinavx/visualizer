@@ -472,7 +472,6 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
             <span className="text-xs text-[var(--color-text-muted)] font-mono">{String(form.color ?? g.color)}</span>
           </div>
         </div>
-        <Input label="Workload Count" value={String(form.workloadCount ?? g.workloadCount)} onChange={(v) => updateField('workloadCount', Number(v))} type="number" />
         <Select label="Match Type" value={String(form.matchType ?? g.matchType)} options={[{ value: 'any', label: 'Match Any' }, { value: 'all', label: 'Match All' }]} onChange={(v) => updateField('matchType', v)} />
         <CriteriaEditor criteria={(form.criteria as SmartGroupCriteria[]) || g.criteria} onChange={(v) => updateField('criteria', v)} />
       </div>

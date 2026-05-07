@@ -47,7 +47,7 @@ Explain what the policy does, what traffic it affects, and any potential risks o
 Keep it concise (2-3 sentences max).`;
 
 export function buildContextPrompt(topology: DcfPolicyModel): string {
-  const groups = topology.smartGroups.map((g) => `- ${g.name} (${g.workloadCount} workloads)`).join('\n');
+  const groups = topology.smartGroups.map((g) => `- ${g.name}`).join('\n');
   const policies = topology.policies.map((p) => {
     const src = topology.smartGroups.find((g) => g.id === p.srcGroupId)?.name || p.srcGroupId;
     const dst = topology.smartGroups.find((g) => g.id === p.dstGroupId)?.name || p.dstGroupId;

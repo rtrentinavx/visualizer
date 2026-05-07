@@ -16,7 +16,6 @@ interface NodePos {
   y: number;
   name: string;
   color: string;
-  workloadCount: number;
 }
 
 interface EdgePos {
@@ -71,7 +70,6 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
         y: cy + r * Math.sin(angle),
         name: g.name,
         color: g.color,
-        workloadCount: g.workloadCount,
       });
     });
 

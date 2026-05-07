@@ -56,7 +56,7 @@ interface SelectedItem {
 export default function App() {
   const { theme, toggleTheme } = useTheme();
   const [topology, setTopology] = useState<DcfPolicyModel>({
-    smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any', workloadCount: 0 }],
+    smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
     webGroups: [],
     threatGroups: [],
     geoGroups: [],
@@ -168,7 +168,6 @@ export default function App() {
               color: '#3b82f6',
               criteria: [],
               matchType: 'any' as const,
-              workloadCount: 0,
               ...data,
             };
             return { ...prev, smartGroups: [...prev.smartGroups, newGroup as typeof prev.smartGroups[0]] };
@@ -278,7 +277,7 @@ export default function App() {
         case 'smartGroup':
           return {
             ...prev,
-            smartGroups: [...prev.smartGroups, { id, name: 'New Smart Group', color: '#3b82f6', criteria: [], matchType: 'any', workloadCount: 0, ...data } as typeof prev.smartGroups[0]],
+            smartGroups: [...prev.smartGroups, { id, name: 'New Smart Group', color: '#3b82f6', criteria: [], matchType: 'any', ...data } as typeof prev.smartGroups[0]],
           };
         case 'webGroup':
           return {
@@ -346,7 +345,7 @@ export default function App() {
       message: 'This will remove all groups and policies. This action cannot be undone.',
       onConfirm: () => {
         setTopology({
-          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any', workloadCount: 0 }],
+          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
           webGroups: [],
           threatGroups: [],
           geoGroups: [],

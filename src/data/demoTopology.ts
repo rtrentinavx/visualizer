@@ -8,7 +8,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#3b82f6',
       criteria: [{ type: 'vm', key: 'app-tier', operator: 'equals', value: 'web' }],
       matchType: 'any',
-      workloadCount: 24,
     },
     {
       id: 'sg-app',
@@ -16,7 +15,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#10b981',
       criteria: [{ type: 'vm', key: 'app-tier', operator: 'equals', value: 'app' }],
       matchType: 'any',
-      workloadCount: 18,
     },
     {
       id: 'sg-db',
@@ -24,7 +22,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#f59e0b',
       criteria: [{ type: 'vm', key: 'app-tier', operator: 'equals', value: 'db' }],
       matchType: 'any',
-      workloadCount: 8,
     },
     {
       id: 'sg-bastion',
@@ -32,7 +29,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#8b5cf6',
       criteria: [{ type: 'vm', key: 'role', operator: 'equals', value: 'bastion' }],
       matchType: 'any',
-      workloadCount: 4,
     },
     {
       id: 'sg-monitoring',
@@ -40,7 +36,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#ec4899',
       criteria: [{ type: 'vm', key: 'service', operator: 'equals', value: 'monitoring' }],
       matchType: 'any',
-      workloadCount: 6,
     },
     {
       id: 'sg-dev',
@@ -51,7 +46,6 @@ export const demoTopology: DcfPolicyModel = {
         { type: 'subnet', cidr: '10.3.0.0/16' },
       ],
       matchType: 'any',
-      workloadCount: 12,
     },
     {
       id: 'sg-internet',
@@ -59,7 +53,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#ef4444',
       criteria: [],
       matchType: 'any',
-      workloadCount: 0,
     },
     {
       id: 'sg-any',
@@ -67,7 +60,6 @@ export const demoTopology: DcfPolicyModel = {
       color: '#9ca3af',
       criteria: [],
       matchType: 'any',
-      workloadCount: 0,
     },
   ],
   webGroups: [
