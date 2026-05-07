@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { BedrockRuntimeClient, ConverseStreamCommand, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
+const RATE_LIMIT = 30; // requests per minute per IP
 
 interface ProxyRequest {
   provider: string;
@@ -21,6 +25,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!provider || !model) {
     return res.status(400).json({ error: 'Missing required fields: provider, model' });
+  }
+
+  // Rate limiting
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+  const windowKey = `dcf-ai-rate:${clientIp}:${Math.floor(Date.now() / 60000)}`;
+  try {
+    const current = await redis.incr(windowKey);
+    if (current === 1) {
+      await redis.expire(windowKey, 60);
+    }
+    if (current > RATE_LIMIT) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Try again in a minute.' });
+    }
+  } catch {
+    // If Redis is down, allow the request through rather than break AI features
   }
 
   const needsKey = provider !== 'ollama' && provider !== 'lmstudio';

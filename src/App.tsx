@@ -16,12 +16,15 @@ import {
   ShieldAlert,
   Bot,
   Sparkles,
+  FlaskConical,
+  Upload,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
 import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
+import { downloadTopologyJSON } from './lib/importExport';
 import { evaluateTopology } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
@@ -33,8 +36,10 @@ import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
 import AISettingsPanel from './components/panels/AISettingsPanel';
 import AIChatPanel from './components/panels/AIChatPanel';
+import ImportPanel from './components/panels/ImportPanel';
+import PolicySimulator from './components/panels/PolicySimulator';
 
-type ViewMode = 'matrix' | 'graph' | 'traffic';
+type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator';
 
 interface SelectedItem {
   type: 'policy' | 'smartGroup' | 'webGroup' | 'threatGroup' | 'geoGroup';
@@ -70,6 +75,7 @@ export default function App() {
   const [showEvaluator, setShowEvaluator] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
 
   // Load AI settings on mount
@@ -378,6 +384,17 @@ export default function App() {
                 <Activity size={14} />
                 <span className="hidden sm:inline">Traffic</span>
               </button>
+              <button
+                onClick={() => handleViewChange('simulator')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === 'simulator'
+                    ? 'bg-[var(--color-aviatrix)] text-white'
+                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
+                }`}
+              >
+                <FlaskConical size={14} />
+                <span className="hidden sm:inline">Simulator</span>
+              </button>
             </div>
           </div>
 
@@ -505,6 +522,51 @@ export default function App() {
               ) : (
                 <CloudDownload size={14} />
               )}
+            </button>
+
+            {/* JSON Export */}
+            <button
+              onClick={() => downloadTopologyJSON(topology)}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Export JSON"
+            >
+              <FileCode size={14} />
+            </button>
+
+            {/* Import */}
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                borderColor: 'var(--color-border-subtle)',
+                color: 'var(--color-text-secondary)',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-button-hover)';
+                e.currentTarget.style.color = 'var(--color-text-primary)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-surface)';
+                e.currentTarget.style.color = 'var(--color-text-secondary)';
+              }}
+              title="Import Topology"
+            >
+              <Upload size={14} />
+              <span className="hidden lg:inline">Import</span>
             </button>
 
             {/* Terraform Export */}
@@ -690,6 +752,8 @@ export default function App() {
               }}
               onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
             />
+          ) : viewMode === 'simulator' ? (
+            <PolicySimulator topology={topology} />
           ) : (
             <TrafficFlowPanel topology={topology} filter={searchQuery} />
           )}
@@ -943,6 +1007,17 @@ export default function App() {
             setShowAIChat(false);
             setSelectedItem({ type: 'policy', id: newPolicy.id });
           }}
+        />
+      )}
+
+      {/* Import Panel */}
+      {showImportModal && (
+        <ImportPanel
+          onImport={(imported) => {
+            setTopology(imported);
+            saveTopologyStorage(imported).catch(() => {});
+          }}
+          onClose={() => setShowImportModal(false)}
         />
       )}
     </div>
