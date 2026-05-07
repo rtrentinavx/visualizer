@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import { GitGraph, PenLine, X } from 'lucide-react';
+import { GitGraph, PenLine, Plus, X } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from '../../types/dcf';
 
 interface PolicyGraphProps {
@@ -7,6 +7,7 @@ interface PolicyGraphProps {
   onSelectNode: (groupId: string) => void;
   onSelectPolicy: (policyId: string) => void;
   onCreatePolicy: (srcId: string, dstId: string) => void;
+  onSelectGroup: (groupId: string) => void;
 }
 
 interface NodePos {
@@ -39,7 +40,7 @@ function getInitial(name: string): string {
   return name.charAt(0).toUpperCase();
 }
 
-export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, onCreatePolicy }: PolicyGraphProps) {
+export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, onCreatePolicy, onSelectGroup }: PolicyGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
@@ -56,7 +57,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
   }, []);
 
   const { nodes, edges } = useMemo(() => {
-    const groups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
+    const groups = topology.smartGroups;
     const cx = size.w / 2;
     const cy = size.h / 2;
     const r = Math.min(size.w, size.h) / 2 - 100;
@@ -175,6 +176,25 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
 
       {/* Graph Canvas */}
       <div className="flex-1 overflow-hidden relative" style={{ backgroundColor: 'var(--color-surface)' }}>
+        {nodes.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center z-10">
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-elevated)] flex items-center justify-center mb-4">
+              <GitGraph size={24} className="text-[var(--color-text-muted)]" />
+            </div>
+            <p className="text-sm font-medium text-[var(--color-text-secondary)]">No SmartGroups yet</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs">
+              Create at least one SmartGroup to start building your policy graph.
+            </p>
+            <button
+              onClick={() => onSelectGroup('__new__')}
+              className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-medium text-white"
+              style={{ backgroundColor: 'var(--color-aviatrix)' }}
+            >
+              <Plus size={14} />
+              Create SmartGroup
+            </button>
+          </div>
+        )}
         <svg width={size.w} height={size.h} className="absolute inset-0">
           <defs>
             {/* Drop shadow filter */}
@@ -354,24 +374,6 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
                 >
                   {getInitial(n.name)}
                 </text>
-
-                {/* Workload count badge */}
-                {n.workloadCount > 0 && (
-                  <g transform={`translate(${nodeRadius - 4}, ${nodeRadius - 4})`}>
-                    <circle r={9} fill="var(--color-surface-raised)" stroke="var(--color-border-subtle)" strokeWidth="1" />
-                    <text
-                      y={1}
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      fill="var(--color-text-secondary)"
-                      fontSize="8"
-                      fontWeight="600"
-                      style={{ pointerEvents: 'none' }}
-                    >
-                      {n.workloadCount > 99 ? '99+' : n.workloadCount}
-                    </text>
-                  </g>
-                )}
 
                 {/* Label */}
                 <text

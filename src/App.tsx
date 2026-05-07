@@ -133,32 +133,61 @@ export default function App() {
   const handleUpdateItem = useCallback((itemType: string, itemId: string, data: Record<string, unknown>) => {
     setTopology((prev) => {
       switch (itemType) {
-        case 'smartGroup':
+        case 'smartGroup': {
+          if (itemId === '__new__') {
+            const newGroup = {
+              id: `sg-${Date.now()}`,
+              name: 'New Smart Group',
+              color: '#3b82f6',
+              criteria: [],
+              matchType: 'any' as const,
+              workloadCount: 0,
+              ...data,
+            };
+            return { ...prev, smartGroups: [...prev.smartGroups, newGroup as typeof prev.smartGroups[0]] };
+          }
           return {
             ...prev,
             smartGroups: prev.smartGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
           };
-        case 'webGroup':
+        }
+        case 'webGroup': {
+          if (itemId === '__new__') {
+            const newGroup = { id: `wg-${Date.now()}`, name: 'New Web Group', fqdns: [], ...data };
+            return { ...prev, webGroups: [...prev.webGroups, newGroup as typeof prev.webGroups[0]] };
+          }
           return {
             ...prev,
             webGroups: prev.webGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
           };
-        case 'threatGroup':
+        }
+        case 'threatGroup': {
+          if (itemId === '__new__') {
+            const newGroup = { id: `tg-${Date.now()}`, name: 'New Threat Group', category: 'custom' as const, entryCount: 0, ...data };
+            return { ...prev, threatGroups: [...prev.threatGroups, newGroup as typeof prev.threatGroups[0]] };
+          }
           return {
             ...prev,
             threatGroups: prev.threatGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
           };
-        case 'geoGroup':
+        }
+        case 'geoGroup': {
+          if (itemId === '__new__') {
+            const newGroup = { id: `gg-${Date.now()}`, name: 'New Geo Group', countries: [], ...data };
+            return { ...prev, geoGroups: [...prev.geoGroups, newGroup as typeof prev.geoGroups[0]] };
+          }
           return {
             ...prev,
             geoGroups: prev.geoGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
           };
+        }
         case 'policy':
           if (itemId === '__new__') {
+            const maxPriority = prev.policies.length > 0 ? Math.max(...prev.policies.map((p) => p.priority)) : 0;
             const newPolicy: DcfPolicy = {
               id: `pol-${Date.now()}`,
               name: 'New Policy',
-              priority: 100,
+              priority: maxPriority + 10,
               srcGroupId: (data.srcGroupId as string) || 'sg-any',
               dstGroupId: (data.dstGroupId as string) || 'sg-any',
               action: 'allow',
@@ -659,6 +688,7 @@ export default function App() {
                 setSelectedCell({ srcId, dstId });
                 setSelectedItem({ type: 'policy', id: '__new__', srcId, dstId });
               }}
+              onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
             />
           ) : (
             <TrafficFlowPanel topology={topology} filter={searchQuery} />

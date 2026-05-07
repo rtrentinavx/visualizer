@@ -289,7 +289,7 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
   }, [topology, selectedItem]);
 
   const [form, setForm] = useState<Record<string, unknown>>(initialForm);
-  const [dirty, setDirty] = useState(selectedItem.id === '__new__');
+  const [dirty, setDirty] = useState(true);
   const [explanation, setExplanation] = useState('');
   const [explaining, setExplaining] = useState(false);
 

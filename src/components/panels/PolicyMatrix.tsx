@@ -83,8 +83,15 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
             <p className="text-sm font-medium text-[var(--color-text-secondary)]">No SmartGroups yet</p>
             <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs">
               Create at least two SmartGroups to start building your policy matrix.
-              Use the <strong>+ Group</strong> button in the header.
             </p>
+            <button
+              onClick={() => onSelectGroup('__new__')}
+              className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-medium text-white"
+              style={{ backgroundColor: 'var(--color-aviatrix)' }}
+            >
+              <Plus size={14} />
+              Create SmartGroup
+            </button>
           </div>
         ) : (
         <div className="inline-block min-w-full">
