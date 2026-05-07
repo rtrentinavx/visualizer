@@ -18,6 +18,8 @@ import {
   Sparkles,
   FlaskConical,
   Upload,
+  Trophy,
+  Medal,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -26,6 +28,8 @@ import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
 import { downloadTopologyJSON } from './lib/importExport';
 import { evaluateTopology } from './lib/policyEvaluator';
+import { scoreTopology } from './lib/policyScorer';
+import { checkAchievements, getAllAchievements, type Achievement } from './lib/achievements';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
@@ -77,6 +81,8 @@ export default function App() {
   const [showAISettings, setShowAISettings] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showAchievements, setShowAchievements] = useState(false);
+  const [achievementToasts, setAchievementToasts] = useState<Achievement[]>([]);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
 
   // Load AI settings on mount
@@ -116,6 +122,20 @@ export default function App() {
     }, 500);
     return () => clearTimeout(timer);
   }, [topology, storageReady]);
+
+  // Check achievements when topology changes
+  useEffect(() => {
+    const scores = new Map(topology.policies.map((p) => [p.id, 0]));
+    // We'll compute scores lazily in the inspector; for achievements we just need existence checks
+    const newAchievements = checkAchievements(topology, 0, scores);
+    if (newAchievements.length > 0) {
+      setAchievementToasts((prev) => [...prev, ...newAchievements]);
+    }
+  }, [topology]);
+
+  const dismissToast = (id: string) => {
+    setAchievementToasts((prev) => prev.filter((a) => a.id !== id));
+  };
 
   const handleViewChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -397,10 +417,31 @@ export default function App() {
                 <span className="hidden sm:inline">Simulator</span>
               </button>
             </div>
+
+            {/* Topology Score */}
+            {(() => {
+              const score = scoreTopology(topology);
+              if (score.totalPolicies === 0) return null;
+              return (
+                <button
+                  onClick={() => setShowEvaluator(true)}
+                  className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors"
+                  style={{
+                    backgroundColor: score.color + '15',
+                    borderColor: score.color + '40',
+                    color: score.color,
+                  }}
+                  title="Average policy score. Click to open Evaluator."
+                >
+                  <Trophy size={12} />
+                  {score.grade} · {score.average}
+                </button>
+              );
+            })()}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* Search */}
+            {/* Search -->
             <div className="relative hidden xl:block">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
               <input
@@ -579,6 +620,29 @@ export default function App() {
             >
               {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
             </button>
+
+            {/* Achievements */}
+            {(() => {
+              const all = getAllAchievements();
+              const unlocked = all.filter((a) => a.unlockedAt).length;
+              return (
+                <button
+                  onClick={() => setShowAchievements(true)}
+                  className="p-1.5 rounded-md border transition-colors relative"
+                  style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+                  title="Achievements"
+                >
+                  <Medal size={14} />
+                  {unlocked > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[var(--color-aviatrix)] text-white text-[8px] flex items-center justify-center font-bold">
+                      {unlocked}
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
 
             {/* About */}
             <button
@@ -929,6 +993,79 @@ export default function App() {
           }}
           onClose={() => setShowImportModal(false)}
         />
+      )}
+
+      {/* Achievement Toasts */}
+      <div className="fixed bottom-4 right-4 z-50 space-y-2">
+        {achievementToasts.map((ach) => (
+          <div
+            key={ach.id}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg animate-in fade-in slide-in-from-right-4"
+            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          >
+            <span className="text-xl">{ach.icon}</span>
+            <div>
+              <p className="text-xs font-semibold text-[var(--color-text-primary)]">Achievement Unlocked!</p>
+              <p className="text-[10px] text-[var(--color-text-secondary)]">{ach.name}</p>
+              <p className="text-[10px] text-[var(--color-text-muted)]">{ach.description}</p>
+            </div>
+            <button
+              onClick={() => dismissToast(ach.id)}
+              className="ml-2 p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Achievements Modal */}
+      {showAchievements && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-md max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
+            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
+              <div className="flex items-center gap-3">
+                <Medal size={18} className="text-[var(--color-accent-blue)]" />
+                <div>
+                  <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Achievements</h2>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    {getAllAchievements().filter((a) => a.unlockedAt).length} / {getAllAchievements().length} unlocked
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowAchievements(false)} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {getAllAchievements().map((ach) => (
+                <div
+                  key={ach.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    ach.unlockedAt ? 'border-[var(--color-border-subtle)] bg-[var(--color-surface)]' : 'border-[var(--color-border-subtle)] opacity-50'
+                  }`}
+                >
+                  <span className="text-xl">{ach.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-medium ${ach.unlockedAt ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}>
+                      {ach.name}
+                    </p>
+                    <p className="text-[10px] text-[var(--color-text-muted)]">{ach.description}</p>
+                    {ach.unlockedAt && (
+                      <p className="text-[9px] text-green-400 mt-0.5">
+                        Unlocked {new Date(ach.unlockedAt).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
+                  {ach.unlockedAt && <Trophy size={14} className="text-[var(--color-accent-blue)] shrink-0" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

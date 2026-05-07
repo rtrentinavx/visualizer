@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock, Sparkles, Loader2 } from 'lucide-react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
 import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
 import { SYSTEM_PROMPT_EXPLAIN, buildExplainPrompt } from '../../lib/ai/prompts';
+import { scorePolicy, type PolicyScore } from '../../lib/policyScorer';
 
 interface InspectorPanelProps {
   topology: DcfPolicyModel;
@@ -292,6 +293,7 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
   const [dirty, setDirty] = useState(true);
   const [explanation, setExplanation] = useState('');
   const [explaining, setExplaining] = useState(false);
+  const [showScoreDetails, setShowScoreDetails] = useState(false);
 
   const updateField = (key: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -305,6 +307,29 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
 
   const p = form;
   const isNew = selectedItem.id === '__new__';
+
+  const policyScore: PolicyScore | null = useMemo(() => {
+    if (selectedItem.type !== 'policy') return null;
+    const draftPolicy = {
+      id: selectedItem.id,
+      name: String(p.name ?? ''),
+      priority: Number(p.priority ?? 100),
+      srcGroupId: String(p.srcGroupId ?? 'sg-any'),
+      dstGroupId: String(p.dstGroupId ?? 'sg-any'),
+      action: String(p.action ?? 'allow') as 'allow' | 'deny' | 'learned',
+      direction: String(p.direction ?? 'any') as 'inbound' | 'outbound' | 'any',
+      protocol: String(p.protocol ?? 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any',
+      ports: p.ports ? String(p.ports) : undefined,
+      logging: !!p.logging,
+      decrypt: !!p.decrypt,
+      threatGroup: p.threatGroup ? String(p.threatGroup) : undefined,
+      geoGroup: p.geoGroup ? String(p.geoGroup) : undefined,
+      webGroupIds: (p.webGroupIds as string[]) || undefined,
+      srcExcludeGroupIds: (p.srcExcludeGroupIds as string[]) || undefined,
+      dstExcludeGroupIds: (p.dstExcludeGroupIds as string[]) || undefined,
+    };
+    return scorePolicy(draftPolicy, topology);
+  }, [selectedItem.type, selectedItem.id, p, topology]);
 
   const handleExplain = async () => {
     if (!aiProfile) return;
@@ -339,6 +364,60 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
       <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">
         {isNew ? 'New Policy' : 'Edit Policy'}
       </div>
+
+      {/* Policy Score */}
+      {policyScore && (
+        <div className="mb-3 rounded-lg border overflow-hidden" style={{ borderColor: policyScore.color + '40' }}>
+          <button
+            onClick={() => setShowScoreDetails((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-2"
+            style={{ backgroundColor: policyScore.color + '10' }}
+          >
+            <div className="flex items-center gap-2">
+              <Trophy size={14} style={{ color: policyScore.color }} />
+              <span className="text-xs font-semibold" style={{ color: policyScore.color }}>
+                Score: {policyScore.total}/100
+              </span>
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                style={{ backgroundColor: policyScore.color + '20', color: policyScore.color }}
+              >
+                {policyScore.grade}
+              </span>
+            </div>
+            {showScoreDetails ? <ChevronUp size={14} style={{ color: policyScore.color }} /> : <ChevronDown size={14} style={{ color: policyScore.color }} />}
+          </button>
+          {showScoreDetails && (
+            <div className="px-3 py-2 space-y-2 bg-[var(--color-surface)]">
+              <div className="grid grid-cols-5 gap-1 text-center">
+                {[
+                  { label: 'Name', val: policyScore.naming },
+                  { label: 'Spec', val: policyScore.specificity },
+                  { label: 'Sec', val: policyScore.security },
+                  { label: 'Pri', val: policyScore.priority },
+                  { label: 'Log', val: policyScore.logging },
+                ].map((s) => (
+                  <div key={s.label} className="space-y-0.5">
+                    <div className="text-[9px] text-[var(--color-text-muted)]">{s.label}</div>
+                    <div className="text-[10px] font-semibold" style={{ color: s.val >= 10 ? '#22c55e' : s.val >= 5 ? '#eab308' : '#ef4444' }}>{s.val}</div>
+                  </div>
+                ))}
+              </div>
+              {policyScore.tips.length > 0 && (
+                <div className="space-y-1">
+                  {policyScore.tips.map((tip, i) => (
+                    <div key={i} className="flex items-start gap-1.5 text-[10px] text-[var(--color-text-muted)]">
+                      <span className="text-amber-400 shrink-0">•</span>
+                      {tip}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <Input label="Name" value={String(p.name ?? '')} onChange={(v) => updateField('name', v)} />
       <Input label="Priority" value={String(p.priority ?? 100)} onChange={(v) => updateField('priority', Number(v))} type="number" />
       <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
