@@ -76,13 +76,8 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
 
   // ---- L7 Compliance (0-10) — Aviatrix Best Practice ----
   let l7Compliance = 10;
-  const hasWebGroup = policy.webGroupIds && policy.webGroupIds.length > 0;
-  const hasTlsDecrypt = policy.decrypt;
 
-  if (hasWebGroup && policy.direction !== 'outbound') {
-    l7Compliance = 0;
-    tips.push('CRITICAL: WebGroup rules must be egress-only (outbound). Per Aviatrix guide, L7 web filtering is not supported for East/West traffic.');
-  }
+  const hasTlsDecrypt = policy.decrypt;
 
   if (hasTlsDecrypt) {
     if (policy.protocol !== 'tcp') {

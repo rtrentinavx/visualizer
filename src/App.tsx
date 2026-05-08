@@ -218,9 +218,9 @@ export default function App() {
               srcGroupId: (data.srcGroupId as string) || 'sg-any',
               dstGroupId: (data.dstGroupId as string) || 'sg-any',
               action: 'allow',
-              direction: 'any',
               protocol: 'tcp',
               logging: false,
+              enforcement: true,
               ...data,
             };
             return { ...prev, policies: [...prev.policies, newPolicy] };
@@ -915,9 +915,9 @@ export default function App() {
                 srcGroupId: 'sg-any',
                 dstGroupId: 'sg-any',
                 action: 'deny',
-                direction: 'any',
                 protocol: 'any',
                 logging: true,
+                enforcement: true,
               };
               setTopology((prev) => ({ ...prev, policies: [...prev.policies, newPolicy] }));
             } else if (finding.id.startsWith('unused-')) {
@@ -986,7 +986,6 @@ export default function App() {
               srcGroupId: srcGroup.id,
               dstGroupId: dstGroup.id,
               action: (String(data.action || 'allow') as 'allow' | 'deny' | 'learned'),
-              direction: (String(data.direction || 'any') as 'inbound' | 'outbound' | 'any'),
               protocol: (String(data.protocol || 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any'),
               ports: data.ports ? String(data.ports) : undefined,
               logging: Boolean(data.logging),

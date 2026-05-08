@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown } from 'lucide-react';
-import type { DcfPolicyModel, Protocol, PolicyDirection } from '../../types/dcf';
+import type { DcfPolicyModel, Protocol } from '../../types/dcf';
 import { simulateTraffic } from '../../lib/policySimulator';
 import type { SimulationResult } from '../../lib/policySimulator';
 
@@ -13,7 +13,6 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
   const [dstGroupId, setDstGroupId] = useState('');
   const [protocol, setProtocol] = useState<Protocol>('tcp');
   const [port, setPort] = useState('443');
-  const [direction, setDirection] = useState<PolicyDirection>('any');
   const [result, setResult] = useState<SimulationResult | null>(null);
 
   const smartGroupOptions = useMemo(
@@ -29,7 +28,6 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
       dstGroupId,
       protocol,
       port: portNum,
-      direction,
     });
     setResult(res);
   };
@@ -134,26 +132,6 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
                 />
               </div>
 
-              {/* Direction */}
-              <div className="sm:col-span-2">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Direction</label>
-                <div className="flex gap-2">
-                  {(['any', 'inbound', 'outbound'] as PolicyDirection[]).map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDirection(d)}
-                      className={`flex-1 px-3 py-1.5 rounded text-xs font-medium border transition-colors capitalize ${
-                        direction === d
-                          ? 'text-white border-transparent'
-                          : 'text-[var(--color-text-secondary)] border-[var(--color-border-subtle)] hover:text-[var(--color-text-primary)]'
-                      }`}
-                      style={direction === d ? { backgroundColor: 'var(--color-aviatrix)' } : { backgroundColor: 'var(--color-surface)' }}
-                    >
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              </div>
             </div>
 
             <button
@@ -203,8 +181,6 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
                     <div className="text-[var(--color-text-primary)] font-medium capitalize">{result.matchedPolicy.action}</div>
                     <div className="text-[var(--color-text-muted)]">Protocol</div>
                     <div className="text-[var(--color-text-primary)] font-medium uppercase">{result.matchedPolicy.protocol}</div>
-                    <div className="text-[var(--color-text-muted)]">Direction</div>
-                    <div className="text-[var(--color-text-primary)] font-medium capitalize">{result.matchedPolicy.direction}</div>
                     <div className="text-[var(--color-text-muted)]">Ports</div>
                     <div className="text-[var(--color-text-primary)] font-medium">{result.matchedPolicy.ports || 'any'}</div>
                     <div className="text-[var(--color-text-muted)]">Logging</div>

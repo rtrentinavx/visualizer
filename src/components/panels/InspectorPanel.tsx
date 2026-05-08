@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Route, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
 import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
@@ -229,25 +229,18 @@ const StringListEditor = ({ label, items, onChange, placeholder }: { label: stri
   </div>
 );
 
-function directionLabel(dir: string) {
-  if (dir === 'inbound') return 'in';
-  if (dir === 'outbound') return 'out';
-  return 'any';
-}
-
 // ---------- Item Editor (keyed for fresh state on item change) ----------
 
 interface ItemEditorProps {
   topology: DcfPolicyModel;
   selectedItem: { type: string; id: string; srcId?: string; dstId?: string };
-  selectedCell: { srcId: string; dstId: string } | null;
   aiProfile?: AIProfile | null;
   onBack: () => void;
   onSave: (data: Record<string, unknown>) => void;
   onDelete: () => void;
 }
 
-function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, onSave, onDelete }: ItemEditorProps) {
+function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelete }: ItemEditorProps) {
   const initialForm = useMemo(() => {
     switch (selectedItem.type) {
       case 'policy': {
@@ -261,7 +254,6 @@ function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, o
             srcGroupId: selectedItem.srcId || 'sg-any',
             dstGroupId: selectedItem.dstId || 'sg-any',
             action: 'allow',
-            direction: selectedCell ? 'outbound' : 'any',
             protocol: 'tcp',
             logging: false,
           };
@@ -318,7 +310,6 @@ function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, o
       srcGroupId: String(p.srcGroupId ?? 'sg-any'),
       dstGroupId: String(p.dstGroupId ?? 'sg-any'),
       action: String(p.action ?? 'allow') as 'allow' | 'deny' | 'learned',
-      direction: String(p.direction ?? 'any') as 'inbound' | 'outbound' | 'any',
       protocol: String(p.protocol ?? 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any',
       ports: p.ports ? String(p.ports) : undefined,
       logging: !!p.logging,
@@ -423,10 +414,8 @@ function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, o
       <Input label="Priority" value={String(p.priority ?? 100)} onChange={(v) => updateField('priority', Number(v))} type="number" />
       <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
       <Select label="Destination Group" value={String(p.dstGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('dstGroupId', v)} />
-      <Select label="Action" value={String(p.action ?? 'allow')} options={[{ value: 'allow', label: 'Allow' }, { value: 'deny', label: 'Deny' }, { value: 'learned', label: 'Learned' }]} onChange={(v) => updateField('action', v)} />
-      {!selectedCell && (
-        <Select label="Direction" value={String(p.direction ?? 'any')} options={[{ value: 'inbound', label: 'Inbound' }, { value: 'outbound', label: 'Outbound' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('direction', v)} />
-      )}
+      <Select label="Action" value={String(p.action ?? 'allow')} options={[{ value: 'allow', label: 'Allow' }, { value: 'deny', label: 'Deny' }]} onChange={(v) => updateField('action', v)} />
+      <Toggle label="Enforcement" checked={p.enforcement !== false} onChange={(v) => updateField('enforcement', v)} />
       <Select label="Protocol" value={String(p.protocol ?? 'tcp')} options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }, { value: 'icmp', label: 'ICMP' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('protocol', v)} />
       <Input label="Ports" value={String(p.ports ?? '')} onChange={(v) => updateField('ports', v)} placeholder="8080,8443 or any" />
       <Toggle label="Logging" checked={!!p.logging} onChange={(v) => updateField('logging', v)} />
@@ -632,8 +621,6 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
                 >
                   {p.action === 'allow' ? (
                     <ShieldCheck size={14} className="text-green-400 shrink-0" />
-                  ) : p.action === 'learned' ? (
-                    <Route size={14} className="text-[var(--color-accent-purple)] shrink-0" />
                   ) : (
                     <ShieldX size={14} className="text-red-400 shrink-0" />
                   )}
@@ -643,8 +630,6 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
                       <span className="text-[10px] text-[var(--color-text-muted)] font-mono">#{p.priority}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)]">
-                      {directionLabel(p.direction)}
-                      <span>·</span>
                       {p.protocol}
                       <span>·</span>
                       {p.ports || 'any'}
@@ -729,7 +714,7 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
           key={`${selectedItem.type}:${selectedItem.id}`}
           topology={topology}
           selectedItem={selectedItem}
-          selectedCell={selectedCell}
+
           aiProfile={aiProfile}
           onBack={() => onSelectPolicy(null)}
           onSave={(data) => onUpdateItem(selectedItem.type, selectedItem.id, data)}

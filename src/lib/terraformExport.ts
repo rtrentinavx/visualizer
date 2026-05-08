@@ -173,6 +173,7 @@ export function generateTerraform(topology: DcfPolicyModel): string {
     lines.push(`    name     = "${escapeHcl(pol.name)}"`);
     lines.push(`    priority = ${pol.priority}`);
     lines.push(`    action   = "${actionMap[pol.action] || 'DENY'}"`);
+    lines.push(`    enforce  = ${pol.enforcement !== false}`);
     lines.push(`    protocol = "${pol.protocol.toUpperCase()}"`);
     if (pol.ports && pol.ports !== 'any') {
       lines.push(`    port_ranges = [${pol.ports.split(',').map((p) => `"${escapeHcl(p.trim())}"`).join(', ')}]`);

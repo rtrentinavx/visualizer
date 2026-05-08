@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe, ArrowRight, ArrowLeft, ArrowLeftRight, Route, Ban, LayoutGrid, Plus } from 'lucide-react';
-import type { DcfPolicy, DcfPolicyModel, PolicyDirection } from '../../types/dcf';
+import { ShieldCheck, ShieldX, Lock, Globe, Ban, LayoutGrid, Plus } from 'lucide-react';
+import type { DcfPolicy, DcfPolicyModel } from '../../types/dcf';
 
 interface PolicyMatrixProps {
   topology: DcfPolicyModel;
@@ -9,18 +9,6 @@ interface PolicyMatrixProps {
   onSelectCell: (srcId: string, dstId: string) => void;
   onSelectGroup: (groupId: string) => void;
   onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
-}
-
-function directionIcon(dir: PolicyDirection) {
-  if (dir === 'inbound') return <ArrowLeft size={10} className="opacity-70" />;
-  if (dir === 'outbound') return <ArrowRight size={10} className="opacity-70" />;
-  return <ArrowLeftRight size={10} className="opacity-70" />;
-}
-
-function directionLabel(dir: PolicyDirection) {
-  if (dir === 'inbound') return 'in';
-  if (dir === 'outbound') return 'out';
-  return 'any';
 }
 
 export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
@@ -161,9 +149,7 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
                         effective
                           ? effective.action === 'allow'
                             ? 'bg-green-500/10 border-green-500/30'
-                            : effective.action === 'learned'
-                            ? 'bg-[var(--color-accent-purple)]/10 border-[var(--color-accent-purple)]/30'
-                            : 'bg-red-500/10 border-red-500/30'
+                              : 'bg-red-500/10 border-red-500/30'
                           : isEmpty
                           ? 'bg-[var(--color-surface)] border-dashed border-[var(--color-border-subtle)] hover:border-[var(--color-accent-blue)] hover:bg-[var(--color-accent-blue)]/5'
                           : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)]'
@@ -172,7 +158,7 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
                         isEmpty
                           ? 'Click to create a new policy'
                           : sorted.length > 0
-                          ? sorted.map((p) => `#${p.priority} ${p.action.toUpperCase()} ${directionLabel(p.direction)} ${p.protocol}/${p.ports || 'any'}`).join(' \n')
+                          ? sorted.map((p) => `#${p.priority} ${p.action.toUpperCase()} ${p.protocol}/${p.ports || 'any'}`).join(' \n')
                           : ''
                       }
                     >
@@ -191,15 +177,12 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
                             <div key={p.id} className="flex items-center gap-1">
                               {p.action === 'allow' ? (
                                 <ShieldCheck size={10} className="text-green-400 shrink-0" />
-                              ) : p.action === 'learned' ? (
-                                <Route size={10} className="text-[var(--color-accent-purple)] shrink-0" />
                               ) : (
                                 <ShieldX size={10} className="text-red-400 shrink-0" />
                               )}
                               <span className="text-[9px] font-mono text-[var(--color-text-muted)] leading-tight">
                                 {p.priority}
                               </span>
-                              {directionIcon(p.direction)}
                               <span className="text-[9px] font-mono text-[var(--color-text-muted)] leading-tight">
                                 {p.ports || p.protocol}
                               </span>
@@ -232,10 +215,6 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
               <span>Deny</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <Route size={14} className="text-[var(--color-accent-purple)]" />
-              <span>Learned</span>
-            </div>
-            <div className="flex items-center gap-1.5">
               <Lock size={14} className="text-[var(--color-accent-purple)]" />
               <span>TLS Decrypt</span>
             </div>
@@ -246,10 +225,6 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
             <div className="flex items-center gap-1.5">
               <Ban size={14} className="text-[var(--color-accent-red)]" />
               <span>Excludes</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ArrowLeftRight size={14} />
-              <span>Direction</span>
             </div>
           </div>
         </div>

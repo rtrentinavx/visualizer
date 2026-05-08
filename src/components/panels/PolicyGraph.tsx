@@ -31,7 +31,6 @@ interface EdgePos {
 
 function getActionColor(action: string): string {
   if (action === 'allow') return '#22c55e';
-  if (action === 'learned') return '#8b5cf6';
   return '#ef4444';
 }
 
@@ -214,9 +213,6 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
             <marker id="arrow-allow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
               <path d="M0,0 L0,6 L9,3 z" fill="#22c55e" />
             </marker>
-            <marker id="arrow-learned" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
-              <path d="M0,0 L0,6 L9,3 z" fill="#8b5cf6" />
-            </marker>
             <marker id="arrow-deny" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
               <path d="M0,0 L0,6 L9,3 z" fill="#ef4444" />
             </marker>
@@ -394,10 +390,6 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-0.5 bg-green-400" />
             <span>Allow</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 bg-[var(--color-accent-purple)]" />
-            <span>Learned</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 h-0.5 bg-red-400" />

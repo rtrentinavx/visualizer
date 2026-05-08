@@ -46,10 +46,10 @@ export interface DcfPolicy {
   srcExcludeGroupIds?: string[];
   dstExcludeGroupIds?: string[];
   action: PolicyAction;
-  direction: PolicyDirection;
   protocol: Protocol;
   ports?: string;
   logging: boolean;
+  enforcement?: boolean;
   decrypt?: boolean;
   threatGroup?: string;
   geoGroup?: string;

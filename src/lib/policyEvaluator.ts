@@ -23,8 +23,6 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
       const sameSrc = high.srcGroupId === low.srcGroupId || high.srcGroupId === 'sg-any' || low.srcGroupId === 'sg-any';
       const sameDst = high.dstGroupId === low.dstGroupId || high.dstGroupId === 'sg-any' || low.dstGroupId === 'sg-any';
       const sameProto = high.protocol === low.protocol || high.protocol === 'any' || low.protocol === 'any';
-      const sameDir = high.direction === low.direction || high.direction === 'any' || low.direction === 'any';
-
       const portOverlap = (() => {
         if (high.ports === undefined || high.ports === 'any' || low.ports === undefined || low.ports === 'any') {
           return true;
@@ -34,7 +32,7 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
         return highPorts.some((hp) => lowPorts.includes(hp));
       })();
 
-      if (sameSrc && sameDst && sameProto && sameDir && portOverlap) {
+      if (sameSrc && sameDst && sameProto && portOverlap) {
         findings.push({
           id: `shadow-${low.id}`,
           severity: 'warning',
@@ -170,12 +168,12 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
 
 function findWebGroupEgressViolation(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && p.direction !== 'outbound')
+    .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && p.dstGroupId !== 'sg-internet')
     .map((p) => ({
       id: `webgroup-egress-${p.id}`,
       severity: 'error',
-      title: 'WebGroup Rule Must Be Egress-Only',
-      description: `Policy "${p.name}" uses WebGroups but direction is "${p.direction}". Aviatrix Best Practice: WebGroup (Layer 7) rules are stateful and ONLY supported for egress (outbound) traffic. East/West L7 filtering is not supported.`,
+      title: 'WebGroup Rule Must Target Internet',
+      description: `Policy "${p.name}" uses WebGroups but destination is not "Internet". Aviatrix Best Practice: WebGroup rules should target Public Internet as the destination.`,
       affectedPolicyIds: [p.id],
     }));
 }

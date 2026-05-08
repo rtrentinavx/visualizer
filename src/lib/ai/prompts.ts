@@ -44,8 +44,7 @@ ANTI-HALLUCINATION RULES (v1.0) — MANDATORY:
 export const SYSTEM_PROMPT_POLICY_GENERATION = `You are an expert Aviatrix Distributed Cloud Firewall (DCF) policy designer.
 Your job is to help users create DCF policies from natural language descriptions.
 
-Available actions: allow, deny, learned.
-Directions: inbound, outbound, any.
+Available actions: allow, deny.
 Protocols: tcp, udp, icmp, any.
 
 When the user describes a policy, respond with a structured JSON object inside a markdown code block:
@@ -54,8 +53,7 @@ When the user describes a policy, respond with a structured JSON object inside a
   "suggestions": [
     {
       "name": "Human-readable policy name",
-      "action": "allow|deny|learned",
-      "direction": "inbound|outbound|any",
+      "action": "allow|deny",
       "protocol": "tcp|udp|icmp|any",
       "ports": "8080,8443 or any",
       "srcGroupName": "Source group name (or 'Any')",
@@ -75,7 +73,7 @@ Rules:
 - HTTPS traffic should use TCP port 443 [INFERRED].
 - SSH should use TCP port 22 [INFERRED].
 - Database traffic (PostgreSQL, MySQL) should use TCP port 5432 or 3306 [INFERRED].
-- WebGroup-based rules MUST have direction: outbound (L7 filtering is egress-only per Aviatrix guide).
+- WebGroup-based rules MUST have destination: Internet (L7 filtering targets Public Internet per Aviatrix guide).
 - TLS Decryption rules MUST have protocol: tcp and ports containing 443.
 - TRANSPARENCY: Every suggestion must include an explanation. If any value is inferred rather than explicitly stated by the user, mark it with [INFERRED].
 ${GUARDRAILS}`;
@@ -90,8 +88,7 @@ Respond with a structured JSON object inside a markdown code block:
   "action": "modify|delete|create",
   "policyData": {
     "name": "...",
-    "action": "allow|deny|learned",
-    "direction": "inbound|outbound|any",
+    "action": "allow|deny",
     "protocol": "tcp|udp|icmp|any",
     "ports": "...",
     "srcGroupName": "...",

@@ -1,11 +1,10 @@
-import type { DcfPolicyModel, DcfPolicy, Protocol, PolicyDirection } from '../types/dcf';
+import type { DcfPolicyModel, DcfPolicy, Protocol } from '../types/dcf';
 
 export interface SimulationRequest {
   srcGroupId: string;
   dstGroupId: string;
   protocol: Protocol;
   port: number;
-  direction: PolicyDirection;
 }
 
 export interface SimulationResult {
@@ -21,7 +20,7 @@ export interface SimulationResult {
  * Policies are evaluated in priority order (ascending).
  */
 export function simulateTraffic(topology: DcfPolicyModel, request: SimulationRequest): SimulationResult {
-  const { srcGroupId, dstGroupId, protocol, port, direction } = request;
+  const { srcGroupId, dstGroupId, protocol, port } = request;
 
   // Filter policies that could match this flow
   const candidates = topology.policies.filter((p) => {
@@ -36,10 +35,6 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
     // Protocol match
     const protoMatch = p.protocol === protocol || p.protocol === 'any';
     if (!protoMatch) return false;
-
-    // Direction match
-    const dirMatch = p.direction === direction || p.direction === 'any';
-    if (!dirMatch) return false;
 
     // Port match
     if (p.ports && p.ports !== 'any') {
@@ -69,7 +64,7 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
   }
 
   const winner = sorted[0];
-  const actionText = winner.action === 'allow' ? 'allowed' : winner.action === 'learned' ? 'learned (monitored)' : 'denied';
+  const actionText = winner.action === 'allow' ? 'allowed' : 'denied';
 
   let explanation = `Policy "${winner.name}" (priority ${winner.priority}) matches first and traffic is ${actionText}.`;
   if (sorted.length > 1) {

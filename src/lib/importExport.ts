@@ -340,9 +340,6 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       const protocolRaw = (getString(pb, 'protocol') || 'ANY').toLowerCase();
       const protocol: DcfPolicy['protocol'] =
         protocolRaw === 'tcp' ? 'tcp' : protocolRaw === 'udp' ? 'udp' : protocolRaw === 'icmp' ? 'icmp' : 'any';
-      const directionRaw = (getString(pb, 'direction') || 'ANY').toLowerCase();
-      const direction: DcfPolicy['direction'] =
-        directionRaw === 'inbound' ? 'inbound' : directionRaw === 'outbound' ? 'outbound' : 'any';
       const logging = getBool(pb, 'logging') ?? false;
       const decrypt = getBool(pb, 'decrypt') ?? false;
 
@@ -382,7 +379,6 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
         srcExcludeGroupIds: srcExcludeIds.length > 0 ? srcExcludeIds : undefined,
         dstExcludeGroupIds: dstExcludeIds.length > 0 ? dstExcludeIds : undefined,
         action,
-        direction,
         protocol,
         ports,
         logging,
