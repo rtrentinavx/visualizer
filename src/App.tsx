@@ -856,25 +856,27 @@ export default function App() {
             <div className="flex-1 overflow-auto p-4 space-y-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <p>
                 <strong>DCF Visualizer</strong> is an interactive design and validation tool for Aviatrix Distributed Cloud Firewall (DCF) policies.
-                Model SmartGroups, WebGroups, ThreatGroups, GeoGroups, and the policies that govern traffic between them — with real-time scoring and best-practice validation aligned to the official Aviatrix DCF Rule Configuration Guide.
+                Model SmartGroups, WebGroups, ThreatGroups, GeoGroups, and the policies that govern traffic between them — with real-time scoring and best-practice validation aligned to Aviatrix, CIS, and NIST Zero Trust frameworks.
               </p>
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Views</h3>
                 <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li><strong>Matrix</strong> — Grid view of SmartGroup → SmartGroup policies with priority-aware rendering</li>
-                  <li><strong>Graph</strong> — Circular node layout with directed policy edges and Draw Policy mode</li>
+                  <li><strong>Matrix</strong> — Grid view of SmartGroup → SmartGroup policies with sticky headers and priority-aware rendering</li>
+                  <li><strong>Graph</strong> — Circular node layout with draggable nodes, lock/unlock layout toggle, and Draw Policy mode</li>
                   <li><strong>Traffic</strong> — Manual traffic flow logging with add/edit/delete and JSON/CSV import-export</li>
-                  <li><strong>Simulator</strong> — What-If traffic tester: pick src/dst/protocol/port and see which policy matches first</li>
+                  <li><strong>Simulator</strong> — What-If traffic tester: enter source/destination IPs and the tool resolves them to SmartGroups via CIDR matching</li>
                 </ul>
               </div>
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Policy Lifecycle</h3>
                 <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li><strong>Create & Edit</strong> — Full policy editor with live score (0-100) and grade (F/D/C/B/A/S)</li>
-                  <li><strong>Evaluate</strong> — Built-in evaluator checks for shadowed rules, missing deny-all, overly permissive rules, logging gaps, L7 compliance, and more</li>
-                  <li><strong>AI Assist</strong> — Natural language policy creation, policy explanation, and evaluator fix suggestions via OpenAI, Anthropic, Google, Ollama, LM Studio, or AWS Bedrock</li>
+                  <li><strong>Create & Edit</strong> — Full policy editor with auto-naming, live score (0-100), and grade (F/D/C/B/A)</li>
+                  <li><strong>WebGroup Presets</strong> — Browse a curated library of 6 preset categories (SaaS, Social, Streaming, Dev Tools, Gambling, Ads) and add them with one click</li>
+                  <li><strong>Evaluate</strong> — 21 automated checks across Security, Compliance, Performance, Naming, and Hygiene. Compliance score (0–100), category filters, and framework badges (Aviatrix BP, CIS, NIST ZT)</li>
+                  <li><strong>Fix it for me</strong> — One-click auto-fix for common issues: enable logging, correct TLS settings, fix WebGroup destinations, disable shadowed policies, deduplicate names/priorities</li>
+                  <li><strong>AI Assist</strong> — Policy explanation, evaluator fix suggestions, and free-form chat via OpenAI, Anthropic, Google, Ollama, LM Studio, or AWS Bedrock</li>
                   <li><strong>Export</strong> — Terraform (Aviatrix provider), JSON topology, CSV flows</li>
-                  <li><strong>Import</strong> — JSON round-trip or Terraform HCL (aviatrix_smart_group + aviatrix_distributed_firewalling_policy_list)</li>
+                  <li><strong>Import</strong> — JSON round-trip or Terraform HCL (aviatrix_smart_group + aviatrix_dcf_policy_list)</li>
                 </ul>
               </div>
               <div>
