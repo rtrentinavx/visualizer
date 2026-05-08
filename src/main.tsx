@@ -22,6 +22,39 @@ if (SENTRY_DSN) {
     tracesSampleRate: 1.0,
     tracePropagationTargets: ['localhost'],
   })
+
+  // Fallback: ensure the feedback widget is visible and clickable.
+  // Sentry's autoInject can silently fail in bundled Vite apps / strict CSP environments.
+  const ensureFeedbackWidget = () => {
+    try {
+      const existing = document.getElementById('sentry-feedback')
+      if (existing) {
+        existing.style.position = 'fixed'
+        existing.style.zIndex = '100000'
+        existing.style.pointerEvents = 'auto'
+        console.log('[Sentry] Feedback widget found in DOM.')
+        return
+      }
+
+      const feedback = Sentry.getFeedback()
+      if (!feedback) {
+        console.warn('[Sentry] Feedback integration not available.')
+        return
+      }
+
+      console.log('[Sentry] Auto-injected widget missing — creating manually.')
+      const widget = feedback.createWidget()
+      widget.appendToDom()
+    } catch (err) {
+      console.error('[Sentry] Failed to create feedback widget:', err)
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(ensureFeedbackWidget, 500))
+  } else {
+    setTimeout(ensureFeedbackWidget, 500)
+  }
 } else {
   console.warn('[Sentry] VITE_SENTRY_DSN not set — skipping Sentry init.')
 }
