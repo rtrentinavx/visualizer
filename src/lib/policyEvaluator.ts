@@ -1,15 +1,36 @@
 import type { DcfPolicyModel, DcfPolicy } from '../types/dcf';
 
 export type FindingSeverity = 'error' | 'warning' | 'info';
+export type FindingCategory = 'security' | 'naming' | 'performance' | 'compliance' | 'hygiene';
+export type Framework = 'Aviatrix BP' | 'CIS' | 'NIST ZT' | 'Best Practice';
 
 export interface Finding {
   id: string;
   severity: FindingSeverity;
+  category: FindingCategory;
+  frameworks: Framework[];
   title: string;
   description: string;
   affectedPolicyIds?: string[];
   affectedGroupIds?: string[];
+  fixable?: boolean;
+  fixDescription?: string;
 }
+
+export interface EvaluationReport {
+  findings: Finding[];
+  score: number; // 0-100
+  summary: {
+    errors: number;
+    warnings: number;
+    infos: number;
+    total: number;
+    fixable: number;
+  };
+  categories: Record<FindingCategory, number>;
+}
+
+// ---------- Individual Check Functions ----------
 
 function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
   const findings: Finding[] = [];
@@ -36,9 +57,13 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
         findings.push({
           id: `shadow-${low.id}`,
           severity: 'warning',
+          category: 'performance',
+          frameworks: ['Aviatrix BP', 'Best Practice'],
           title: 'Shadowed Policy',
           description: `Policy "${low.name}" (priority ${low.priority}) is shadowed by "${high.name}" (priority ${high.priority}). It will never be evaluated. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: [low.id, high.id],
+          fixable: true,
+          fixDescription: `Disable "${low.name}" (set enforcement off)`,
         });
       }
     }
@@ -56,8 +81,12 @@ function findMissingDenyAll(policies: DcfPolicy[]): Finding[] {
     return [{
       id: 'missing-deny-all',
       severity: 'error',
+      category: 'security',
+      frameworks: ['Aviatrix BP', 'NIST ZT', 'CIS'],
       title: 'Missing Catch-All Deny',
       description: 'No deny-all policy found. Per Aviatrix Best Practices: set the Post Rules Policy List to block all non-defined items. Unmatched traffic may be implicitly allowed.',
+      fixable: true,
+      fixDescription: 'Create a catch-all deny policy at priority 9999',
     }];
   }
 
@@ -70,6 +99,8 @@ function findOverlyPermissive(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `overly-permissive-${p.id}`,
       severity: 'error',
+      category: 'security',
+      frameworks: ['NIST ZT', 'CIS', 'Aviatrix BP'],
       title: 'Overly Permissive Policy',
       description: `Policy "${p.name}" allows all traffic (any → any). Aviatrix Best Practice: narrow source/destination to specific SmartGroups and set a Post Rules deny-all.`,
       affectedPolicyIds: [p.id],
@@ -90,6 +121,8 @@ function findUnusedGroups(topology: DcfPolicyModel): Finding[] {
     .map((g) => ({
       id: `unused-group-${g.id}`,
       severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
       title: 'Unused SmartGroup',
       description: `Group "${g.name}" is not referenced by any policy. Consider removing it or creating policies for it.`,
       affectedGroupIds: [g.id],
@@ -102,9 +135,13 @@ function findMissingLogging(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `missing-log-${p.id}`,
       severity: 'warning',
+      category: 'compliance',
+      frameworks: ['Aviatrix BP', 'CIS', 'NIST ZT'],
       title: 'Deny Policy Without Logging',
       description: `Policy "${p.name}" denies traffic but has logging disabled. Aviatrix Best Practice: enable logging on deny rules for auditability. Send logs to CoPilot and SIEM.`,
       affectedPolicyIds: [p.id],
+      fixable: true,
+      fixDescription: `Enable logging on "${p.name}"`,
     }));
 }
 
@@ -124,6 +161,8 @@ function findMissingThreatProtection(topology: DcfPolicyModel): Finding[] {
       findings.push({
         id: `missing-threat-${p.id}`,
         severity: 'info',
+        category: 'security',
+        frameworks: ['Aviatrix BP', 'NIST ZT'],
         title: 'Internet Policy Lacks Threat/Geo Filtering',
         description: `Policy "${p.name}" allows internet traffic without threat intelligence or geo restrictions. Aviatrix Best Practice: add ExternalGroups (ThreatGroups or GeoGroups) for protection.`,
         affectedPolicyIds: [p.id],
@@ -153,6 +192,8 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
         findings.push({
           id: `conflict-${group[0].id}`,
           severity: 'warning',
+          category: 'security',
+          frameworks: ['Aviatrix BP', 'Best Practice'],
           title: 'Conflicting Actions',
           description: `Multiple policies between ${group[0].srcGroupId} → ${group[0].dstGroupId} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: group.map((p) => p.id),
@@ -164,17 +205,19 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
   return findings;
 }
 
-// ---- Aviatrix Best Practice: L7 Rules ----
-
 function findWebGroupEgressViolation(policies: DcfPolicy[]): Finding[] {
   return policies
     .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && p.dstGroupId !== 'sg-internet')
     .map((p) => ({
       id: `webgroup-egress-${p.id}`,
       severity: 'error',
+      category: 'compliance',
+      frameworks: ['Aviatrix BP'],
       title: 'WebGroup Rule Must Target Internet',
       description: `Policy "${p.name}" uses WebGroups but destination is not "Internet". Aviatrix Best Practice: WebGroup rules should target Public Internet as the destination.`,
       affectedPolicyIds: [p.id],
+      fixable: true,
+      fixDescription: `Change destination of "${p.name}" to Internet`,
     }));
 }
 
@@ -184,9 +227,13 @@ function findTlsDecryptPortViolation(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `tls-decrypt-port-${p.id}`,
       severity: 'warning',
+      category: 'compliance',
+      frameworks: ['Aviatrix BP', 'Best Practice'],
       title: 'TLS Decryption Should Target Port 443',
       description: `Policy "${p.name}" has TLS Decryption enabled but does not target port 443. Aviatrix Best Practice: TLS decryption only applies to TCP:443 (HTTPS) traffic.`,
       affectedPolicyIds: [p.id],
+      fixable: true,
+      fixDescription: `Set ports of "${p.name}" to 443`,
     }));
 }
 
@@ -196,9 +243,13 @@ function findTlsDecryptProtocolViolation(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `tls-decrypt-proto-${p.id}`,
       severity: 'error',
+      category: 'compliance',
+      frameworks: ['Aviatrix BP'],
       title: 'TLS Decryption Requires TCP Protocol',
       description: `Policy "${p.name}" has TLS Decryption enabled with protocol "${p.protocol}". Aviatrix Best Practice: TLS decryption only applies to TCP traffic. Set protocol to TCP.`,
       affectedPolicyIds: [p.id],
+      fixable: true,
+      fixDescription: `Change protocol of "${p.name}" to TCP`,
     }));
 }
 
@@ -208,6 +259,8 @@ function findBroadAllowWithoutPorts(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `broad-allow-${p.id}`,
       severity: 'warning',
+      category: 'security',
+      frameworks: ['CIS', 'NIST ZT', 'Best Practice'],
       title: 'Overly Broad Allow Rule',
       description: `Policy "${p.name}" allows any protocol on any port. Aviatrix Best Practice: separate Layer 4 rules by protocol and explicitly set ports when possible.`,
       affectedPolicyIds: [p.id],
@@ -227,9 +280,13 @@ function findDuplicateNames(policies: DcfPolicy[]): Finding[] {
       findings.push({
         id: `duplicate-name-${name}`,
         severity: 'warning',
+        category: 'naming',
+        frameworks: ['Best Practice', 'Aviatrix BP'],
         title: 'Duplicate Policy Name',
         description: `Multiple policies share the name "${name}". Aviatrix Best Practice: unique names prevent upgrade failures and make auditing easier.`,
         affectedPolicyIds: ids,
+        fixable: true,
+        fixDescription: `Make names unique by appending numbers`,
       });
     }
   });
@@ -242,6 +299,8 @@ function findSelfToSelfPolicies(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `self-to-self-${p.id}`,
       severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
       title: 'Self-to-Self Policy',
       description: `Policy "${p.name}" has the same source and destination group. Traffic within the same SmartGroup is typically handled at the workload level, not by DCF inter-group policies.`,
       affectedPolicyIds: [p.id],
@@ -261,9 +320,13 @@ function findDuplicatePriorities(policies: DcfPolicy[]): Finding[] {
       findings.push({
         id: `duplicate-priority-${priority}`,
         severity: 'warning',
+        category: 'naming',
+        frameworks: ['Aviatrix BP', 'Best Practice'],
         title: 'Duplicate Priority',
         description: `${ids.length} policies share priority ${priority}. Aviatrix evaluates rules in priority order; duplicates can cause non-deterministic enforcement. Use unique priority values.`,
         affectedPolicyIds: ids,
+        fixable: true,
+        fixDescription: `Renumber priorities to be unique`,
       });
     }
   });
@@ -276,9 +339,13 @@ function findMissingLoggingOnAllow(policies: DcfPolicy[]): Finding[] {
     .map((p) => ({
       id: `missing-log-allow-${p.id}`,
       severity: 'info',
+      category: 'compliance',
+      frameworks: ['CIS', 'NIST ZT', 'Best Practice'],
       title: 'Allow Policy Without Logging',
       description: `Policy "${p.name}" allows traffic but has logging disabled. Best Practice: enable logging on allow rules for auditability and traffic analysis in CoPilot/SIEM.`,
       affectedPolicyIds: [p.id],
+      fixable: true,
+      fixDescription: `Enable logging on "${p.name}"`,
     }));
 }
 
@@ -290,14 +357,134 @@ function findLearnedWithoutDenyAll(policies: DcfPolicy[]): Finding[] {
     return [{
       id: 'learned-without-deny-all',
       severity: 'warning',
+      category: 'security',
+      frameworks: ['Aviatrix BP', 'NIST ZT'],
       title: 'Learned Rules Without Deny-All',
       description: 'You have learned-mode policies but no catch-all deny. Aviatrix Best Practice: learned policies discover traffic patterns; pair them with a Post Rules deny-all to block undefined traffic.',
+      fixable: true,
+      fixDescription: 'Create a catch-all deny policy at priority 9999',
     }];
   }
   return [];
 }
 
-export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
+// ---- NEW: Additional NIST/CIS checks ----
+
+function findPoliciesWithoutEnforcement(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.enforcement === false)
+    .map((p) => ({
+      id: `no-enforcement-${p.id}`,
+      severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice', 'Aviatrix BP'],
+      title: 'Policy Enforcement Disabled',
+      description: `Policy "${p.name}" has enforcement disabled. It exists in the configuration but will not actively block or allow traffic. Useful for monitor mode, but verify this is intentional.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findHighPriorityBroadRules(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.priority <= 50 && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')
+    .map((p) => ({
+      id: `high-priority-broad-${p.id}`,
+      severity: 'warning',
+      category: 'security',
+      frameworks: ['NIST ZT', 'Best Practice'],
+      title: 'High-Priority Catch-All Rule',
+      description: `Policy "${p.name}" is a broad any→any rule with very high priority (${p.priority}). High-priority rules are evaluated first; a catch-all at this level can shadow many specific rules below it.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findUnusedWebGroups(topology: DcfPolicyModel): Finding[] {
+  const used = new Set<string>();
+  topology.policies.forEach((p) => p.webGroupIds?.forEach((id) => used.add(id)));
+  return topology.webGroups
+    .filter((g) => !used.has(g.id))
+    .map((g) => ({
+      id: `unused-webgroup-${g.id}`,
+      severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
+      title: 'Unused WebGroup',
+      description: `WebGroup "${g.name}" is defined but not used by any policy. Consider removing it or attaching it to an egress rule.`,
+      affectedGroupIds: [g.id],
+    }));
+}
+
+function findUnusedThreatGroups(topology: DcfPolicyModel): Finding[] {
+  const used = new Set<string>();
+  topology.policies.forEach((p) => { if (p.threatGroup) used.add(p.threatGroup); });
+  return topology.threatGroups
+    .filter((g) => !used.has(g.id))
+    .map((g) => ({
+      id: `unused-threatgroup-${g.id}`,
+      severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
+      title: 'Unused ThreatGroup',
+      description: `ThreatGroup "${g.name}" is defined but not referenced by any policy. Attach it to internet-facing allow rules for threat protection.`,
+      affectedGroupIds: [g.id],
+    }));
+}
+
+function findUnusedGeoGroups(topology: DcfPolicyModel): Finding[] {
+  const used = new Set<string>();
+  topology.policies.forEach((p) => { if (p.geoGroup) used.add(p.geoGroup); });
+  return topology.geoGroups
+    .filter((g) => !used.has(g.id))
+    .map((g) => ({
+      id: `unused-geogroup-${g.id}`,
+      severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
+      title: 'Unused GeoGroup',
+      description: `GeoGroup "${g.name}" is defined but not referenced by any policy. Attach it to internet-facing rules for geo-based filtering.`,
+      affectedGroupIds: [g.id],
+    }));
+}
+
+function findAllowInternetWithoutInspection(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) =>
+      p.action === 'allow' &&
+      (p.dstGroupId === 'sg-internet' || p.dstGroupId === 'sg-any') &&
+      !p.decrypt &&
+      p.protocol === 'tcp' &&
+      (p.ports?.includes('443') || p.ports === 'any')
+    )
+    .map((p) => ({
+      id: `no-inspection-${p.id}`,
+      severity: 'info',
+      category: 'security',
+      frameworks: ['NIST ZT', 'CIS', 'Aviatrix BP'],
+      title: 'HTTPS Egress Without TLS Inspection',
+      description: `Policy "${p.name}" allows HTTPS (TCP/443) outbound to the internet without TLS decryption. NIST Zero Trust & CIS recommend inspecting encrypted traffic to prevent data exfiltration and malware C2.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+// ---------- Scoring ----------
+
+function calculateScore(findings: Finding[]): number {
+  if (findings.length === 0) return 100;
+  const errorWeight = 15;
+  const warningWeight = 5;
+  const infoWeight = 1;
+
+  const errors = findings.filter((f) => f.severity === 'error').length;
+  const warnings = findings.filter((f) => f.severity === 'warning').length;
+  const infos = findings.filter((f) => f.severity === 'info').length;
+
+  const deduction = errors * errorWeight + warnings * warningWeight + infos * infoWeight;
+  return Math.max(0, 100 - deduction);
+}
+
+// ---------- Main Export ----------
+
+export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   const findings: Finding[] = [];
 
   findings.push(...findShadowedPolicies(topology.policies));
@@ -308,7 +495,7 @@ export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
   findings.push(...findMissingThreatProtection(topology));
   findings.push(...findConflictingActions(topology.policies));
 
-  // Aviatrix Best Practice checks from Configuration Guide
+  // Aviatrix Best Practice checks
   findings.push(...findWebGroupEgressViolation(topology.policies));
   findings.push(...findTlsDecryptPortViolation(topology.policies));
   findings.push(...findTlsDecryptProtocolViolation(topology.policies));
@@ -321,9 +508,144 @@ export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
   findings.push(...findDuplicatePriorities(topology.policies));
   findings.push(...findMissingLoggingOnAllow(topology.policies));
 
+  // Additional hygiene & security checks
+  findings.push(...findPoliciesWithoutEnforcement(topology.policies));
+  findings.push(...findHighPriorityBroadRules(topology.policies));
+  findings.push(...findUnusedWebGroups(topology));
+  findings.push(...findUnusedThreatGroups(topology));
+  findings.push(...findUnusedGeoGroups(topology));
+  findings.push(...findAllowInternetWithoutInspection(topology.policies));
+
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };
   findings.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 
-  return findings;
+  const errors = findings.filter((f) => f.severity === 'error').length;
+  const warnings = findings.filter((f) => f.severity === 'warning').length;
+  const infos = findings.filter((f) => f.severity === 'info').length;
+  const fixable = findings.filter((f) => f.fixable).length;
+
+  const categories: Record<FindingCategory, number> = {
+    security: findings.filter((f) => f.category === 'security').length,
+    naming: findings.filter((f) => f.category === 'naming').length,
+    performance: findings.filter((f) => f.category === 'performance').length,
+    compliance: findings.filter((f) => f.category === 'compliance').length,
+    hygiene: findings.filter((f) => f.category === 'hygiene').length,
+  };
+
+  return {
+    findings,
+    score: calculateScore(findings),
+    summary: { errors, warnings, infos, total: findings.length, fixable },
+    categories,
+  };
+}
+
+/**
+ * Apply an automatic fix for a given finding.
+ * Returns a new topology with the fix applied, or null if the finding is not auto-fixable.
+ */
+export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPolicyModel | null {
+  if (!finding.fixable) return null;
+
+  let next = { ...topology, policies: [...topology.policies] };
+
+  switch (finding.id) {
+    case 'missing-deny-all':
+    case 'learned-without-deny-all': {
+      const maxPriority = next.policies.length > 0
+        ? Math.max(...next.policies.map((p) => p.priority))
+        : 0;
+      const newPolicy: DcfPolicy = {
+        id: `pol-deny-all-${Date.now()}`,
+        name: 'Default Deny All',
+        priority: Math.max(maxPriority + 10, 9999),
+        srcGroupId: 'sg-any',
+        dstGroupId: 'sg-any',
+        action: 'deny',
+        protocol: 'any',
+        logging: true,
+        enforcement: true,
+      };
+      next.policies = [...next.policies, newPolicy];
+      return next;
+    }
+  }
+
+  // Policy-specific fixes
+  if (finding.affectedPolicyIds && finding.affectedPolicyIds.length > 0) {
+    const policyId = finding.affectedPolicyIds[0];
+    const policyIndex = next.policies.findIndex((p) => p.id === policyId);
+    if (policyIndex === -1) return null;
+
+    if (finding.id.startsWith('shadow-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, enforcement: false } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('missing-log-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, logging: true } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('missing-log-allow-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, logging: true } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('webgroup-egress-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, dstGroupId: 'sg-internet' } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('tls-decrypt-port-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, ports: '443' } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('tls-decrypt-proto-')) {
+      next.policies = next.policies.map((p) =>
+        p.id === policyId ? { ...p, protocol: 'tcp' } : p
+      );
+      return next;
+    }
+
+    if (finding.id.startsWith('duplicate-name-')) {
+      const nameCounts = new Map<string, number>();
+      next.policies = next.policies.map((p) => {
+        const count = nameCounts.get(p.name) || 0;
+        nameCounts.set(p.name, count + 1);
+        if (count > 0) {
+          return { ...p, name: `${p.name} (${count + 1})` };
+        }
+        return p;
+      });
+      return next;
+    }
+
+    if (finding.id.startsWith('duplicate-priority-')) {
+      const seen = new Set<number>();
+      next.policies = next.policies.map((p) => {
+        let priority = p.priority;
+        while (seen.has(priority)) {
+          priority += 1;
+        }
+        seen.add(priority);
+        return { ...p, priority };
+      });
+      return next;
+    }
+  }
+
+  return null;
 }

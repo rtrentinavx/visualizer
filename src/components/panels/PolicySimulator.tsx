@@ -1,31 +1,35 @@
 import { useState, useMemo } from 'react';
-import { FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown } from 'lucide-react';
+import { FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown, Network } from 'lucide-react';
 import type { DcfPolicyModel, Protocol } from '../../types/dcf';
 import { simulateTraffic } from '../../lib/policySimulator';
 import type { SimulationResult } from '../../lib/policySimulator';
+import { isValidIPv4 } from '../../lib/ipUtils';
 
 interface PolicySimulatorProps {
   topology: DcfPolicyModel;
 }
 
 export default function PolicySimulator({ topology }: PolicySimulatorProps) {
-  const [srcGroupId, setSrcGroupId] = useState('');
-  const [dstGroupId, setDstGroupId] = useState('');
+  const [srcIp, setSrcIp] = useState('');
+  const [dstIp, setDstIp] = useState('');
   const [protocol, setProtocol] = useState<Protocol>('tcp');
   const [port, setPort] = useState('443');
   const [result, setResult] = useState<SimulationResult | null>(null);
 
-  const smartGroupOptions = useMemo(
-    () => topology.smartGroups.filter((g) => g.id !== 'sg-internet'),
-    [topology.smartGroups]
-  );
+  const smartGroupMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of topology.smartGroups) {
+      map.set(g.id, g.name);
+    }
+    return map;
+  }, [topology.smartGroups]);
 
   const runSimulation = () => {
-    if (!srcGroupId || !dstGroupId) return;
+    if (!isValidIPv4(srcIp) || !isValidIPv4(dstIp)) return;
     const portNum = parseInt(port, 10) || 0;
     const res = simulateTraffic(topology, {
-      srcGroupId,
-      dstGroupId,
+      srcIp,
+      dstIp,
       protocol,
       port: portNum,
     });
@@ -39,6 +43,8 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
     'implicit-deny': { icon: Ban, color: '#9ca3af', label: 'IMPLICIT DENY' },
   };
 
+  const canRun = isValidIPv4(srcIp) && isValidIPv4(dstIp) && port !== '';
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -47,7 +53,7 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
           <FlaskConical size={18} className="text-[var(--color-accent-blue)]" />
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Simulator</h2>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Test a traffic flow against your policy rules</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Enter two IPs to test if traffic is allowed between them</p>
           </div>
         </div>
       </div>
@@ -60,44 +66,44 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
             style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)' }}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {/* Source */}
+              {/* Source IP */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Source Group</label>
-                <div className="relative">
-                  <select
-                    value={srcGroupId}
-                    onChange={(e) => setSrcGroupId(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
-                  >
-                    <option value="">Select source...</option>
-                    {smartGroupOptions.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                    <option value="sg-any">Any</option>
-                  </select>
-                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
-                </div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Source IP</label>
+                <input
+                  type="text"
+                  value={srcIp}
+                  onChange={(e) => setSrcIp(e.target.value)}
+                  placeholder="10.0.1.5"
+                  className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
+                  style={{
+                    backgroundColor: 'var(--color-input-bg)',
+                    borderColor: srcIp && !isValidIPv4(srcIp) ? '#ef4444' : 'var(--color-input-border)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                />
+                {srcIp && !isValidIPv4(srcIp) && (
+                  <p className="text-[10px] text-red-400 mt-0.5">Invalid IPv4 address</p>
+                )}
               </div>
 
-              {/* Destination */}
+              {/* Destination IP */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Destination Group</label>
-                <div className="relative">
-                  <select
-                    value={dstGroupId}
-                    onChange={(e) => setDstGroupId(e.target.value)}
-                    className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
-                  >
-                    <option value="">Select destination...</option>
-                    {smartGroupOptions.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                    <option value="sg-any">Any</option>
-                  </select>
-                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
-                </div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Destination IP</label>
+                <input
+                  type="text"
+                  value={dstIp}
+                  onChange={(e) => setDstIp(e.target.value)}
+                  placeholder="10.0.2.10"
+                  className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
+                  style={{
+                    backgroundColor: 'var(--color-input-bg)',
+                    borderColor: dstIp && !isValidIPv4(dstIp) ? '#ef4444' : 'var(--color-input-border)',
+                    color: 'var(--color-text-primary)',
+                  }}
+                />
+                {dstIp && !isValidIPv4(dstIp) && (
+                  <p className="text-[10px] text-red-400 mt-0.5">Invalid IPv4 address</p>
+                )}
               </div>
 
               {/* Protocol */}
@@ -131,12 +137,11 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
                   style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
                 />
               </div>
-
             </div>
 
             <button
               onClick={runSimulation}
-              disabled={!srcGroupId || !dstGroupId}
+              disabled={!canRun}
               className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium text-white transition-colors disabled:opacity-40"
               style={{ backgroundColor: 'var(--color-aviatrix)' }}
             >
@@ -164,7 +169,52 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
                   <p className="text-sm font-semibold" style={{ color: actionConfig[result.action].color }}>
                     {actionConfig[result.action].label}
                   </p>
-                  <p className="text-xs text-[var(--color-text-muted)]">{result.explanation}</p>
+                </div>
+              </div>
+
+              {/* Explanation */}
+              <div className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
+                {result.explanation}
+              </div>
+
+              {/* Resolved Groups */}
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Resolved Groups</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 rounded border" style={{ backgroundColor: 'var(--color-surface-elevated)', borderColor: 'var(--color-border-subtle)' }}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Network size={11} className="text-[var(--color-text-muted)]" />
+                      <span className="text-[10px] font-medium text-[var(--color-text-muted)]">Source</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {result.srcGroups.length > 0 ? (
+                        result.srcGroups.map((id) => (
+                          <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--color-accent-blue)15', color: 'var(--color-accent-blue)' }}>
+                            {smartGroupMap.get(id) || id}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-[var(--color-text-muted)] italic">No matching group (sg-any)</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="p-2 rounded border" style={{ backgroundColor: 'var(--color-surface-elevated)', borderColor: 'var(--color-border-subtle)' }}>
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Network size={11} className="text-[var(--color-text-muted)]" />
+                      <span className="text-[10px] font-medium text-[var(--color-text-muted)]">Destination</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {result.dstGroups.length > 0 ? (
+                        result.dstGroups.map((id) => (
+                          <span key={id} className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--color-accent-blue)15', color: 'var(--color-accent-blue)' }}>
+                            {smartGroupMap.get(id) || id}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[10px] text-[var(--color-text-muted)] italic">No matching group (sg-any)</span>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 

@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
-import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp, Wand2 } from 'lucide-react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp, Wand2, Library } from 'lucide-react';
+import WebGroupPresetModal from '../modals/WebGroupPresetModal';
+import type { WebGroupPreset } from '../../data/webGroupPresets';
 import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
@@ -643,6 +645,7 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
 // ---------- Main Inspector Panel ----------
 
 export default function InspectorPanel({ topology, selectedCell, selectedItem, aiProfile, onClose, onUpdateItem, onDeleteItem, onCreateItem, onSelectPolicy }: InspectorPanelProps) {
+  const [showPresetModal, setShowPresetModal] = useState(false);
   const cellPolicies = useMemo(() => {
     if (!selectedCell) return [];
     return topology.policies
@@ -754,6 +757,13 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
             <MapPin size={14} /> GeoGroup
           </button>
         </div>
+        <button
+          onClick={() => setShowPresetModal(true)}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md border text-xs transition-colors"
+          style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+        >
+          <Library size={13} /> Browse WebGroup Library
+        </button>
       </div>
       <div className="space-y-2">
         <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Summary</div>
@@ -791,6 +801,16 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
         <div className="flex-1 overflow-y-auto p-4">
           {renderCellView()}
         </div>
+      )}
+      {showPresetModal && (
+        <WebGroupPresetModal
+          existingNames={topology.webGroups.map((g) => g.name)}
+          onAdd={(preset: WebGroupPreset) => {
+            onCreateItem('webGroup', { name: preset.name, fqdns: preset.fqdns });
+            setShowPresetModal(false);
+          }}
+          onClose={() => setShowPresetModal(false)}
+        />
       )}
     </div>
   );

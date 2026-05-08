@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { ShieldAlert, AlertTriangle, Info, X, ArrowRight, Wand2, Loader2, Check, XCircle } from 'lucide-react';
-import type { Finding } from '../../lib/policyEvaluator';
+import { useState, useMemo } from 'react';
+import { ShieldAlert, AlertTriangle, Info, X, ArrowRight, Wand2, Loader2, Wrench, Check, XCircle, Trophy } from 'lucide-react';
+import type { Finding, EvaluationReport, FindingCategory, Framework } from '../../lib/policyEvaluator';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
 import { SYSTEM_PROMPT_AUTO_FIX, buildAutoFixPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
@@ -9,12 +9,12 @@ import { EvaluatorFixSchema, safeParseAIOutput } from '../../lib/ai/schemas';
 
 interface EvaluatorPanelProps {
   topology: DcfPolicyModel;
-  findings: Finding[];
+  report: EvaluationReport;
   aiProfile?: AIProfile | null;
   onClose: () => void;
   onSelectPolicy: (policyId: string) => void;
   onSelectGroup: (groupId: string) => void;
-  onApplyFix: (finding: Finding, suggestion: string) => void;
+  onApplyFix: (finding: Finding, suggestion?: string) => void;
 }
 
 const severityConfig = {
@@ -23,13 +23,47 @@ const severityConfig = {
   info: { icon: Info, color: '#3b82f6', bg: 'bg-blue-500/10', border: 'border-blue-500/30', label: 'Info' },
 };
 
-export default function EvaluatorPanel({ topology, findings, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix }: EvaluatorPanelProps) {
-  const errors = findings.filter((f) => f.severity === 'error').length;
-  const warnings = findings.filter((f) => f.severity === 'warning').length;
-  const infos = findings.filter((f) => f.severity === 'info').length;
+const categoryLabel: Record<FindingCategory, string> = {
+  security: 'Security',
+  naming: 'Naming',
+  performance: 'Performance',
+  compliance: 'Compliance',
+  hygiene: 'Hygiene',
+};
+
+const frameworkColors: Record<Framework, string> = {
+  'Aviatrix BP': '#10b981',
+  'CIS': '#f59e0b',
+  'NIST ZT': '#3b82f6',
+  'Best Practice': '#8b5cf6',
+};
+
+function getScoreColor(score: number): string {
+  if (score >= 90) return '#22c55e';
+  if (score >= 70) return '#f59e0b';
+  if (score >= 50) return '#f97316';
+  return '#ef4444';
+}
+
+function getScoreGrade(score: number): string {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
+export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix }: EvaluatorPanelProps) {
+  const { findings, score, summary, categories } = report;
+  const [activeCategory, setActiveCategory] = useState<FindingCategory | 'all'>('all');
 
   const [fixingId, setFixingId] = useState<string | null>(null);
   const [fixResult, setFixResult] = useState<Record<string, { text: string; loading: boolean }>>({});
+
+  const filteredFindings = useMemo(() => {
+    if (activeCategory === 'all') return findings;
+    return findings.filter((f) => f.category === activeCategory);
+  }, [findings, activeCategory]);
 
   const handleAIFix = async (finding: Finding) => {
     if (!aiProfile) return;
@@ -46,7 +80,6 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
         text += chunk.content;
         setFixResult((prev) => ({ ...prev, [finding.id]: { text, loading: true } }));
       }
-      // Validate AI output against schema
       const validated = safeParseAIOutput(EvaluatorFixSchema, text);
       if (!validated.success) {
         setFixResult((prev) => ({ ...prev, [finding.id]: { text: `AI response format invalid: ${validated.error}`, loading: false } }));
@@ -69,10 +102,13 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
     });
   };
 
+  const scoreColor = getScoreColor(score);
+  const scoreGrade = getScoreGrade(score);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div
-        className="w-full max-w-xl max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
+        className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
         style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
       >
         {/* Header */}
@@ -82,7 +118,7 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Evaluator</h2>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                {findings.length === 0 ? 'All checks passed' : `${errors} errors · ${warnings} warnings · ${infos} info`}
+                {summary.total === 0 ? 'All checks passed' : `${summary.errors} errors · ${summary.warnings} warnings · ${summary.infos} info · ${summary.fixable} fixable`}
               </p>
             </div>
           </div>
@@ -91,18 +127,85 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
           </button>
         </div>
 
+        {/* Score Dashboard */}
+        {summary.total > 0 && (
+          <div className="px-4 pt-4 pb-2">
+            <div className="flex items-center gap-4 p-3 rounded-lg border" style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)' }}>
+              <div className="relative flex items-center justify-center w-14 h-14 shrink-0">
+                <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="var(--color-border-subtle)"
+                    strokeWidth="3"
+                  />
+                  <path
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke={scoreColor}
+                    strokeWidth="3"
+                    strokeDasharray={`${score}, 100`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="absolute text-sm font-bold" style={{ color: scoreColor }}>{score}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-[var(--color-text-primary)]">Compliance Score</span>
+                  <span
+                    className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    style={{ backgroundColor: scoreColor + '20', color: scoreColor }}
+                  >
+                    {scoreGrade}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2 mt-1.5">
+                  {(['security', 'naming', 'performance', 'compliance', 'hygiene'] as FindingCategory[]).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setActiveCategory(activeCategory === cat ? 'all' : cat)}
+                      className="text-[10px] px-2 py-0.5 rounded-full border transition-colors"
+                      style={{
+                        backgroundColor: activeCategory === cat ? 'var(--color-accent-blue)' : 'var(--color-surface-elevated)',
+                        color: activeCategory === cat ? '#fff' : 'var(--color-text-muted)',
+                        borderColor: 'var(--color-border-subtle)',
+                      }}
+                    >
+                      {categoryLabel[cat]} ({categories[cat]})
+                    </button>
+                  ))}
+                  {activeCategory !== 'all' && (
+                    <button
+                      onClick={() => setActiveCategory('all')}
+                      className="text-[10px] px-2 py-0.5 rounded-full border text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)] transition-colors"
+                      style={{ borderColor: 'var(--color-border-subtle)' }}
+                    >
+                      Show all
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
-          {findings.length === 0 ? (
+          {summary.total === 0 ? (
             <div className="text-center py-8">
               <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-500/10 mb-3">
-                <ShieldAlert size={24} className="text-green-400" />
+                <Trophy size={24} className="text-green-400" />
               </div>
               <p className="text-sm text-[var(--color-text-secondary)]">No issues found</p>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">Your policy model follows best practices.</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-1">Your policy model follows best practices across Aviatrix, CIS, and NIST Zero Trust frameworks.</p>
+            </div>
+          ) : filteredFindings.length === 0 ? (
+            <div className="text-center py-8 text-xs text-[var(--color-text-muted)]">
+              No findings in this category. Select another filter.
             </div>
           ) : (
-            findings.map((finding) => {
+            filteredFindings.map((finding) => {
               const config = severityConfig[finding.severity];
               const Icon = config.icon;
               const fix = fixResult[finding.id];
@@ -115,13 +218,30 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
                 >
                   <Icon size={16} className="shrink-0 mt-0.5" style={{ color: config.color }} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-bold uppercase tracking-wider" style={{ color: config.color }}>
                         {config.label}
                       </span>
-                      <span className="text-sm font-medium text-[var(--color-text-primary)]">{finding.title}</span>
+                      <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}>
+                        {categoryLabel[finding.category]}
+                      </span>
+                      {finding.frameworks.map((fw) => (
+                        <span
+                          key={fw}
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                          style={{ backgroundColor: frameworkColors[fw] + '15', color: frameworkColors[fw] }}
+                        >
+                          {fw}
+                        </span>
+                      ))}
                     </div>
+                    <span className="text-sm font-medium text-[var(--color-text-primary)] block mt-1">{finding.title}</span>
                     <p className="text-xs text-[var(--color-text-secondary)] mt-1">{finding.description}</p>
+                    {finding.fixable && finding.fixDescription && (
+                      <p className="text-[10px] text-[var(--color-accent-blue)] mt-1 font-medium">
+                        Suggested fix: {finding.fixDescription}
+                      </p>
+                    )}
 
                     {/* AI Fix result */}
                     {fix && (
@@ -178,6 +298,20 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
                           Group <ArrowRight size={8} />
                         </button>
                       ))}
+                      {finding.fixable && !fix && (
+                        <button
+                          onClick={() => onApplyFix(finding)}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border transition-colors"
+                          style={{
+                            backgroundColor: 'var(--color-accent-blue)/10',
+                            borderColor: 'var(--color-accent-blue)/30',
+                            color: 'var(--color-accent-blue)',
+                          }}
+                        >
+                          <Wrench size={10} />
+                          Fix it for me
+                        </button>
+                      )}
                       {aiProfile && !fix && (
                         <button
                           onClick={() => handleAIFix(finding)}

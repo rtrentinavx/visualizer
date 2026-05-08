@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import RecommendationsModal, { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './components/modals/RecommendationsModal';
 import {
   LayoutGrid,
   Activity,
@@ -20,6 +21,8 @@ import {
   Upload,
   Trophy,
   Medal,
+  RotateCcw,
+  Lightbulb,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -27,12 +30,13 @@ import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { generateTerraform, downloadTerraform } from './lib/terraformExport';
 import { downloadTopologyJSON } from './lib/importExport';
-import { evaluateTopology } from './lib/policyEvaluator';
+import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
 import { scoreTopology } from './lib/policyScorer';
 import { checkAchievements, getAllAchievements, type Achievement } from './lib/achievements';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
+import { demoTopology } from './data/demoTopology';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 
 import PolicyGraph from './components/panels/PolicyGraph';
@@ -55,14 +59,7 @@ interface SelectedItem {
 
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const [topology, setTopology] = useState<DcfPolicyModel>({
-    smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
-    webGroups: [],
-    threatGroups: [],
-    geoGroups: [],
-    policies: [],
-    flows: [],
-  });
+  const [topology, setTopology] = useState<DcfPolicyModel>(() => structuredClone(demoTopology));
   const [viewMode, setViewMode] = useState<ViewMode>('matrix');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ srcId: string; dstId: string } | null>(null);
@@ -77,11 +74,12 @@ export default function App() {
     message: string;
     onConfirm: () => void;
   }>({ open: false, title: '', message: '', onConfirm: () => {} });
-  const [showEvaluator, setShowEvaluator] = useState(false);
+  const [evaluatorReport, setEvaluatorReport] = useState<EvaluationReport | null>(null);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showAIChat, setShowAIChat] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showAchievements, setShowAchievements] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(false);
   const [achievementToasts, setAchievementToasts] = useState<Achievement[]>([]);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
 
@@ -106,6 +104,11 @@ export default function App() {
             const parsed = JSON.parse(plain);
             setTopology(parsed);
             saveTopologyStorage(parsed).catch(() => {});
+          } else {
+            // Fresh load — offer recommendations if not dismissed
+            if (!isRecommendationsDismissed()) {
+              setShowRecommendations(true);
+            }
           }
         } catch { /* ignore */ }
       }
@@ -143,6 +146,10 @@ export default function App() {
     setViewMode(mode);
     setSelectedCell(null);
     setSelectedItem(null);
+  };
+
+  const handleOpenEvaluator = () => {
+    setEvaluatorReport(evaluateTopology(topology));
   };
 
   const handleSelectCell = useCallback((srcId: string, dstId: string) => {
@@ -359,6 +366,22 @@ export default function App() {
     });
   };
 
+  const handleResetDemo = () => {
+    setConfirmModal({
+      open: true,
+      title: 'Reset Demo',
+      message: 'This will restore the full demo topology with sample groups, policies, and WebGroup presets. Your current data will be replaced.',
+      onConfirm: () => {
+        setTopology(structuredClone(demoTopology));
+        setSelectedItem(null);
+        setSelectedCell(null);
+        clearRecommendationsDismissal();
+        setShowRecommendations(true);
+        setConfirmModal((prev) => ({ ...prev, open: false }));
+      },
+    });
+  };
+
   return (
     <div className="flex h-full w-full">
       {/* Main Content */}
@@ -424,7 +447,7 @@ export default function App() {
               if (score.totalPolicies === 0) return null;
               return (
                 <button
-                  onClick={() => setShowEvaluator(true)}
+                  onClick={handleOpenEvaluator}
                   className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors"
                   style={{
                     backgroundColor: score.color + '15',
@@ -473,6 +496,18 @@ export default function App() {
               title="Add Group"
             >
               <Plus size={14} />
+            </button>
+
+            {/* Reset Demo */}
+            <button
+              onClick={handleResetDemo}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-accent-blue)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="Reset Demo"
+            >
+              <RotateCcw size={14} />
             </button>
 
             {/* Clear All */}
@@ -541,6 +576,18 @@ export default function App() {
               <Upload size={14} />
             </button>
 
+            {/* Recommendations */}
+            <button
+              onClick={() => setShowRecommendations(true)}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = '#f59e0b'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="Recommended WebGroups"
+            >
+              <Lightbulb size={14} />
+            </button>
+
             {/* JSON Export */}
             <button
               onClick={() => downloadTopologyJSON(topology)}
@@ -570,7 +617,7 @@ export default function App() {
 
             {/* Evaluator */}
             <button
-              onClick={() => setShowEvaluator(true)}
+              onClick={handleOpenEvaluator}
               className="p-1.5 rounded-md border transition-colors"
               style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
@@ -883,66 +930,32 @@ export default function App() {
       )}
 
       {/* Policy Evaluator */}
-      {showEvaluator && (
+      {evaluatorReport && (
         <EvaluatorPanel
           topology={topology}
-          findings={evaluateTopology(topology)}
+          report={evaluatorReport}
           aiProfile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)}
-          onClose={() => setShowEvaluator(false)}
+          onClose={() => setEvaluatorReport(null)}
           onSelectPolicy={(policyId) => {
-            setShowEvaluator(false);
+            setEvaluatorReport(null);
             setSelectedItem({ type: 'policy', id: policyId });
           }}
           onSelectGroup={(groupId) => {
-            setShowEvaluator(false);
+            setEvaluatorReport(null);
             setSelectedItem({ type: 'smartGroup', id: groupId });
           }}
           onApplyFix={(finding) => {
-            // Apply simple fixes automatically
-            if (finding.id.startsWith('shadow-')) {
-              const shadowedId = finding.affectedPolicyIds?.[0];
-              if (shadowedId) {
-                setTopology((prev) => ({ ...prev, policies: prev.policies.filter((p) => p.id !== shadowedId) }));
-              }
-            } else if (finding.id.startsWith('missing-deny')) {
-              const maxPriority = topology.policies.length > 0
-                ? Math.max(...topology.policies.map((p) => p.priority))
-                : 0;
-              const newPolicy: DcfPolicy = {
-                id: `pol-${Date.now()}`,
-                name: 'Catch-All Deny',
-                priority: maxPriority + 10,
-                srcGroupId: 'sg-any',
-                dstGroupId: 'sg-any',
-                action: 'deny',
-                protocol: 'any',
-                logging: true,
-                enforcement: true,
-              };
-              setTopology((prev) => ({ ...prev, policies: [...prev.policies, newPolicy] }));
-            } else if (finding.id.startsWith('unused-')) {
-              const groupId = finding.affectedGroupIds?.[0];
-              if (groupId) {
-                setTopology((prev) => ({
-                  ...prev,
-                  smartGroups: prev.smartGroups.filter((g) => g.id !== groupId),
-                }));
-              }
-            } else if (finding.id.startsWith('missing-log-')) {
-              const policyId = finding.affectedPolicyIds?.[0];
-              if (policyId) {
-                setTopology((prev) => ({
-                  ...prev,
-                  policies: prev.policies.map((p) => (p.id === policyId ? { ...p, logging: true } as DcfPolicy : p)),
-                }));
-              }
-            } else {
-              // For complex fixes, just open the affected item
-              if (finding.affectedPolicyIds?.[0]) {
-                setSelectedItem({ type: 'policy', id: finding.affectedPolicyIds[0] });
-              } else if (finding.affectedGroupIds?.[0]) {
-                setSelectedItem({ type: 'smartGroup', id: finding.affectedGroupIds[0] });
-              }
+            const fixed = applyAutoFix(topology, finding);
+            if (fixed) {
+              setTopology(fixed);
+              saveTopologyStorage(fixed).catch(() => {});
+              setEvaluatorReport(evaluateTopology(fixed));
+            } else if (finding.affectedPolicyIds?.[0]) {
+              setEvaluatorReport(null);
+              setSelectedItem({ type: 'policy', id: finding.affectedPolicyIds[0] });
+            } else if (finding.affectedGroupIds?.[0]) {
+              setEvaluatorReport(null);
+              setSelectedItem({ type: 'smartGroup', id: finding.affectedGroupIds[0] });
             }
           }}
         />
@@ -1033,6 +1046,32 @@ export default function App() {
           </div>
         ))}
       </div>
+
+      {/* Recommendations Modal */}
+      {showRecommendations && (
+        <RecommendationsModal
+          existingNames={topology.webGroups.map((g) => g.name)}
+          onAccept={(presets) => {
+            setTopology((prev) => ({
+              ...prev,
+              webGroups: [
+                ...prev.webGroups,
+                ...presets.map((p) => ({
+                  id: `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  name: p.name,
+                  fqdns: p.fqdns,
+                })),
+              ],
+            }));
+            dismissRecommendations();
+            setShowRecommendations(false);
+          }}
+          onDismiss={() => {
+            dismissRecommendations();
+            setShowRecommendations(false);
+          }}
+        />
+      )}
 
       {/* Achievements Modal */}
       {showAchievements && (

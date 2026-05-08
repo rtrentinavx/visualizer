@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState, useEffect } from 'react';
-import { GitGraph, PenLine, Plus, X } from 'lucide-react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { GitGraph, PenLine, Plus, X, Lock, Unlock, RotateCcw } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from '../../types/dcf';
 
 interface PolicyGraphProps {
@@ -40,6 +40,7 @@ function getInitial(name: string): string {
 
 export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, onCreatePolicy, onSelectGroup }: PolicyGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
 
   useEffect(() => {
@@ -54,7 +55,14 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
     return () => ro.disconnect();
   }, []);
 
-  const { nodes, edges } = useMemo(() => {
+  // Drag state
+  const [layoutLocked, setLayoutLocked] = useState(true);
+  const [customPositions, setCustomPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Compute circular layout positions
+  const computedNodes = useMemo(() => {
     const groups = topology.smartGroups;
     const cx = size.w / 2;
     const cy = size.h / 2;
@@ -71,8 +79,30 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
         color: g.color,
       });
     });
+    return nodeMap;
+  }, [topology.smartGroups, size.w, size.h]);
 
-    // Count edges per node pair for parallel offset
+  // Final nodes: custom positions override computed ones when unlocked
+  const nodes = useMemo(() => {
+    const result: NodePos[] = [];
+    for (const [id, computed] of computedNodes) {
+      const custom = customPositions.get(id);
+      result.push({
+        ...computed,
+        x: custom ? custom.x : computed.x,
+        y: custom ? custom.y : computed.y,
+      });
+    }
+    return result;
+  }, [computedNodes, customPositions]);
+
+  const nodeMap = useMemo(() => {
+    const map = new Map<string, NodePos>();
+    for (const n of nodes) map.set(n.id, n);
+    return map;
+  }, [nodes]);
+
+  const edges = useMemo(() => {
     const pairCount = new Map<string, number>();
     topology.policies.forEach((p) => {
       const key = p.srcGroupId <= p.dstGroupId ? `${p.srcGroupId}|${p.dstGroupId}` : `${p.dstGroupId}|${p.srcGroupId}`;
@@ -102,9 +132,8 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
         offset: isSelfLoop ? 0 : (idx - ((pairCount.get(key) || 1) - 1) / 2) * 8,
       });
     });
-
-    return { nodes: Array.from(nodeMap.values()), edges: edgeList };
-  }, [topology, size.w, size.h]);
+    return edgeList;
+  }, [topology.policies, nodeMap]);
 
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
@@ -123,14 +152,56 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
       return;
     }
     if (connectSource === nodeId) {
-      // Cancel if clicking same node
       setConnectSource(null);
       return;
     }
-    // Create policy from connectSource to nodeId
     onCreatePolicy(connectSource, nodeId);
     setConnectSource(null);
     setConnectMode(false);
+  };
+
+  // Convert mouse client coordinates to SVG local coordinates
+  const getSVGPoint = useCallback((clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: clientX, y: clientY };
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+    };
+  }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
+    if (layoutLocked) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const pt = getSVGPoint(e.clientX, e.clientY);
+    const node = nodeMap.get(nodeId);
+    if (!node) return;
+    setDraggingNode(nodeId);
+    setDragOffset({ x: pt.x - node.x, y: pt.y - node.y });
+  }, [layoutLocked, getSVGPoint, nodeMap]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!draggingNode || layoutLocked) return;
+    const pt = getSVGPoint(e.clientX, e.clientY);
+    setCustomPositions((prev) => {
+      const next = new Map(prev);
+      next.set(draggingNode, {
+        x: pt.x - dragOffset.x,
+        y: pt.y - dragOffset.y,
+      });
+      return next;
+    });
+  }, [draggingNode, layoutLocked, getSVGPoint, dragOffset]);
+
+  const handleMouseUp = useCallback(() => {
+    setDraggingNode(null);
+  }, []);
+
+  const handleResetLayout = () => {
+    setCustomPositions(new Map());
+    setLayoutLocked(true);
   };
 
   return (
@@ -142,11 +213,46 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Graph</h2>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-              Click a node to edit. {connectMode ? 'Select source, then destination.' : 'Toggle Draw Policy to connect groups.'}
+              {layoutLocked
+                ? 'Nodes are locked in circular layout. Unlock to drag.'
+                : 'Drag nodes to reposition. Lock to snap back to circle.'}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Lock / Unlock toggle */}
+          <button
+            onClick={() => {
+              if (!layoutLocked) {
+                // Locking: clear custom positions to snap back
+                setCustomPositions(new Map());
+              }
+              setLayoutLocked((v) => !v);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+            style={{
+              backgroundColor: layoutLocked ? 'var(--color-surface)' : 'var(--color-aviatrix)',
+              borderColor: layoutLocked ? 'var(--color-border-subtle)' : 'var(--color-aviatrix)',
+              color: layoutLocked ? 'var(--color-text-secondary)' : '#fff',
+            }}
+            title={layoutLocked ? 'Unlock to drag nodes' : 'Lock to snap back to circle'}
+          >
+            {layoutLocked ? <Lock size={13} /> : <Unlock size={13} />}
+            {layoutLocked ? 'Locked' : 'Unlocked'}
+          </button>
+
+          {!layoutLocked && (
+            <button
+              onClick={handleResetLayout}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              title="Reset to circular layout"
+            >
+              <RotateCcw size={13} />
+              Reset
+            </button>
+          )}
+
           <button
             onClick={() => {
               setConnectMode((v) => !v);
@@ -192,7 +298,16 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
             </button>
           </div>
         )}
-        <svg width={size.w} height={size.h} className="absolute inset-0">
+        <svg
+          ref={svgRef}
+          width={size.w}
+          height={size.h}
+          className="absolute inset-0"
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          style={{ cursor: draggingNode ? 'grabbing' : layoutLocked ? 'default' : 'grab' }}
+        >
           <defs>
             {/* Drop shadow filter */}
             <filter id="node-shadow" x="-50%" y="-50%" width="200%" height="200%">
@@ -315,6 +430,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
             const isRelatedToHoveredEdge = hoveredEdge && edges.some((e) => e.policy.id === hoveredEdge && (e.policy.srcGroupId === n.id || e.policy.dstGroupId === n.id));
             const dim = hoveredEdge && !isRelatedToHoveredEdge && !isHovered;
             const isSelectableDest = connectMode && connectSource && connectSource !== n.id;
+            const isDragging = draggingNode === n.id;
 
             return (
               <g
@@ -323,6 +439,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
                 onClick={() => handleNodeClick(n.id)}
                 onMouseEnter={() => setHoveredNode(n.id)}
                 onMouseLeave={() => setHoveredNode(null)}
+                onMouseDown={(e) => handleMouseDown(e, n.id)}
                 className="cursor-pointer"
                 opacity={dim ? 0.3 : 1}
                 style={{ transition: 'opacity 0.2s' }}
@@ -352,7 +469,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
                   stroke={isConnectSource ? '#3b82f6' : isHovered ? 'var(--color-text-primary)' : 'rgba(255,255,255,0.15)'}
                   strokeWidth={isConnectSource ? 3 : 2}
                   filter={isHovered ? 'url(#node-shadow-hover)' : 'url(#node-shadow)'}
-                  style={{ transition: 'all 0.2s' }}
+                  style={{ transition: 'all 0.2s', cursor: layoutLocked ? 'pointer' : isDragging ? 'grabbing' : 'grab' }}
                 />
 
                 {/* Inner white circle with initial */}
