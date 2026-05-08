@@ -261,7 +261,7 @@ function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, o
             srcGroupId: selectedItem.srcId || 'sg-any',
             dstGroupId: selectedItem.dstId || 'sg-any',
             action: 'allow',
-            direction: 'any',
+            direction: selectedCell ? 'outbound' : 'any',
             protocol: 'tcp',
             logging: false,
           };

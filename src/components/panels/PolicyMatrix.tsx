@@ -66,7 +66,7 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
-            Click a cell with policies to view them. Click an empty cell to create one.
+            Row = Source → Column = Destination. Click a cell with policies to view them. Click an empty cell to create one.
           </p>
         </div>
         <div className="text-xs text-[var(--color-text-muted)]">
