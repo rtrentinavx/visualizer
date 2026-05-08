@@ -20,7 +20,6 @@ import {
   Upload,
   Trophy,
   Medal,
-  Bug,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -34,7 +33,6 @@ import { checkAchievements, getAllAchievements, type Achievement } from './lib/a
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
-import * as Sentry from '@sentry/react';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 
 import PolicyGraph from './components/panels/PolicyGraph';
@@ -646,31 +644,6 @@ export default function App() {
                 </button>
               );
             })()}
-
-            {/* Bug Report */}
-            <button
-              onClick={async () => {
-                try {
-                  const feedback = Sentry.getFeedback();
-                  if (!feedback) {
-                    alert('Sentry feedback is not initialized. Check that VITE_SENTRY_DSN is set in Vercel.');
-                    return;
-                  }
-                  const form = await feedback.createForm();
-                  form.appendToDom();
-                  form.open();
-                } catch (err) {
-                  alert('Failed to open feedback form: ' + (err instanceof Error ? err.message : String(err)));
-                }
-              }}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Report a bug"
-            >
-              <Bug size={14} />
-            </button>
 
             {/* About */}
             <button
