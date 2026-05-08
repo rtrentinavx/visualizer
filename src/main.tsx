@@ -16,12 +16,14 @@ if (SENTRY_DSN) {
       Sentry.browserTracingIntegration(),
       Sentry.feedbackIntegration({
         colorScheme: 'system',
-        autoInject: false,
+        autoInject: true,
       }),
     ],
     tracesSampleRate: 1.0,
     tracePropagationTargets: ['localhost'],
   })
+} else {
+  console.warn('[Sentry] VITE_SENTRY_DSN not set — skipping Sentry init.')
 }
 
 createRoot(document.getElementById('root')!).render(

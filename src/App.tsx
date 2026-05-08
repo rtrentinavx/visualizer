@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   LayoutGrid,
   Activity,
@@ -56,7 +56,6 @@ interface SelectedItem {
 }
 
 export default function App() {
-  const bugButtonRef = useRef<HTMLButtonElement>(null);
   const { theme, toggleTheme } = useTheme();
   const [topology, setTopology] = useState<DcfPolicyModel>({
     smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
@@ -137,15 +136,6 @@ export default function App() {
       });
     }
   }, [topology]);
-
-  // Attach Sentry User Feedback to the bug report button
-  useEffect(() => {
-    if (bugButtonRef.current) {
-      const feedback = Sentry.getFeedback();
-      const unsubscribe = feedback?.attachTo(bugButtonRef.current);
-      return () => unsubscribe?.();
-    }
-  }, []);
 
   const dismissToast = (id: string) => {
     setAchievementToasts((prev) => prev.filter((a) => a.id !== id));
@@ -659,7 +649,20 @@ export default function App() {
 
             {/* Bug Report */}
             <button
-              ref={bugButtonRef}
+              onClick={async () => {
+                try {
+                  const feedback = Sentry.getFeedback();
+                  if (!feedback) {
+                    alert('Sentry feedback is not initialized. Check that VITE_SENTRY_DSN is set in Vercel.');
+                    return;
+                  }
+                  const form = await feedback.createForm();
+                  form.appendToDom();
+                  form.open();
+                } catch (err) {
+                  alert('Failed to open feedback form: ' + (err instanceof Error ? err.message : String(err)));
+                }
+              }}
               className="p-1.5 rounded-md border transition-colors"
               style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
