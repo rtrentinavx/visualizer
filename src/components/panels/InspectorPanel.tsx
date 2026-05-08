@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Trash2, Save, Plus, Minus, Boxes, Globe, ShieldAlert, MapPin, ArrowLeft, ArrowRight, ShieldCheck, ShieldX, Lock, Sparkles, Loader2, Trophy, ChevronDown, ChevronUp, Wand2 } from 'lucide-react';
 import type { DcfPolicyModel, SmartGroupCriteria } from '../../types/dcf';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
@@ -410,7 +410,39 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
         </div>
       )}
 
-      <Input label="Name" value={String(p.name ?? '')} onChange={(v) => updateField('name', v)} />
+      <div className="mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Name</label>
+          <button
+            onClick={() => {
+              const src = smartGroupOptions.find((o) => o.value === (p.srcGroupId || 'sg-any'))?.label || 'Any';
+              const dst = smartGroupOptions.find((o) => o.value === (p.dstGroupId || 'sg-any'))?.label || 'Any';
+              const action = String(p.action ?? 'allow');
+              const proto = String(p.protocol ?? 'tcp').toUpperCase();
+              const port = String(p.ports || '').trim();
+              let name = `${action === 'allow' ? 'Allow' : 'Deny'} ${src} to ${dst}`;
+              if (proto !== 'ANY') {
+                name += ` ${proto}`;
+                if (port && port !== 'any') name += `/${port}`;
+              }
+              updateField('name', name);
+            }}
+            className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline"
+            title="Generate name from rule attributes"
+          >
+            <Wand2 size={10} /> Auto
+          </button>
+        </div>
+        <input
+          type="text"
+          value={String(p.name ?? '')}
+          onChange={(e) => updateField('name', e.target.value)}
+          className="w-full px-2 py-1.5 rounded text-xs border outline-none transition-colors"
+          style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+          onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-focus)')}
+          onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
+        />
+      </div>
       <Input label="Priority" value={String(p.priority ?? 100)} onChange={(v) => updateField('priority', Number(v))} type="number" />
       <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
       <Select label="Destination Group" value={String(p.dstGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('dstGroupId', v)} />
@@ -484,7 +516,42 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
           <ArrowLeft size={12} /> Back
         </button>
         <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">WebGroup</div>
-        <Input label="Name" value={String(form.name ?? g.name)} onChange={(v) => updateField('name', v)} />
+        <div className="mb-3">
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Name</label>
+            <button
+              onClick={() => {
+                const fqdns = ((form.fqdns as string[]) || g.fqdns || []);
+                if (fqdns.length === 0) {
+                  updateField('name', 'New Web Group');
+                  return;
+                }
+                // Extract base domains and capitalize
+                const bases = fqdns.map((f) => {
+                  const clean = f.replace(/^\*\./, '');
+                  const parts = clean.split('.');
+                  return parts.length >= 2 ? parts[parts.length - 2] : clean;
+                });
+                const unique = [...new Set(bases)];
+                const name = unique.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' & ');
+                updateField('name', name + ' Apps');
+              }}
+              className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline"
+              title="Generate name from FQDNs"
+            >
+              <Wand2 size={10} /> Auto
+            </button>
+          </div>
+          <input
+            type="text"
+            value={String(form.name ?? g.name)}          
+            onChange={(e) => updateField('name', e.target.value)}
+            className="w-full px-2 py-1.5 rounded text-xs border outline-none transition-colors"
+            style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+            onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-focus)')}
+            onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
+          />
+        </div>
         <StringListEditor label="FQDNs" items={(form.fqdns as string[]) || g.fqdns} onChange={(v) => updateField('fqdns', v)} placeholder="*.example.com" />
       </div>
     );
