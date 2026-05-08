@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   LayoutGrid,
   Activity,
@@ -34,7 +34,7 @@ import { checkAchievements, getAllAchievements, type Achievement } from './lib/a
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
-import { openBugReport } from './lib/sentryFeedback';
+import * as Sentry from '@sentry/react';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 
 import PolicyGraph from './components/panels/PolicyGraph';
@@ -56,6 +56,7 @@ interface SelectedItem {
 }
 
 export default function App() {
+  const bugButtonRef = useRef<HTMLButtonElement>(null);
   const { theme, toggleTheme } = useTheme();
   const [topology, setTopology] = useState<DcfPolicyModel>({
     smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
@@ -136,6 +137,15 @@ export default function App() {
       });
     }
   }, [topology]);
+
+  // Attach Sentry User Feedback to the bug report button
+  useEffect(() => {
+    if (bugButtonRef.current) {
+      const feedback = Sentry.getFeedback();
+      const unsubscribe = feedback?.attachTo(bugButtonRef.current);
+      return () => unsubscribe?.();
+    }
+  }, []);
 
   const dismissToast = (id: string) => {
     setAchievementToasts((prev) => prev.filter((a) => a.id !== id));
@@ -649,7 +659,7 @@ export default function App() {
 
             {/* Bug Report */}
             <button
-              onClick={() => { openBugReport().catch(() => {}); }}
+              ref={bugButtonRef}
               className="p-1.5 rounded-md border transition-colors"
               style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
