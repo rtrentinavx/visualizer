@@ -54,9 +54,8 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
   }, [groups, f]);
 
   const handleCellClick = (srcId: string, dstId: string, hasPolicies: boolean) => {
-    if (hasPolicies) {
-      onSelectCell(srcId, dstId);
-    } else {
+    onSelectCell(srcId, dstId);
+    if (!hasPolicies) {
       onSelectPolicy('__new__', srcId, dstId);
     }
   };
