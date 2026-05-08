@@ -147,7 +147,6 @@ export default function App() {
 
   const handleSelectCell = useCallback((srcId: string, dstId: string) => {
     setSelectedCell({ srcId, dstId });
-    setSelectedCell(null);
     setSelectedItem(null);
   }, []);
 
