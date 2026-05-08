@@ -240,13 +240,14 @@ function directionLabel(dir: string) {
 interface ItemEditorProps {
   topology: DcfPolicyModel;
   selectedItem: { type: string; id: string; srcId?: string; dstId?: string };
+  selectedCell: { srcId: string; dstId: string } | null;
   aiProfile?: AIProfile | null;
   onBack: () => void;
   onSave: (data: Record<string, unknown>) => void;
   onDelete: () => void;
 }
 
-function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelete }: ItemEditorProps) {
+function ItemEditor({ topology, selectedItem, selectedCell, aiProfile, onBack, onSave, onDelete }: ItemEditorProps) {
   const initialForm = useMemo(() => {
     switch (selectedItem.type) {
       case 'policy': {
@@ -423,7 +424,9 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
       <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
       <Select label="Destination Group" value={String(p.dstGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('dstGroupId', v)} />
       <Select label="Action" value={String(p.action ?? 'allow')} options={[{ value: 'allow', label: 'Allow' }, { value: 'deny', label: 'Deny' }, { value: 'learned', label: 'Learned' }]} onChange={(v) => updateField('action', v)} />
-      <Select label="Direction" value={String(p.direction ?? 'any')} options={[{ value: 'inbound', label: 'Inbound' }, { value: 'outbound', label: 'Outbound' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('direction', v)} />
+      {!selectedCell && (
+        <Select label="Direction" value={String(p.direction ?? 'any')} options={[{ value: 'inbound', label: 'Inbound' }, { value: 'outbound', label: 'Outbound' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('direction', v)} />
+      )}
       <Select label="Protocol" value={String(p.protocol ?? 'tcp')} options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }, { value: 'icmp', label: 'ICMP' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('protocol', v)} />
       <Input label="Ports" value={String(p.ports ?? '')} onChange={(v) => updateField('ports', v)} placeholder="8080,8443 or any" />
       <Toggle label="Logging" checked={!!p.logging} onChange={(v) => updateField('logging', v)} />
@@ -726,6 +729,7 @@ export default function InspectorPanel({ topology, selectedCell, selectedItem, a
           key={`${selectedItem.type}:${selectedItem.id}`}
           topology={topology}
           selectedItem={selectedItem}
+          selectedCell={selectedCell}
           aiProfile={aiProfile}
           onBack={() => onSelectPolicy(null)}
           onSave={(data) => onUpdateItem(selectedItem.type, selectedItem.id, data)}
