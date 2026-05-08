@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown } from 'lucide-react';
+import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck } from 'lucide-react';
 import type { AIProfile, AISettings, AIProvider } from '../../lib/ai/types';
 import { providerConfigs, getProviderConfig } from '../../lib/ai/providers';
 
@@ -387,9 +387,15 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
 
         {/* Footer */}
         <div className="p-3 border-t border-[var(--color-border-subtle)] flex items-center justify-between">
-          <p className="text-[10px] text-[var(--color-text-muted)]">
-            Keys stored encrypted locally. Pass through edge proxy.
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-[10px] text-[var(--color-text-muted)]">
+              Keys stored encrypted locally. Pass through edge proxy.
+            </p>
+            <div className="flex items-center gap-1 text-[10px] text-emerald-500">
+              <ShieldCheck size={10} />
+              <span>Input scanning · XML delimiters · Output validation · Prompt versioning</span>
+            </div>
+          </div>
           <button
             onClick={() => onSave(localSettings)}
             className="px-4 py-1.5 rounded-md text-xs font-medium text-white transition-colors"

@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, User, Check, Loader2, AlertCircle, Sparkles } from 'lucide-react';
+import { X, Send, Bot, User, Check, Loader2, AlertCircle, Sparkles, ThumbsUp, ThumbsDown, ShieldAlert } from 'lucide-react';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
-import { streamChat } from '../../lib/ai/client';
-import { SYSTEM_PROMPT_POLICY_GENERATION, buildPolicyGenerationPrompt } from '../../lib/ai/prompts';
+import { streamChat, postProcessAIOutput } from '../../lib/ai/client';
+import { SYSTEM_PROMPT_POLICY_GENERATION, buildPolicyGenerationPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
+import { sanitizeInput, delimitUserInput, scanInput } from '../../lib/ai/safety';
+import { PolicySuggestionArraySchema, safeParseAIOutput } from '../../lib/ai/schemas';
 import type { DcfPolicyModel } from '../../types/dcf';
 
 interface AIChatPanelProps {
@@ -17,6 +19,8 @@ interface ChatMessage {
   content: string;
   parsed?: Record<string, unknown> | null;
   error?: boolean;
+  safetyWarning?: string;
+  feedback?: 'up' | 'down' | null;
 }
 
 export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy }: AIChatPanelProps) {
@@ -33,14 +37,30 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
 
-    const userText = input.trim();
+    const rawText = input.trim();
+    const userText = sanitizeInput(rawText);
     setInput('');
 
-    const userMsg: ChatMessage = { role: 'user', content: userText };
+    // Safety scan
+    const scan = scanInput(userText);
+    const safetyWarning = scan.status !== 'clean' ? scan.reason : undefined;
+
+    const userMsg: ChatMessage = { role: 'user', content: userText, safetyWarning };
     setMessages((prev) => [...prev, userMsg]);
 
+    // Block if injection detected
+    if (scan.status === 'blocked') {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: 'I cannot process this request. It contains patterns that may be attempting to override my instructions. Please describe your DCF policy need in plain language.',
+        error: true,
+      }]);
+      return;
+    }
+
     const systemMsg: AIMessage = { role: 'system', content: SYSTEM_PROMPT_POLICY_GENERATION };
-    const contextMsg: AIMessage = { role: 'user', content: buildPolicyGenerationPrompt(topology, userText) };
+    const delimitedUserInput = delimitUserInput(userText);
+    const contextMsg: AIMessage = { role: 'user', content: buildPolicyGenerationPrompt(topology, delimitedUserInput) };
 
     setIsStreaming(true);
     const controller = new AbortController();
@@ -49,7 +69,7 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
     let fullContent = '';
 
     try {
-      for await (const chunk of streamChat(profile, [systemMsg, contextMsg], controller.signal)) {
+      for await (const chunk of streamChat(profile, [systemMsg, contextMsg], PROMPT_VERSIONS.policyGeneration, controller.signal)) {
         if (chunk.done) break;
         fullContent += chunk.content;
         setMessages((prev) => {
@@ -63,8 +83,20 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
         });
       }
 
-      // Try to parse JSON from the full response
-      const parsed = tryParsePolicyJSON(fullContent);
+      // Output content filtering
+      const filtered = postProcessAIOutput(fullContent);
+      if (!filtered.ok) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${filtered.reason}`, error: true }]);
+        return;
+      }
+
+      // Validate with Zod schema
+      const validated = safeParseAIOutput(PolicySuggestionArraySchema, fullContent);
+      let parsed: Record<string, unknown> | null = null;
+      if (validated.success && validated.data.suggestions.length > 0) {
+        parsed = validated.data.suggestions[0] as Record<string, unknown>;
+      }
+
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = { ...next[next.length - 1], parsed };
@@ -97,6 +129,14 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
     setAbortController(null);
   };
 
+  const handleFeedback = (index: number, feedback: 'up' | 'down') => {
+    setMessages((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], feedback };
+      return next;
+    });
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div
@@ -110,13 +150,22 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">AI Policy Assistant</h2>
               <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                {profile.name} · {profile.model}
+                {profile.name} · {profile.model} · Prompt v{PROMPT_VERSIONS.policyGeneration}
               </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
             <X size={16} />
           </button>
+        </div>
+
+        {/* Safety Banner */}
+        <div className="px-4 py-2 border-b border-[var(--color-border-subtle)] bg-amber-500/5 flex items-start gap-2">
+          <ShieldAlert size={14} className="text-amber-400 shrink-0 mt-0.5" />
+          <p className="text-[10px] text-amber-400 leading-relaxed">
+            AI-generated policies should be reviewed before deployment. The AI does not have access to your live infrastructure.
+            Never deploy allow-any-to-any rules in production.
+          </p>
         </div>
 
         {/* Chat Area */}
@@ -164,6 +213,13 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
               </div>
 
               <div className={`flex-1 min-w-0 ${msg.role === 'user' ? 'text-right' : ''}`}>
+                {/* Safety warning for suspicious input */}
+                {msg.safetyWarning && (
+                  <div className="mb-1 text-[10px] text-amber-400">
+                    ⚠️ {msg.safetyWarning}
+                  </div>
+                )}
+
                 <div
                   className={`inline-block text-xs rounded-lg px-3 py-2 whitespace-pre-wrap ${
                     msg.role === 'user'
@@ -197,12 +253,32 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
                       <Check size={12} />
                       Apply Policy
                     </button>
+                    <p className="text-[9px] text-[var(--color-text-muted)] mt-2 text-center">
+                      AI-generated suggestion · Review before applying · Values marked [INFERRED] are not from your topology
+                    </p>
                   </div>
                 )}
 
-                {msg.role === 'assistant' && !msg.parsed && !msg.error && !isStreaming && (
-                  <div className="mt-1 text-[10px] text-[var(--color-text-muted)]">
-                    Could not parse response. Try rephrasing your request.
+                {/* Feedback buttons */}
+                {msg.role === 'assistant' && !msg.error && !isStreaming && (
+                  <div className="mt-1 flex items-center gap-1">
+                    {msg.parsed ? (
+                      <span className="text-[10px] text-green-400">✓ Validated</span>
+                    ) : (
+                      <span className="text-[10px] text-[var(--color-text-muted)]">Could not parse</span>
+                    )}
+                    <button
+                      onClick={() => handleFeedback(i, 'up')}
+                      className={`p-1 rounded transition-colors ${msg.feedback === 'up' ? 'text-green-400' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'}`}
+                    >
+                      <ThumbsUp size={12} />
+                    </button>
+                    <button
+                      onClick={() => handleFeedback(i, 'down')}
+                      className={`p-1 rounded transition-colors ${msg.feedback === 'down' ? 'text-red-400' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'}`}
+                    >
+                      <ThumbsDown size={12} />
+                    </button>
                   </div>
                 )}
               </div>
@@ -251,37 +327,10 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
             </button>
           </div>
           <p className="text-[10px] text-[var(--color-text-muted)] mt-1.5 text-center">
-            AI-generated policies should be reviewed before applying.
+            Input is scanned for prompt injection. Responses are validated against a schema and filtered for harmful content.
           </p>
         </div>
       </div>
     </div>
   );
-}
-
-function tryParsePolicyJSON(text: string): Record<string, unknown> | null {
-  // Try to extract JSON from markdown code blocks
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  const jsonText = codeBlockMatch ? codeBlockMatch[1].trim() : text.trim();
-
-  try {
-    const parsed = JSON.parse(jsonText);
-    if (typeof parsed === 'object' && parsed !== null) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch {
-    // Try finding JSON between curly braces
-    const braceMatch = text.match(/\{[\s\S]*\}/);
-    if (braceMatch) {
-      try {
-        const parsed = JSON.parse(braceMatch[0]);
-        if (typeof parsed === 'object' && parsed !== null) {
-          return parsed as Record<string, unknown>;
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }
-  return null;
 }

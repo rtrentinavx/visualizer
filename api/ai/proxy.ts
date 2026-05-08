@@ -21,7 +21,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Body size limit: reject requests larger than 1MB to prevent abuse
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > 1024 * 1024) {
+    return res.status(413).json({ error: 'Request body too large. Max 1MB.' });
+  }
+
   const { provider, apiKey, apiSecret, apiBaseUrl, model, messages, temperature, stream } = req.body as ProxyRequest;
+
+  // Validate message content length to prevent token overflow attacks
+  const totalContentLength = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
+  if (totalContentLength > 50000) {
+    return res.status(413).json({ error: 'Total message content exceeds 50KB limit.' });
+  }
 
   if (!provider || !model) {
     return res.status(400).json({ error: 'Missing required fields: provider, model' });
@@ -42,6 +54,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // If Redis is down, allow the request through rather than break AI features
   }
 
+  // SECURITY: API keys pass through this proxy but are NEVER logged, stored,
+  // or cached server-side. They are forwarded directly to the AI provider.
   const needsKey = provider !== 'ollama' && provider !== 'lmstudio';
   if (needsKey && !apiKey) {
     return res.status(400).json({ error: 'Missing required field: apiKey' });
@@ -99,6 +113,18 @@ async function proxyOpenAI(
     return res.status(response.status).send(error);
   }
 
+  // Non-streaming: extract content + usage for token tracking
+  if (!stream) {
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const usage = data.usage ? {
+      promptTokens: data.usage.prompt_tokens,
+      completionTokens: data.usage.completion_tokens,
+      totalTokens: data.usage.total_tokens,
+    } : undefined;
+    return res.json({ content, usage });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -147,6 +173,17 @@ async function proxyAnthropic(
   if (!response.ok) {
     const error = await response.text();
     return res.status(response.status).send(error);
+  }
+
+  if (!stream) {
+    const data = await response.json();
+    const content = data.content?.[0]?.text || '';
+    const usage = data.usage ? {
+      promptTokens: data.usage.input_tokens,
+      completionTokens: data.usage.output_tokens,
+      totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+    } : undefined;
+    return res.json({ content, usage });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');

@@ -36,7 +36,7 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   const tips: string[] = [];
 
   // ---- Naming (0-15) ----
-  let naming = 0;
+  let naming: number;
   const name = policy.name.trim();
   const genericNames = ['new policy', 'policy', 'allow', 'deny', 'rule', 'untitled'];
   const isGeneric = genericNames.some((g) => name.toLowerCase().includes(g));

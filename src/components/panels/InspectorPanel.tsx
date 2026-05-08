@@ -446,8 +446,13 @@ function ItemEditor({ topology, selectedItem, aiProfile, onBack, onSave, onDelet
             {explaining ? 'Analyzing...' : 'Explain this policy'}
           </button>
           {explanation && (
-            <div className="mt-2 p-2.5 rounded text-xs text-[var(--color-text-secondary)] bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20">
-              {explanation}
+            <div className="mt-2">
+              <div className="p-2.5 rounded text-xs text-[var(--color-text-secondary)] bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20">
+                {explanation}
+              </div>
+              <p className="text-[9px] text-[var(--color-text-muted)] mt-1">
+                AI-generated analysis · Network paths marked [INFERRED] are not confirmed by your topology.
+              </p>
             </div>
           )}
         </div>

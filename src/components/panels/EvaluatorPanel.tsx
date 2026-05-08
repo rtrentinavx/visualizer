@@ -3,8 +3,9 @@ import { ShieldAlert, AlertTriangle, Info, X, ArrowRight, Wand2, Loader2, Check,
 import type { Finding } from '../../lib/policyEvaluator';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
-import { SYSTEM_PROMPT_AUTO_FIX, buildAutoFixPrompt } from '../../lib/ai/prompts';
+import { SYSTEM_PROMPT_AUTO_FIX, buildAutoFixPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
 import type { DcfPolicyModel } from '../../types/dcf';
+import { EvaluatorFixSchema, safeParseAIOutput } from '../../lib/ai/schemas';
 
 interface EvaluatorPanelProps {
   topology: DcfPolicyModel;
@@ -40,12 +41,18 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
 
     let text = '';
     try {
-      for await (const chunk of streamChat(aiProfile, [systemMsg, userMsg])) {
+      for await (const chunk of streamChat(aiProfile, [systemMsg, userMsg], PROMPT_VERSIONS.autoFix)) {
         if (chunk.done) break;
         text += chunk.content;
         setFixResult((prev) => ({ ...prev, [finding.id]: { text, loading: true } }));
       }
-      setFixResult((prev) => ({ ...prev, [finding.id]: { text, loading: false } }));
+      // Validate AI output against schema
+      const validated = safeParseAIOutput(EvaluatorFixSchema, text);
+      if (!validated.success) {
+        setFixResult((prev) => ({ ...prev, [finding.id]: { text: `AI response format invalid: ${validated.error}`, loading: false } }));
+      } else {
+        setFixResult((prev) => ({ ...prev, [finding.id]: { text, loading: false } }));
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to get AI fix';
       setFixResult((prev) => ({ ...prev, [finding.id]: { text: msg, loading: false } }));
@@ -121,6 +128,9 @@ export default function EvaluatorPanel({ topology, findings, aiProfile, onClose,
                       <div className="mt-2 p-2.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
                         <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-purple)] mb-1">AI Suggestion</div>
                         <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{fix.text}</p>
+                        <p className="text-[9px] text-[var(--color-text-muted)] mt-1.5">
+                          AI-generated fix · Review before applying · [INFERRED] values are not confirmed by your topology.
+                        </p>
                         <div className="flex gap-2 mt-2">
                           <button
                             onClick={() => { onApplyFix(finding, fix.text); dismissFix(finding.id); }}

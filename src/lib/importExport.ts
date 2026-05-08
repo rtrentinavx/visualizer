@@ -80,7 +80,6 @@ function tokenizeHcl(input: string): string[] {
     if (ch === '"' || ch === "'") {
       if (current.trim()) {
         tokens.push(current.trim());
-        current = '';
       }
       inString = true;
       stringChar = ch;

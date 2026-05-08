@@ -20,6 +20,7 @@ import {
   Upload,
   Trophy,
   Medal,
+  Bug,
 } from 'lucide-react';
 import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
 
@@ -33,6 +34,7 @@ import { checkAchievements, getAllAchievements, type Achievement } from './lib/a
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { useTheme } from './lib/useTheme';
+import { openBugReport } from './lib/sentryFeedback';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 
 import PolicyGraph from './components/panels/PolicyGraph';
@@ -129,7 +131,9 @@ export default function App() {
     // We'll compute scores lazily in the inspector; for achievements we just need existence checks
     const newAchievements = checkAchievements(topology, 0, scores);
     if (newAchievements.length > 0) {
-      setAchievementToasts((prev) => [...prev, ...newAchievements]);
+      queueMicrotask(() => {
+        setAchievementToasts((prev) => [...prev, ...newAchievements]);
+      });
     }
   }, [topology]);
 
@@ -642,6 +646,18 @@ export default function App() {
                 </button>
               );
             })()}
+
+            {/* Bug Report */}
+            <button
+              onClick={() => { openBugReport().catch(() => {}); }}
+              className="p-1.5 rounded-md border transition-colors"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="Report a bug"
+            >
+              <Bug size={14} />
+            </button>
 
             {/* About */}
             <button

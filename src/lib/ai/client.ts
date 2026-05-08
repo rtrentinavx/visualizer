@@ -1,14 +1,38 @@
 import type { AIProfile, AIMessage, AIResponseChunk } from './types';
+import { scanInput, filterOutput } from './safety';
+
+export interface AIUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+}
+
+export interface AICompletionResult {
+  content: string;
+  usage?: AIUsage;
+}
 
 /**
  * Stream a chat completion from the AI provider.
- * Uses the Vercel edge proxy for all providers (handles provider-specific formatting).
+ * Uses the Vercel edge proxy for all providers.
+ *
+ * New: includes promptVersion for auditability and input safety scanning.
  */
 export async function* streamChat(
   profile: AIProfile,
   messages: AIMessage[],
+  promptVersion?: string,
   signal?: AbortSignal
 ): AsyncGenerator<AIResponseChunk, void, unknown> {
+  // Safety: scan the last user message for injection patterns
+  const lastUserMsg = messages.findLast((m) => m.role === 'user');
+  if (lastUserMsg) {
+    const scan = scanInput(lastUserMsg.content);
+    if (scan.status === 'blocked') {
+      throw new Error(`Safety check failed: ${scan.reason}`);
+    }
+  }
+
   const response = await fetch('/api/ai/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -20,6 +44,7 @@ export async function* streamChat(
       messages,
       temperature: profile.temperature,
       stream: true,
+      promptVersion,
     }),
     signal,
   });
@@ -50,7 +75,6 @@ export async function* streamChat(
       }
     }
 
-    // Final buffer flush
     if (buffer.trim()) {
       const chunk = parseSSELine(buffer.trim());
       if (chunk) yield chunk;
@@ -61,13 +85,24 @@ export async function* streamChat(
 }
 
 /**
- * Non-streaming chat completion. Returns full response as string.
+ * Non-streaming chat completion. Returns full response + token usage.
+ *
+ * New: returns usage data for cost/optimization tracking.
  */
 export async function chatCompletion(
   profile: AIProfile,
   messages: AIMessage[],
+  promptVersion?: string,
   signal?: AbortSignal
-): Promise<string> {
+): Promise<AICompletionResult> {
+  const lastUserMsg = messages.findLast((m) => m.role === 'user');
+  if (lastUserMsg) {
+    const scan = scanInput(lastUserMsg.content);
+    if (scan.status === 'blocked') {
+      throw new Error(`Safety check failed: ${scan.reason}`);
+    }
+  }
+
   const response = await fetch('/api/ai/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -79,6 +114,7 @@ export async function chatCompletion(
       messages,
       temperature: profile.temperature,
       stream: false,
+      promptVersion,
     }),
     signal,
   });
@@ -89,13 +125,36 @@ export async function chatCompletion(
   }
 
   const data = await response.json();
-  return data.content || '';
+  const content = data.content || '';
+
+  // Output content filtering for non-streaming responses
+  const filter = filterOutput(content);
+  if (filter.status === 'blocked') {
+    throw new Error(`Output blocked: ${filter.reason}`);
+  }
+
+  return {
+    content,
+    usage: data.usage,
+  };
+}
+
+/**
+ * Post-process a fully-assembled streaming AI response.
+ * Combines output content filtering with caller-provided schema validation.
+ * Call this after streaming completes and you have the full response text.
+ */
+export function postProcessAIOutput(fullText: string): { ok: true } | { ok: false; reason: string } {
+  const filter = filterOutput(fullText);
+  if (filter.status === 'blocked') {
+    return { ok: false, reason: `Output blocked: ${filter.reason}` };
+  }
+  return { ok: true };
 }
 
 function parseSSELine(line: string): AIResponseChunk | null {
   if (!line || line.startsWith(':')) return null;
 
-  // SSE format: data: {...}
   if (line.startsWith('data: ')) {
     const data = line.slice(6);
     if (data === '[DONE]') return { content: '', done: true };
@@ -113,7 +172,6 @@ function parseSSELine(line: string): AIResponseChunk | null {
     }
   }
 
-  // Plain JSON line (Ollama, some proxies)
   try {
     const parsed = JSON.parse(line);
     const content = parsed.message?.content

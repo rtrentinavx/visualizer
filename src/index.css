@@ -78,3 +78,14 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scroll-thumb-hover);
 }
+
+/* Sentry Feedback Widget — ensure visibility */
+#sentry-feedback {
+  position: fixed;
+  z-index: 100000;
+  pointer-events: none;
+}
+
+#sentry-feedback * {
+  pointer-events: auto;
+}
