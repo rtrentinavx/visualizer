@@ -216,6 +216,74 @@ function findBroadAllowWithoutPorts(policies: DcfPolicy[]): Finding[] {
     }));
 }
 
+function findDuplicateNames(policies: DcfPolicy[]): Finding[] {
+  const nameMap = new Map<string, string[]>();
+  policies.forEach((p) => {
+    if (!nameMap.has(p.name)) nameMap.set(p.name, []);
+    nameMap.get(p.name)!.push(p.id);
+  });
+
+  const findings: Finding[] = [];
+  nameMap.forEach((ids, name) => {
+    if (ids.length > 1) {
+      findings.push({
+        id: `duplicate-name-${name}`,
+        severity: 'warning',
+        title: 'Duplicate Policy Name',
+        description: `Multiple policies share the name "${name}". Aviatrix Best Practice: unique names prevent upgrade failures and make auditing easier.`,
+        affectedPolicyIds: ids,
+      });
+    }
+  });
+  return findings;
+}
+
+function findSelfToSelfPolicies(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.srcGroupId === p.dstGroupId && p.srcGroupId !== 'sg-any')
+    .map((p) => ({
+      id: `self-to-self-${p.id}`,
+      severity: 'info',
+      title: 'Self-to-Self Policy',
+      description: `Policy "${p.name}" has the same source and destination group. Traffic within the same SmartGroup is typically handled at the workload level, not by DCF inter-group policies.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
+function findDuplicatePriorities(policies: DcfPolicy[]): Finding[] {
+  const priorityMap = new Map<number, string[]>();
+  policies.forEach((p) => {
+    if (!priorityMap.has(p.priority)) priorityMap.set(p.priority, []);
+    priorityMap.get(p.priority)!.push(p.id);
+  });
+
+  const findings: Finding[] = [];
+  priorityMap.forEach((ids, priority) => {
+    if (ids.length > 1) {
+      findings.push({
+        id: `duplicate-priority-${priority}`,
+        severity: 'warning',
+        title: 'Duplicate Priority',
+        description: `${ids.length} policies share priority ${priority}. Aviatrix evaluates rules in priority order; duplicates can cause non-deterministic enforcement. Use unique priority values.`,
+        affectedPolicyIds: ids,
+      });
+    }
+  });
+  return findings;
+}
+
+function findMissingLoggingOnAllow(policies: DcfPolicy[]): Finding[] {
+  return policies
+    .filter((p) => p.action === 'allow' && !p.logging)
+    .map((p) => ({
+      id: `missing-log-allow-${p.id}`,
+      severity: 'info',
+      title: 'Allow Policy Without Logging',
+      description: `Policy "${p.name}" allows traffic but has logging disabled. Best Practice: enable logging on allow rules for auditability and traffic analysis in CoPilot/SIEM.`,
+      affectedPolicyIds: [p.id],
+    }));
+}
+
 function findLearnedWithoutDenyAll(policies: DcfPolicy[]): Finding[] {
   const hasDenyAll = policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any');
   const hasLearned = policies.some((p) => p.action === 'learned');
@@ -248,6 +316,12 @@ export function evaluateTopology(topology: DcfPolicyModel): Finding[] {
   findings.push(...findTlsDecryptProtocolViolation(topology.policies));
   findings.push(...findBroadAllowWithoutPorts(topology.policies));
   findings.push(...findLearnedWithoutDenyAll(topology.policies));
+
+  // Industry best-practice checks
+  findings.push(...findDuplicateNames(topology.policies));
+  findings.push(...findSelfToSelfPolicies(topology.policies));
+  findings.push(...findDuplicatePriorities(topology.policies));
+  findings.push(...findMissingLoggingOnAllow(topology.policies));
 
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };
