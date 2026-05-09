@@ -214,40 +214,52 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
               return (
                 <div
                   key={finding.id}
-                  className={`flex gap-3 p-3 rounded-lg border ${config.bg} ${config.border}`}
+                  className={`grid grid-cols-[auto_1fr] gap-3 p-3 rounded-lg border ${config.bg} ${config.border}`}
                 >
-                  <Icon size={16} className="shrink-0 mt-0.5" style={{ color: config.color }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold uppercase tracking-wider" style={{ color: config.color }}>
+                  {/* Icon column — top-aligned, fixed width for consistency */}
+                  <div className="shrink-0 w-4 flex justify-center pt-0.5">
+                    <Icon size={16} style={{ color: config.color }} />
+                  </div>
+
+                  {/* Content column */}
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    {/* Row 1: severity + category + frameworks */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-bold uppercase tracking-wider leading-none px-1 py-0.5 rounded" style={{ color: config.color, backgroundColor: config.color + '12' }}>
                         {config.label}
                       </span>
-                      <span className="text-xs font-medium px-1.5 py-0.5 rounded" style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded leading-none" style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}>
                         {categoryLabel[finding.category]}
                       </span>
                       {finding.frameworks.map((fw) => (
                         <span
                           key={fw}
-                          className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider"
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider leading-none"
                           style={{ backgroundColor: frameworkColors[fw] + '15', color: frameworkColors[fw] }}
                         >
                           {fw}
                         </span>
                       ))}
                     </div>
-                    <span className="text-sm font-medium text-[var(--color-text-primary)] block mt-1">{finding.title}</span>
-                    <p className="text-xs text-[var(--color-text-secondary)] mt-1">{finding.description}</p>
+
+                    {/* Row 2: title */}
+                    <span className="text-sm font-medium text-[var(--color-text-primary)] leading-snug">{finding.title}</span>
+
+                    {/* Row 3: description */}
+                    <p className="text-xs text-[var(--color-text-secondary)] leading-relaxed">{finding.description}</p>
+
+                    {/* Row 4: fix hint */}
                     {finding.fixable && finding.fixDescription && (
-                      <p className="text-[10px] text-[var(--color-accent-blue)] mt-1 font-medium">
+                      <p className="text-[10px] text-[var(--color-accent-blue)] font-medium leading-relaxed">
                         Suggested fix: {finding.fixDescription}
                       </p>
                     )}
 
-                    {/* AI Fix result */}
+                    {/* Row 5: AI Fix result */}
                     {fix && (
-                      <div className="mt-2 p-2.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
+                      <div className="p-2.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
                         <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-purple)] mb-1">AI Suggestion</div>
-                        <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap">{fix.text}</p>
+                        <p className="text-xs text-[var(--color-text-secondary)] whitespace-pre-wrap leading-relaxed">{fix.text}</p>
                         <p className="text-[9px] text-[var(--color-text-muted)] mt-1.5">
                           AI-generated fix · Review before applying · [INFERRED] values are not confirmed by your topology.
                         </p>
@@ -268,8 +280,8 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
                       </div>
                     )}
 
-                    {/* Quick actions */}
-                    <div className="flex flex-wrap gap-2 mt-2">
+                    {/* Row 6: action buttons */}
+                    <div className="flex flex-wrap gap-2 pt-0.5">
                       {finding.affectedPolicyIds?.map((id) => (
                         <button
                           key={id}
