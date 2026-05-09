@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import RecommendationsModal, { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './components/modals/RecommendationsModal';
+import BestPracticesModal from './components/modals/BestPracticesModal';
 import {
   LayoutGrid,
   Activity,
@@ -7,6 +8,7 @@ import {
   Sun,
   Moon,
   HelpCircle,
+  BookOpen,
   FileCode,
   CloudUpload,
   CloudDownload,
@@ -67,6 +69,7 @@ export default function App() {
   const [storageReady, setStorageReady] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'loading' | 'error'>('idle');
   const [showAboutModal, setShowAboutModal] = useState(false);
+  const [showBestPractices, setShowBestPractices] = useState(false);
   const [showTerraformModal, setShowTerraformModal] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
@@ -691,6 +694,18 @@ export default function App() {
               );
             })()}
 
+            {/* Best Practices */}
+            <button
+              onClick={() => setShowBestPractices(true)}
+              className="p-1.5 rounded-md border transition-colors hidden md:flex"
+              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-accent-blue)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
+              title="Best Practices Reference"
+            >
+              <BookOpen size={14} />
+            </button>
+
             {/* About */}
             <button
               onClick={() => setShowAboutModal(true)}
@@ -838,6 +853,11 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Best Practices Modal */}
+      {showBestPractices && (
+        <BestPracticesModal onClose={() => setShowBestPractices(false)} />
       )}
 
       {/* About Modal */}
