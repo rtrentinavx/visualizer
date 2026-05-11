@@ -77,6 +77,3 @@ export interface DcfPolicyModel {
   policies: DcfPolicy[];
   flows: TrafficFlow[];
 }
-
-/** @deprecated Use DcfPolicyModel instead. Kept for migration. */
-export type DcfTopology = DcfPolicyModel;

@@ -30,7 +30,10 @@ export function ipInCidr(ip: string, cidr: string): boolean {
     maskBits = ipToInt(maskStr);
     if (maskBits === -1) return false;
   } else {
-    maskBits = (~0 << (32 - parseInt(maskStr, 10))) >>> 0;
+    const prefix = parseInt(maskStr, 10);
+    if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return false;
+    // /0 must yield mask 0; `~0 << 32` in JS shifts by 32 mod 32 = 0, which is wrong.
+    maskBits = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
   }
 
   return (ipInt & maskBits) === (baseInt & maskBits);

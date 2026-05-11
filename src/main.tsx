@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import { Analytics } from '@vercel/analytics/react'
 import './index.css'
 import App from './App'
+import ErrorFallback from './components/ErrorFallback'
 import { ThemeProvider } from './lib/ThemeContext'
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN
@@ -61,9 +62,11 @@ if (SENTRY_DSN) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ThemeProvider>
-      <App />
-      <Analytics />
-    </ThemeProvider>
+    <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
+      <ThemeProvider>
+        <App />
+        <Analytics />
+      </ThemeProvider>
+    </Sentry.ErrorBoundary>
   </StrictMode>,
 )

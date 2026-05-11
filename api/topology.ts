@@ -32,6 +32,13 @@ export default async function handler(request: Request) {
   }
 
   if (request.method === 'POST') {
+    const contentLength = parseInt(request.headers.get('content-length') || '0', 10);
+    if (contentLength > 1024 * 1024) {
+      return new Response(JSON.stringify({ error: 'Request body too large. Max 1MB.' }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
     try {
       const body = await request.json();
       await redis.set(`dcf-topology:${id}`, JSON.stringify(body.topology), { ex: 60 * 60 * 24 * 30 }); // 30 days

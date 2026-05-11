@@ -223,7 +223,12 @@ function findWebGroupEgressViolation(policies: DcfPolicy[]): Finding[] {
 
 function findTlsDecryptPortViolation(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.decrypt && (!p.ports || !p.ports.includes('443')))
+    .filter((p) => {
+      if (!p.decrypt) return false;
+      if (!p.ports) return true;
+      const ports = p.ports.split(',').map((s) => s.trim());
+      return !ports.includes('443');
+    })
     .map((p) => ({
       id: `tls-decrypt-port-${p.id}`,
       severity: 'warning',
