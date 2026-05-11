@@ -6,6 +6,7 @@ export type ModalName =
   | 'bestPractices'
   | 'aiSettings'
   | 'aiChat'
+  | 'autoDocs'
   | 'import'
   | 'achievements'
   | 'recommendations';

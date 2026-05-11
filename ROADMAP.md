@@ -104,5 +104,5 @@
 ### AI Enhancements
 - [x] **Policy optimization suggestions** — "This policy can be merged with X" (shipped: 2 new evaluator checks — `redundant-*` info findings, `mergeable-*` with auto-fix that unions ports into the lowest-priority policy)
 - [ ] **Natural language search** — "Show me all policies that allow web tier to database"
-- [ ] **Auto-documentation** — Generate human-readable policy docs from topology
+- [x] **Auto-documentation** — Generate human-readable policy docs from topology (shipped: FileText button in header opens streaming Markdown generation with copy/download)
 - [ ] **AI-powered simulator** — "Will my web servers reach Salesforce?"

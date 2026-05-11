@@ -1,7 +1,7 @@
 import {
   LayoutGrid, Activity, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
-  RotateCcw, Lightbulb,
+  RotateCcw, Lightbulb, FileText,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
@@ -22,6 +22,7 @@ export interface AppHeaderActions {
   openTerraform: () => void;
   openAISettings: () => void;
   openAIChat: () => void;
+  openAutoDocs: () => void;
   openAchievements: () => void;
   openBestPractices: () => void;
   openAbout: () => void;
@@ -182,6 +183,12 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         {aiProfileActive && (
           <button onClick={actions.openAIChat} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="Ask AI">
             <Sparkles size={14} />
+          </button>
+        )}
+
+        {aiProfileActive && (
+          <button onClick={actions.openAutoDocs} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="Auto-Generate Docs">
+            <FileText size={14} />
           </button>
         )}
 

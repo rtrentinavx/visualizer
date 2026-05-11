@@ -11,6 +11,7 @@ export const PROMPT_VERSIONS = {
   policyGeneration: '1.1.0',
   autoFix: '1.0.0',
   explain: '1.0.0',
+  autoDocs: '1.0.0',
 } as const;
 
 // =============================================================================
@@ -148,4 +149,91 @@ export function buildAutoFixPrompt(topology: DcfPolicyModel, finding: Finding): 
 
 export function buildExplainPrompt(policyJson: string): string {
   return `Explain this DCF policy in plain English:\n\n${policyJson}`;
+}
+
+// =============================================================================
+// Auto-documentation
+// =============================================================================
+// Generates a Markdown summary of the entire topology. Output is prose, not
+// JSON — meant to be pasted into a wiki, runbook, or change-control document.
+
+export const SYSTEM_PROMPT_AUTO_DOCS = `You are a network security technical writer. Your job is to produce GitHub-flavored Markdown documentation for an Aviatrix Distributed Cloud Firewall (DCF) policy topology.
+
+OUTPUT FORMAT — strict:
+1. Start with a single H1 title.
+2. Then sections, each starting with an H2:
+   - "## Overview" — 2-4 sentences summarizing intent: what the topology protects, the dominant traffic pattern, and the posture (zero-trust default-deny vs explicit-allow). Stick to what's in the data.
+   - "## SmartGroups" — bullet list. For each group: name, then a one-line summary of its criteria (e.g. \`env=prod and tier=web\`, or \`subnet 10.0.0.0/16\`). Skip sg-any and sg-internet.
+   - "## WebGroups", "## ThreatGroups", "## GeoGroups" — bullet lists, one line each. Skip section if empty.
+   - "## Policies" — group by source SmartGroup. For each source, an H3 with the source name, then a table or bullet list of policies in priority order: name, action, dst, protocol/ports, logging, decrypt, attached groups.
+   - "## Risk Highlights" — short bullet list. Call out: any allow-any-to-any, internet-facing allows without threat/geo filtering, deny rules with logging off, decrypt rules not on TCP/443, policies with enforcement disabled. Cite the policy name. If the topology is clean, write "No high-risk findings." and stop.
+3. End with a "## Generated" footer line: \`*Generated $(date) from N policies, M SmartGroups.*\` Use the counts from the data; leave date placeholder as literally "{TIMESTAMP}".
+
+CONSTRAINTS:
+- Use ONLY the data provided. Do NOT invent groups, policies, attachments, network paths, VPNs, gateways, or peering relationships.
+- Do NOT recommend changes here — this is documentation, not advice. (Risk Highlights describes what's there; it doesn't tell the user what to do.)
+- Tables should be valid GitHub-flavored Markdown with header row + separator row.
+- No code blocks unless quoting a literal CIDR or tag expression.
+- No emojis.
+${GUARDRAILS}`;
+
+export function buildAutoDocsContext(topology: DcfPolicyModel): string {
+  const sg = topology.smartGroups.map((g) => {
+    const crit = g.criteria.map((c) => {
+      if (c.type === 'vm') return `${c.key} ${c.operator ?? '='} ${c.value}`;
+      if (c.type === 'subnet') return `subnet ${c.cidr}`;
+      return JSON.stringify(c);
+    }).join(g.matchType === 'all' ? ' AND ' : ' OR ');
+    return `- id=${g.id} name="${g.name}" criteria=[${crit || 'none'}]`;
+  }).join('\n');
+
+  const wg = topology.webGroups.map((g) => `- id=${g.id} name="${g.name}" fqdns=[${g.fqdns.join(', ')}]`).join('\n');
+  const tg = topology.threatGroups.map((g) => `- id=${g.id} name="${g.name}" category=${g.category} entries=${g.entryCount}`).join('\n');
+  const gg = topology.geoGroups.map((g) => `- id=${g.id} name="${g.name}" countries=[${g.countries.join(', ')}]`).join('\n');
+
+  const nameOf = (id: string) => topology.smartGroups.find((s) => s.id === id)?.name ?? id;
+  const policies = topology.policies
+    .slice()
+    .sort((a, b) => a.priority - b.priority)
+    .map((p) => {
+      const parts = [
+        `priority=${p.priority}`,
+        `name="${p.name}"`,
+        `src="${nameOf(p.srcGroupId)}"`,
+        `dst="${nameOf(p.dstGroupId)}"`,
+        `action=${p.action}`,
+        `protocol=${p.protocol}`,
+        `ports=${p.ports ?? 'any'}`,
+        `logging=${p.logging}`,
+        `decrypt=${p.decrypt ?? false}`,
+        `enforcement=${p.enforcement !== false}`,
+      ];
+      if (p.threatGroup) parts.push(`threatGroup="${topology.threatGroups.find((g) => g.id === p.threatGroup)?.name ?? p.threatGroup}"`);
+      if (p.geoGroup) parts.push(`geoGroup="${topology.geoGroups.find((g) => g.id === p.geoGroup)?.name ?? p.geoGroup}"`);
+      if (p.webGroupIds?.length) parts.push(`webGroups=[${p.webGroupIds.map((id) => topology.webGroups.find((w) => w.id === id)?.name ?? id).join(', ')}]`);
+      return `- ${parts.join(' ')}`;
+    }).join('\n');
+
+  return [
+    `Counts: ${topology.smartGroups.length} SmartGroups, ${topology.webGroups.length} WebGroups, ${topology.threatGroups.length} ThreatGroups, ${topology.geoGroups.length} GeoGroups, ${topology.policies.length} Policies.`,
+    '',
+    'SmartGroups:',
+    sg || '(none)',
+    '',
+    'WebGroups:',
+    wg || '(none)',
+    '',
+    'ThreatGroups:',
+    tg || '(none)',
+    '',
+    'GeoGroups:',
+    gg || '(none)',
+    '',
+    'Policies (priority order):',
+    policies || '(none)',
+  ].join('\n');
+}
+
+export function buildAutoDocsPrompt(topology: DcfPolicyModel): string {
+  return `Generate Markdown documentation for this DCF policy topology.\n\n${buildAutoDocsContext(topology)}`;
 }

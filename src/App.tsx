@@ -22,6 +22,7 @@ const AISettingsPanel = lazy(() => import('./components/panels/AISettingsPanel')
 const AIChatPanel = lazy(() => import('./components/panels/AIChatPanel'));
 const ImportPanel = lazy(() => import('./components/panels/ImportPanel'));
 const BestPracticesModal = lazy(() => import('./components/modals/BestPracticesModal'));
+const AutoDocsModal = lazy(() => import('./components/modals/AutoDocsModal'));
 
 function PanelLoader() {
   return (
@@ -190,6 +191,7 @@ export default function App() {
     openTerraform: () => modals.open('terraformExport'),
     openAISettings: () => modals.open('aiSettings'),
     openAIChat: () => modals.open('aiChat'),
+    openAutoDocs: () => modals.open('autoDocs'),
     openAchievements: () => modals.open('achievements'),
     openBestPractices: () => modals.open('bestPractices'),
     openAbout: () => modals.open('about'),
@@ -372,6 +374,12 @@ export default function App() {
             onImport={(imported) => dispatch({ type: 'replace', topology: imported })}
             onClose={modals.close}
           />
+        </Suspense>
+      )}
+
+      {modals.isOpen('autoDocs') && activeAIProfile && (
+        <Suspense fallback={null}>
+          <AutoDocsModal topology={topology} profile={activeAIProfile} onClose={modals.close} />
         </Suspense>
       )}
 
