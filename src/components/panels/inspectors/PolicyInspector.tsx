@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trophy, Wand2 } from 'lucide-react';
-import type { DcfPolicyModel } from '../../../types/dcf';
+import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trophy, Wand2, Activity, ArrowRight, ShieldCheck, ShieldX } from 'lucide-react';
+import type { DcfPolicy, DcfPolicyModel } from '../../../types/dcf';
 import type { AIProfile, AIMessage } from '../../../lib/ai/types';
 import { streamChat } from '../../../lib/ai/client';
 import { SYSTEM_PROMPT_EXPLAIN, buildExplainPrompt } from '../../../lib/ai/prompts';
 import { scorePolicy, type PolicyScore } from '../../../lib/policyScorer';
+import { compareImpact, withPolicyChange, type FlowImpact, type FlowOutcome } from '../../../lib/policyImpact';
 import { Input, Select, Toggle, MultiSelect, InspectorFooter } from './_shared';
 
 interface PolicyInspectorProps {
@@ -64,6 +65,92 @@ function PolicyScoreCard({ score }: { score: PolicyScore }) {
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionPill({ action }: { action: FlowOutcome }) {
+  if (action === 'allow') return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-green-500/15 text-green-400"><ShieldCheck size={9} />allow</span>;
+  if (action === 'learned') return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-500/15 text-blue-400">learned</span>;
+  return <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-red-500/15 text-red-400"><ShieldX size={9} />{action === 'implicit-deny' ? 'implicit deny' : 'deny'}</span>;
+}
+
+function PolicyImpactCard({ topology, draft, isNew }: { topology: DcfPolicyModel; draft: DcfPolicy; isNew: boolean }) {
+  const [open, setOpen] = useState(false);
+
+  const { changed, totalFlows } = useMemo(() => {
+    const flows = topology.flows;
+    if (flows.length === 0) return { changed: [] as FlowImpact[], totalFlows: 0 };
+    const after = withPolicyChange(topology, draft, 'upsert');
+    const impact = compareImpact(topology, after, flows);
+    const changedOnly = impact.filter((x) => x.outcomeChanged || x.matchChanged);
+    return { changed: changedOnly, totalFlows: flows.length };
+  }, [topology, draft]);
+
+  if (totalFlows === 0) {
+    return (
+      <div className="mb-3 rounded-lg border border-[var(--color-border-subtle)] px-3 py-2 text-[10px] text-[var(--color-text-muted)] flex items-center gap-2">
+        <Activity size={12} /> No traffic flows logged — add flows in the Traffic view to preview policy impact here.
+      </div>
+    );
+  }
+
+  const outcomeChangedCount = changed.filter((x) => x.outcomeChanged).length;
+  const matchOnlyCount = changed.length - outcomeChangedCount;
+  const indicatorColor = outcomeChangedCount > 0 ? '#ef4444' : matchOnlyCount > 0 ? '#f59e0b' : '#22c55e';
+
+  return (
+    <div className="mb-3 rounded-lg border overflow-hidden" style={{ borderColor: indicatorColor + '40' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2"
+        style={{ backgroundColor: indicatorColor + '10' }}
+      >
+        <div className="flex items-center gap-2">
+          <Activity size={14} style={{ color: indicatorColor }} />
+          <span className="text-xs font-semibold" style={{ color: indicatorColor }}>
+            {isNew ? 'Adding' : 'Editing'} this policy {changed.length === 0 ? 'changes nothing' : `affects ${changed.length} of ${totalFlows} flow${totalFlows === 1 ? '' : 's'}`}
+          </span>
+        </div>
+        {open ? <ChevronUp size={14} style={{ color: indicatorColor }} /> : <ChevronDown size={14} style={{ color: indicatorColor }} />}
+      </button>
+      {open && (
+        <div className="px-3 py-2 space-y-2 bg-[var(--color-surface)]">
+          {changed.length === 0 ? (
+            <p className="text-[10px] text-[var(--color-text-muted)]">
+              No flow's effective rule changes with these edits. Either no logged flow matches this policy, or another higher-priority rule still wins.
+            </p>
+          ) : (
+            <>
+              {outcomeChangedCount > 0 && (
+                <div className="text-[10px] text-red-400">
+                  <strong>{outcomeChangedCount}</strong> flow{outcomeChangedCount === 1 ? '' : 's'} would have a different allow/deny outcome.
+                </div>
+              )}
+              {matchOnlyCount > 0 && (
+                <div className="text-[10px] text-amber-400">
+                  <strong>{matchOnlyCount}</strong> flow{matchOnlyCount === 1 ? '' : 's'} would match a different rule but keep the same allow/deny outcome.
+                </div>
+              )}
+              <ul className="space-y-1 max-h-48 overflow-y-auto">
+                {changed.map((x) => {
+                  const src = topology.smartGroups.find((g) => g.id === x.flow.srcGroupId)?.name ?? x.flow.srcGroupId;
+                  const dst = topology.smartGroups.find((g) => g.id === x.flow.dstGroupId)?.name ?? x.flow.dstGroupId;
+                  return (
+                    <li key={x.flow.id} className="text-[10px] flex items-center gap-1.5 flex-wrap">
+                      <span className="font-mono text-[var(--color-text-secondary)]">{src} → {dst}</span>
+                      <span className="font-mono text-[var(--color-text-muted)]">{x.flow.protocol}/{x.flow.port}</span>
+                      <ActionPill action={x.beforeAction} />
+                      <ArrowRight size={10} className="text-[var(--color-text-muted)]" />
+                      <ActionPill action={x.afterAction} />
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
         </div>
       )}
@@ -182,6 +269,29 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
           </div>
 
           <PolicyScoreCard score={policyScore} />
+
+          <PolicyImpactCard
+            topology={topology}
+            draft={{
+              id: isNew ? `__draft_${selectedItem.id}` : selectedItem.id,
+              name: String(p.name ?? ''),
+              priority: Number(p.priority ?? 100),
+              srcGroupId: String(p.srcGroupId ?? 'sg-any'),
+              dstGroupId: String(p.dstGroupId ?? 'sg-any'),
+              action: String(p.action ?? 'allow') as 'allow' | 'deny' | 'learned',
+              protocol: String(p.protocol ?? 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any',
+              ports: p.ports ? String(p.ports) : undefined,
+              logging: !!p.logging,
+              enforcement: p.enforcement !== false,
+              decrypt: !!p.decrypt,
+              threatGroup: p.threatGroup ? String(p.threatGroup) : undefined,
+              geoGroup: p.geoGroup ? String(p.geoGroup) : undefined,
+              webGroupIds: (p.webGroupIds as string[]) || undefined,
+              srcExcludeGroupIds: (p.srcExcludeGroupIds as string[]) || undefined,
+              dstExcludeGroupIds: (p.dstExcludeGroupIds as string[]) || undefined,
+            }}
+            isNew={isNew}
+          />
 
           <div className="mb-3">
             <div className="flex items-center justify-between mb-1">
