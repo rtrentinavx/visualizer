@@ -58,6 +58,7 @@
 - [x] JSON topology import/export
 - [x] CSV traffic flow import/export
 - [x] Import from Terraform HCL
+- [x] Import from a Terraform project zip — drag-drop or pick a `.zip`, we extract every `.tf` file (skipping `.terraform/` vendored content) locally in the browser via fflate, then pull only Aviatrix DCF resources. Non-DCF resources are silently ignored.
 
 ---
 
