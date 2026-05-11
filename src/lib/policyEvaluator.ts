@@ -489,6 +489,113 @@ function calculateScore(findings: Finding[]): number {
   return Math.max(0, 100 - deduction);
 }
 
+// ---------- Optimization-suggestion checks ----------
+
+function portsCanonical(ports: string | undefined): string[] | 'any' {
+  if (ports === undefined || ports === 'any' || ports === '') return 'any';
+  return ports.split(',').map((p) => p.trim()).filter(Boolean);
+}
+
+function portsCoverAll(broader: string | undefined, narrower: string | undefined): boolean {
+  const b = portsCanonical(broader);
+  const n = portsCanonical(narrower);
+  if (b === 'any') return true;
+  if (n === 'any') return false;
+  return n.every((p) => b.includes(p));
+}
+
+/** Two policies have identical match conditions except ports (mergeable iff they do). */
+function mergeKey(p: DcfPolicy): string {
+  return [
+    p.srcGroupId,
+    p.dstGroupId,
+    p.action,
+    p.protocol,
+    p.threatGroup ?? '',
+    p.geoGroup ?? '',
+    p.decrypt ? '1' : '0',
+    p.logging ? '1' : '0',
+    p.enforcement === false ? '0' : '1',
+    JSON.stringify((p.srcExcludeGroupIds ?? []).slice().sort()),
+    JSON.stringify((p.dstExcludeGroupIds ?? []).slice().sort()),
+    JSON.stringify((p.webGroupIds ?? []).slice().sort()),
+  ].join('|');
+}
+
+/**
+ * A policy is redundant when a SAME-ACTION later-evaluated policy (higher priority
+ * number = later in first-match order) would catch all of its traffic anyway.
+ * Reported as info-only; not auto-fixed because logging/decrypt deltas between the
+ * two policies can mean "remove A" isn't a no-op even when actions match.
+ */
+function findRedundantPolicies(policies: DcfPolicy[]): Finding[] {
+  const findings: Finding[] = [];
+  for (const a of policies) {
+    if (a.enforcement === false) continue;
+    for (const b of policies) {
+      if (a === b || b.enforcement === false) continue;
+      if (b.priority <= a.priority) continue; // b must be later in match order
+      if (a.action !== b.action) continue;
+
+      const srcCovers = b.srcGroupId === a.srcGroupId || b.srcGroupId === 'sg-any';
+      const dstCovers = b.dstGroupId === a.dstGroupId || b.dstGroupId === 'sg-any';
+      const protoCovers = b.protocol === a.protocol || b.protocol === 'any';
+      const portCovers = portsCoverAll(b.ports, a.ports);
+      if (!srcCovers || !dstCovers || !protoCovers || !portCovers) continue;
+
+      // Excludes: if b has an exclude that a doesn't, b doesn't actually cover a.
+      const bSrcExcl = b.srcExcludeGroupIds ?? [];
+      const bDstExcl = b.dstExcludeGroupIds ?? [];
+      if (bSrcExcl.length > 0 || bDstExcl.length > 0) continue;
+
+      findings.push({
+        id: `redundant-${a.id}`,
+        severity: 'info',
+        category: 'performance',
+        frameworks: ['Aviatrix BP', 'Best Practice'],
+        title: 'Redundant Policy',
+        description: `Policy "${a.name}" (priority ${a.priority}) is fully covered by "${b.name}" (priority ${b.priority}), which has the same action and broader match. Removing "${a.name}" would not change traffic outcomes — but verify logging/decrypt deltas before deleting.`,
+        affectedPolicyIds: [a.id, b.id],
+      });
+      break; // one cover-finding per redundant policy
+    }
+  }
+  return findings;
+}
+
+/**
+ * Groups of 2+ policies with identical match conditions except ports can be merged
+ * into one policy with comma-joined ports. Reduces policy count and rule-engine cost.
+ */
+function findMergeablePolicies(policies: DcfPolicy[]): Finding[] {
+  const findings: Finding[] = [];
+  const byKey = new Map<string, DcfPolicy[]>();
+  for (const p of policies) {
+    // Don't suggest merging port-any policies — there's nothing to combine.
+    if (portsCanonical(p.ports) === 'any') continue;
+    const key = mergeKey(p);
+    const bucket = byKey.get(key);
+    if (bucket) bucket.push(p); else byKey.set(key, [p]);
+  }
+  byKey.forEach((bucket) => {
+    if (bucket.length < 2) return;
+    const sorted = [...bucket].sort((a, b) => a.priority - b.priority);
+    const keeper = sorted[0]!;
+    findings.push({
+      id: `mergeable-${keeper.id}`,
+      severity: 'info',
+      category: 'performance',
+      frameworks: ['Aviatrix BP', 'Best Practice'],
+      title: 'Mergeable Policies',
+      description: `${bucket.length} policies share src/dst/action/protocol and differ only in ports: ${bucket.map((p) => `"${p.name}"`).join(', ')}. They can be merged into one policy with comma-joined ports.`,
+      affectedPolicyIds: bucket.map((p) => p.id),
+      fixable: true,
+      fixDescription: `Merge into "${keeper.name}" with combined ports`,
+    });
+  });
+  return findings;
+}
+
 // ---------- Main Export ----------
 
 export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
@@ -522,6 +629,10 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   findings.push(...findUnusedThreatGroups(topology));
   findings.push(...findUnusedGeoGroups(topology));
   findings.push(...findAllowInternetWithoutInspection(topology.policies));
+
+  // Optimization suggestions
+  findings.push(...findRedundantPolicies(topology.policies));
+  findings.push(...findMergeablePolicies(topology.policies));
 
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };
@@ -624,6 +735,23 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
       next.policies = next.policies.map((p) =>
         p.id === policyId ? { ...p, protocol: 'tcp' } : p
       );
+      return next;
+    }
+
+    if (finding.id.startsWith('mergeable-')) {
+      const ids = new Set(finding.affectedPolicyIds ?? []);
+      const bucket = next.policies.filter((p) => ids.has(p.id));
+      if (bucket.length < 2) return null;
+      const sorted = [...bucket].sort((a, b) => a.priority - b.priority);
+      const keeper = sorted[0]!;
+      const portsUnion = Array.from(
+        new Set(
+          bucket.flatMap((p) => (p.ports ? p.ports.split(',').map((s) => s.trim()) : []))
+        )
+      ).filter(Boolean);
+      next.policies = next.policies
+        .filter((p) => !ids.has(p.id) || p.id === keeper.id)
+        .map((p) => (p.id === keeper.id ? { ...p, ports: portsUnion.join(',') } : p));
       return next;
     }
 

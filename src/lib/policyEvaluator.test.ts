@@ -465,6 +465,83 @@ describe('findAllowInternetWithoutInspection', () => {
   });
 });
 
+describe('findRedundantPolicies', () => {
+  it('positive: narrow policy covered by later same-action broad policy fires', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'narrow', name: 'Web→App 443', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'broad', name: 'Web→App any', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    expect(findingsWithIdPrefix(t, 'redundant-narrow')).toHaveLength(1);
+  });
+
+  it('negative: same conditions but different actions → no finding', () => {
+    // Note: no catch-all deny in this fixture on purpose. p-deny-all would itself
+    // cover `denyany` and (correctly) trigger a redundant-* finding, since the
+    // check looks at all policy pairs not just the focused one.
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'allow443', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'denyany', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'deny', protocol: 'any', ports: undefined }),
+    ];
+    expect(findingsWithIdPrefix(t, 'redundant-')).toHaveLength(0);
+  });
+
+  it('negative: broader policy at LOWER priority does not cover (would be shadowed instead)', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'broadFirst', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'narrowLater', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    // narrowLater is shadowed by broadFirst (existing check), not redundant in the new sense.
+    expect(findingsWithIdPrefix(t, 'redundant-')).toHaveLength(0);
+  });
+});
+
+describe('findMergeablePolicies', () => {
+  it('positive: two policies differing only in ports fire one mergeable finding', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'p8080', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'p8443', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    expect(findingsWithIdPrefix(t, 'mergeable-p8080')).toHaveLength(1);
+  });
+
+  it('negative: different actions → no merge', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'b', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'deny', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    expect(findingsWithIdPrefix(t, 'mergeable-')).toHaveLength(0);
+  });
+
+  it('negative: port=any policy is skipped (nothing to combine)', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: 'any' }),
+      policy({ id: 'b', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: 'any' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    expect(findingsWithIdPrefix(t, 'mergeable-')).toHaveLength(0);
+  });
+});
+
 // ---------- applyAutoFix ----------
 
 describe('applyAutoFix', () => {
@@ -606,6 +683,25 @@ describe('applyAutoFix', () => {
     const fixed = applyAutoFix(t, before!)!;
     const priorities = fixed.policies.map((p) => p.priority);
     expect(new Set(priorities).size).toBe(priorities.length);
+  });
+
+  it('mergeable-<id> → consolidates port-differing policies into the lowest-priority one', () => {
+    const t = emptyTopology();
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
+    t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
+    t.policies = [
+      policy({ id: 'p8080', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'p8443', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+    ];
+    const before = evaluateTopology(t).findings.find((f) => f.id === 'mergeable-p8080');
+    expect(before).toBeDefined();
+    const fixed = applyAutoFix(t, before!)!;
+    const survivors = fixed.policies.filter((p) => p.id === 'p8080' || p.id === 'p8443');
+    expect(survivors).toHaveLength(1);
+    expect(survivors[0]!.id).toBe('p8080');
+    const survivingPorts = survivors[0]!.ports!.split(',').map((s) => s.trim()).sort();
+    expect(survivingPorts).toEqual(['8080', '8443']);
   });
 
   it('non-fixable finding returns null', () => {

@@ -99,10 +99,10 @@
 - [ ] **Keyboard shortcuts** — `Cmd/Ctrl+K` command palette, arrow keys in matrix
 - [ ] **Drag-and-drop policy reordering** — Reorder priorities visually
 - [ ] **Onboarding tour** — First-time user guided walkthrough
-- [ ] **Bundle size optimization** — Code-splitting, lazy load AI schemas
+- [x] **Bundle size optimization** — Code-splitting, lazy load AI schemas (shipped: 500KB → 229KB initial chunk via React.lazy + manualChunks)
 
 ### AI Enhancements
-- [ ] **Policy optimization suggestions** — "This policy can be merged with X"
+- [x] **Policy optimization suggestions** — "This policy can be merged with X" (shipped: 2 new evaluator checks — `redundant-*` info findings, `mergeable-*` with auto-fix that unions ports into the lowest-priority policy)
 - [ ] **Natural language search** — "Show me all policies that allow web tier to database"
 - [ ] **Auto-documentation** — Generate human-readable policy docs from topology
 - [ ] **AI-powered simulator** — "Will my web servers reach Salesforce?"
