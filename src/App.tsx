@@ -23,6 +23,7 @@ const AIChatPanel = lazy(() => import('./components/panels/AIChatPanel'));
 const ImportPanel = lazy(() => import('./components/panels/ImportPanel'));
 const BestPracticesModal = lazy(() => import('./components/modals/BestPracticesModal'));
 const AutoDocsModal = lazy(() => import('./components/modals/AutoDocsModal'));
+const PolicyTemplatesModal = lazy(() => import('./components/modals/PolicyTemplatesModal'));
 
 function PanelLoader() {
   return (
@@ -186,6 +187,7 @@ export default function App() {
     saveCloud: handleSaveToCloud,
     loadCloud: handleLoadFromCloud,
     openImport: () => modals.open('import'),
+    openTemplates: () => modals.open('policyTemplates'),
     openRecommendations: () => modals.open('recommendations'),
     exportJSON: () => downloadTopologyJSON(topology),
     openTerraform: () => modals.open('terraformExport'),
@@ -372,6 +374,16 @@ export default function App() {
         <Suspense fallback={null}>
           <ImportPanel
             onImport={(imported) => dispatch({ type: 'replace', topology: imported })}
+            onClose={modals.close}
+          />
+        </Suspense>
+      )}
+
+      {modals.isOpen('policyTemplates') && (
+        <Suspense fallback={null}>
+          <PolicyTemplatesModal
+            topology={topology}
+            onApply={(newTopology) => dispatch({ type: 'replace', topology: newTopology })}
             onClose={modals.close}
           />
         </Suspense>
