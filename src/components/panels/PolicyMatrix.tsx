@@ -26,7 +26,7 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
             (p.srcGroupId === src.id || p.srcGroupId === 'sg-any') &&
             (p.dstGroupId === dst.id || p.dstGroupId === 'sg-any')
         );
-        matrix[src.id][dst.id] = policies;
+        matrix[src.id]![dst.id] = policies;
       }
     }
 

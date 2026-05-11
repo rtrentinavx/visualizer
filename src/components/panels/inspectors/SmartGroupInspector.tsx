@@ -48,7 +48,7 @@ const CriteriaEditor = ({ criteria, onChange }: { criteria: SmartGroupCriteria[]
                 value={c.key ?? ''}
                 onChange={(e) => {
                   const next = [...criteria];
-                  next[i] = { ...next[i], key: e.target.value };
+                  next[i] = { ...next[i]!, key: e.target.value };
                   onChange(next);
                 }}
                 placeholder="key"
@@ -59,7 +59,7 @@ const CriteriaEditor = ({ criteria, onChange }: { criteria: SmartGroupCriteria[]
                 value={c.operator ?? 'equals'}
                 onChange={(e) => {
                   const next = [...criteria];
-                  next[i] = { ...next[i], operator: e.target.value as SmartGroupCriteria['operator'] };
+                  next[i] = { ...next[i]!, operator: e.target.value as SmartGroupCriteria['operator'] };
                   onChange(next);
                 }}
                 className="w-20 px-1 py-1 rounded text-[10px] border outline-none"
@@ -74,7 +74,7 @@ const CriteriaEditor = ({ criteria, onChange }: { criteria: SmartGroupCriteria[]
                 value={c.value ?? ''}
                 onChange={(e) => {
                   const next = [...criteria];
-                  next[i] = { ...next[i], value: e.target.value };
+                  next[i] = { ...next[i]!, value: e.target.value };
                   onChange(next);
                 }}
                 placeholder="value"
@@ -88,7 +88,7 @@ const CriteriaEditor = ({ criteria, onChange }: { criteria: SmartGroupCriteria[]
               value={c.cidr ?? ''}
               onChange={(e) => {
                 const next = [...criteria];
-                next[i] = { ...next[i], cidr: e.target.value };
+                next[i] = { ...next[i]!, cidr: e.target.value };
                 onChange(next);
               }}
               placeholder="10.0.0.0/24"

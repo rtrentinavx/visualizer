@@ -4,11 +4,13 @@
 function ipToInt(ip: string): number {
   const parts = ip.split('.');
   if (parts.length !== 4) return -1;
+  const [a, b, c, d] = parts;
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return -1;
   return (
-    (parseInt(parts[0], 10) << 24) |
-    (parseInt(parts[1], 10) << 16) |
-    (parseInt(parts[2], 10) << 8) |
-    parseInt(parts[3], 10)
+    (parseInt(a, 10) << 24) |
+    (parseInt(b, 10) << 16) |
+    (parseInt(c, 10) << 8) |
+    parseInt(d, 10)
   ) >>> 0;
 }
 

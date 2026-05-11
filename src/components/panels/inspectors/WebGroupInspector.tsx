@@ -41,7 +41,7 @@ export default function WebGroupInspector({ topology, selectedItem, onBack, onSa
     const bases = fqdns.map((f) => {
       const clean = f.replace(/^\*\./, '');
       const parts = clean.split('.');
-      return parts.length >= 2 ? parts[parts.length - 2] : clean;
+      return parts.length >= 2 ? (parts[parts.length - 2] ?? clean) : clean;
     });
     const unique = [...new Set(bases)];
     const name = unique.map((b) => b.charAt(0).toUpperCase() + b.slice(1)).join(' & ');

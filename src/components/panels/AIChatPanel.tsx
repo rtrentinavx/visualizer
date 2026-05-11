@@ -99,7 +99,8 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
 
       setMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { ...next[next.length - 1], parsed };
+        const last = next[next.length - 1];
+        if (last) next[next.length - 1] = { ...last, parsed };
         return next;
       });
     } catch (err) {
@@ -132,7 +133,8 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
   const handleFeedback = (index: number, feedback: 'up' | 'down') => {
     setMessages((prev) => {
       const next = [...prev];
-      next[index] = { ...next[index], feedback };
+      const target = next[index];
+      if (target) next[index] = { ...target, feedback };
       return next;
     });
   };

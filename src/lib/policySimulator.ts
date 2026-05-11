@@ -110,7 +110,8 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
     };
   }
 
-  const winner = sorted[0];
+  // Guaranteed non-null by the `sorted.length === 0` early return above.
+  const winner = sorted[0]!;
   const actionText = winner.action === 'allow' ? 'allowed' : 'denied';
 
   const srcGroupNames = srcGroups.map((id) => topology.smartGroups.find((g) => g.id === id)?.name || id).join(', ');

@@ -89,8 +89,8 @@ describe('resolveIpToGroups', () => {
     const topology = emptyTopology();
     // Even if these special groups have subnet criteria attached (hypothetical),
     // they must never appear in the resolution result.
-    topology.smartGroups[0].criteria = [{ type: 'subnet', cidr: '0.0.0.0/0' }];
-    topology.smartGroups[1].criteria = [{ type: 'subnet', cidr: '0.0.0.0/0' }];
+    topology.smartGroups[0]!.criteria = [{ type: 'subnet', cidr: '0.0.0.0/0' }];
+    topology.smartGroups[1]!.criteria = [{ type: 'subnet', cidr: '0.0.0.0/0' }];
 
     const result = resolveIpToGroups(topology, '8.8.8.8');
     expect(result).not.toContain('sg-any');
@@ -165,7 +165,7 @@ describe('simulateTraffic', () => {
     expect(result.action).toBe('deny');
     expect(result.matchedPolicy?.id).toBe('pol-high');
     expect(result.allCandidates).toHaveLength(2);
-    expect(result.allCandidates[0].id).toBe('pol-high');
+    expect(result.allCandidates[0]!.id).toBe('pol-high');
   });
 
   it('port match: policy is skipped when the port is not in the policy port list', () => {

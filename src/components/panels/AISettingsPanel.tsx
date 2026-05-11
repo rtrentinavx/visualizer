@@ -26,7 +26,7 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
 
   const startNewProfile = () => {
     const defaultProvider = 'openai';
-    const config = providerConfigs[defaultProvider];
+    const config = providerConfigs[defaultProvider]!;
     setEditingProfile({
       id: generateId(),
       name: 'New Profile',

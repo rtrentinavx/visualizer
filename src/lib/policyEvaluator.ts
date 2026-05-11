@@ -38,8 +38,8 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
 
   for (let i = 0; i < sorted.length; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
-      const high = sorted[i];
-      const low = sorted[j];
+      const high = sorted[i]!;
+      const low = sorted[j]!;
 
       const sameSrc = high.srcGroupId === low.srcGroupId || high.srcGroupId === 'sg-any' || low.srcGroupId === 'sg-any';
       const sameDst = high.dstGroupId === low.dstGroupId || high.dstGroupId === 'sg-any' || low.dstGroupId === 'sg-any';
@@ -185,17 +185,19 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
 
   byPair.forEach((group) => {
     if (group.length < 2) return;
+    const first = group[0];
+    if (!first) return;
     const actions = new Set(group.map((p) => p.action));
     if (actions.size > 1) {
       const allowDeny = group.filter((p) => p.action === 'allow' || p.action === 'deny');
       if (allowDeny.length >= 2) {
         findings.push({
-          id: `conflict-${group[0].id}`,
+          id: `conflict-${first.id}`,
           severity: 'warning',
           category: 'security',
           frameworks: ['Aviatrix BP', 'Best Practice'],
           title: 'Conflicting Actions',
-          description: `Multiple policies between ${group[0].srcGroupId} → ${group[0].dstGroupId} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
+          description: `Multiple policies between ${first.srcGroupId} → ${first.dstGroupId} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: group.map((p) => p.id),
         });
       }

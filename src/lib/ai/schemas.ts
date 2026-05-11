@@ -46,7 +46,7 @@ export function safeParseAIOutput<T>(schema: z.ZodSchema<T>, raw: string): { suc
   try {
     // Try to extract JSON from markdown code blocks
     const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
-    const cleaned = jsonMatch ? jsonMatch[1].trim() : raw.trim();
+    const cleaned = jsonMatch?.[1]?.trim() ?? raw.trim();
     const parsed = JSON.parse(cleaned);
     const result = schema.safeParse(parsed);
     if (result.success) {

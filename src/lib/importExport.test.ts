@@ -55,8 +55,8 @@ describe('Flows CSV round-trip (lossy on group IDs by design)', () => {
     // Group identities round-trip as the smart group *name* string (not ID),
     // because exportFlowsCSV writes names. We verify the structural fields.
     for (let i = 0; i < demoTopology.flows.length; i++) {
-      const original = demoTopology.flows[i];
-      const back = restored[i];
+      const original = demoTopology.flows[i]!;
+      const back = restored[i]!;
       expect(back.protocol).toBe(original.protocol);
       expect(back.port).toBe(original.port);
       expect(back.bytes).toBe(original.bytes);

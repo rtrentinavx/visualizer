@@ -374,8 +374,8 @@ describe('findLearnedWithoutDenyAll', () => {
 describe('findPoliciesWithoutEnforcement', () => {
   it('positive: a policy with enforcement:false fires', () => {
     const t = cleanTopology();
-    t.policies[0] = { ...t.policies[0], enforcement: false };
-    expect(findingsWithIdPrefix(t, `no-enforcement-${t.policies[0].id}`)).toHaveLength(1);
+    t.policies[0] = { ...t.policies[0]!, enforcement: false };
+    expect(findingsWithIdPrefix(t, `no-enforcement-${t.policies[0]!.id}`)).toHaveLength(1);
   });
 
   it('negative: clean topology has all policies enforced', () => {
@@ -408,7 +408,7 @@ describe('findUnusedWebGroups', () => {
   it('negative: all WebGroups referenced → no finding', () => {
     const t = cleanTopology();
     t.webGroups.push({ id: 'wg-1', name: 'WG One', fqdns: ['*.x.com'] });
-    t.policies[0] = { ...t.policies[0], webGroupIds: ['wg-1'], dstGroupId: 'sg-internet' };
+    t.policies[0] = { ...t.policies[0]!, webGroupIds: ['wg-1'], dstGroupId: 'sg-internet' };
     expect(findingsWithIdPrefix(t, 'unused-webgroup-')).toHaveLength(0);
   });
 });
@@ -423,7 +423,7 @@ describe('findUnusedThreatGroups', () => {
   it('negative: all ThreatGroups referenced → no finding', () => {
     const t = cleanTopology();
     t.threatGroups.push({ id: 'tg-1', name: 'TG One', category: 'malware', entryCount: 1 });
-    t.policies[0] = { ...t.policies[0], threatGroup: 'tg-1' };
+    t.policies[0] = { ...t.policies[0]!, threatGroup: 'tg-1' };
     expect(findingsWithIdPrefix(t, 'unused-threatgroup-')).toHaveLength(0);
   });
 });
@@ -438,7 +438,7 @@ describe('findUnusedGeoGroups', () => {
   it('negative: all GeoGroups referenced → no finding', () => {
     const t = cleanTopology();
     t.geoGroups.push({ id: 'gg-1', name: 'GG One', countries: ['ZZ'] });
-    t.policies[0] = { ...t.policies[0], geoGroup: 'gg-1' };
+    t.policies[0] = { ...t.policies[0]!, geoGroup: 'gg-1' };
     expect(findingsWithIdPrefix(t, 'unused-geogroup-')).toHaveLength(0);
   });
 });

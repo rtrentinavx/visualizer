@@ -149,14 +149,12 @@ function parseValue(tokens: string[], idx: { i: number }): unknown {
     idx.i++;
     const obj: Record<string, unknown> = {};
     while (idx.i < tokens.length && tokens[idx.i] !== '}') {
-      if (tokens[idx.i] === ',') {
-        idx.i++;
-        continue;
-      }
+      const cur = tokens[idx.i];
+      if (cur === undefined) break;
+      if (cur === ',') { idx.i++; continue; }
       if (tokens[idx.i + 1] === '=') {
-        const key = tokens[idx.i];
         idx.i += 2;
-        obj[key] = parseValue(tokens, idx);
+        obj[cur] = parseValue(tokens, idx);
       } else {
         idx.i++;
       }
@@ -188,13 +186,11 @@ function parseBlock(tokens: string[], idx: { i: number }): HclBlock | null {
   idx.i++;
 
   const labels: string[] = [];
-  while (idx.i < tokens.length && tokens[idx.i] !== '{' && !tokens[idx.i].startsWith('"') === false) {
-    if (tokens[idx.i].startsWith('"') && tokens[idx.i].endsWith('"')) {
-      labels.push(tokens[idx.i].slice(1, -1));
-      idx.i++;
-    } else {
-      break;
-    }
+  while (idx.i < tokens.length) {
+    const t = tokens[idx.i];
+    if (t === undefined || t === '{' || !t.startsWith('"') || !t.endsWith('"')) break;
+    labels.push(t.slice(1, -1));
+    idx.i++;
   }
 
   if (tokens[idx.i] !== '{') {
@@ -208,8 +204,9 @@ function parseBlock(tokens: string[], idx: { i: number }): HclBlock | null {
   const blocks: HclBlock[] = [];
 
   while (idx.i < tokens.length && tokens[idx.i] !== '}') {
+    const key = tokens[idx.i];
+    if (key === undefined) break;
     if (tokens[idx.i + 1] === '=') {
-      const key = tokens[idx.i];
       idx.i += 2; // skip key and =
       attributes[key] = parseValue(tokens, idx);
     } else if (tokens[idx.i + 1] === '{') {
@@ -276,7 +273,7 @@ function getStringArray(block: HclBlock, key: string): string[] {
 
 function randomColor(): string {
   const colors = ['#3b82f6', '#22c55e', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#10b981'];
-  return colors[Math.floor(Math.random() * colors.length)];
+  return colors[Math.floor(Math.random() * colors.length)] ?? '#3b82f6';
 }
 
 export function importTerraformHCL(hcl: string): DcfPolicyModel {
@@ -340,7 +337,7 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     if (byName) return byName.id;
     // Terraform reference: aviatrix_smart_group.<name>.name
     const match = ref.match(/aviatrix_smart_group\.([a-zA-Z0-9_]+)\.(?:name|id)/);
-    if (match) {
+    if (match && match[1]) {
       const id = nameToId.get(match[1]);
       if (id) return id;
     }
@@ -376,8 +373,8 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       // Source / Destination
       const srcRefs = getStringArray(pb, 'src_smart_groups');
       const dstRefs = getStringArray(pb, 'dst_smart_groups');
-      const srcId = srcRefs.length > 0 ? (resolveGroupRef(srcRefs[0]) || 'sg-any') : 'sg-any';
-      const dstId = dstRefs.length > 0 ? (resolveGroupRef(dstRefs[0]) || 'sg-any') : 'sg-any';
+      const srcId = srcRefs[0] ? (resolveGroupRef(srcRefs[0]) || 'sg-any') : 'sg-any';
+      const dstId = dstRefs[0] ? (resolveGroupRef(dstRefs[0]) || 'sg-any') : 'sg-any';
 
       // Excludes
       const srcExcludeIds: string[] = [];
@@ -484,7 +481,9 @@ export function importFlowsJSON(json: string): TrafficFlow[] {
 export function importFlowsCSV(csv: string): TrafficFlow[] {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
-  const headers = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  const headerLine = lines[0];
+  if (!headerLine) return [];
+  const headers = headerLine.split(',').map((h) => h.trim().toLowerCase());
   const rows = lines.slice(1);
 
   const getIndex = (name: string) => headers.findIndex((h) => h.includes(name));
@@ -497,18 +496,25 @@ export function importFlowsCSV(csv: string): TrafficFlow[] {
   const allowedIdx = getIndex('allowed');
   const tsIdx = getIndex('timestamp');
 
+  // Bug-fix: if a CSV row is short of expected columns, `cols[i]` is undefined.
+  // Previously this silently produced `srcGroupId: undefined` / `allowed: false`
+  // (and a TypeError on `.toLowerCase()` of undefined). Fall back per-field.
+  const col = (cols: string[], i: number, fallback: string): string =>
+    i >= 0 ? (cols[i] ?? fallback) : fallback;
+
   return rows.map((row, i) => {
     const cols = row.split(',').map((c) => c.trim());
+    const allowedStr = col(cols, allowedIdx, '').toLowerCase();
     return {
       id: `flow-${Date.now()}-${i}`,
-      srcGroupId: srcIdx >= 0 ? cols[srcIdx] : 'sg-any',
-      dstGroupId: dstIdx >= 0 ? cols[dstIdx] : 'sg-any',
-      protocol: (protoIdx >= 0 ? cols[protoIdx] : 'tcp') as TrafficFlow['protocol'],
-      port: Number(portIdx >= 0 ? cols[portIdx] : 0) || 0,
-      bytes: Number(bytesIdx >= 0 ? cols[bytesIdx] : 0) || 0,
-      packets: Number(pktsIdx >= 0 ? cols[pktsIdx] : 0) || 0,
-      allowed: allowedIdx >= 0 ? cols[allowedIdx].toLowerCase() === 'true' || cols[allowedIdx].toLowerCase() === 'yes' || cols[allowedIdx] === '1' : false,
-      timestamp: tsIdx >= 0 ? cols[tsIdx] : new Date().toISOString(),
+      srcGroupId: col(cols, srcIdx, 'sg-any'),
+      dstGroupId: col(cols, dstIdx, 'sg-any'),
+      protocol: col(cols, protoIdx, 'tcp') as TrafficFlow['protocol'],
+      port: Number(col(cols, portIdx, '0')) || 0,
+      bytes: Number(col(cols, bytesIdx, '0')) || 0,
+      packets: Number(col(cols, pktsIdx, '0')) || 0,
+      allowed: allowedStr === 'true' || allowedStr === 'yes' || allowedStr === '1',
+      timestamp: col(cols, tsIdx, new Date().toISOString()),
     };
   });
 }
