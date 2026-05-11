@@ -74,8 +74,8 @@
 - [ ] Action log sidebar showing recent changes
 
 ### Policy Templates
-- [ ] Pre-built policy patterns: "Zero Trust Default Deny", "Bastion Access", "Internet Egress with ThreatBlock"
-- [ ] One-click add complete policy + required groups
+- [x] Pre-built policy patterns: "Zero Trust Default Deny", "Bastion Access", "Internet Egress with ThreatBlock", "Three-Tier Web Application"
+- [x] One-click add complete policy + required groups (dedupes existing groups by name, skips duplicate policies, bumps colliding priorities)
 
 ### Mobile Responsiveness
 - [ ] Collapse InspectorPanel into a slide-out drawer on tablet/mobile
@@ -97,13 +97,13 @@
 ### Simulation & Analysis
 - [ ] **Batch simulation** — Test multiple flows at once (e.g. from a packet capture)
 - [ ] **Path visualization** — Show the exact gateway path a packet would take
-- [ ] **Policy impact analysis** — "If I change this policy, what flows are affected?"
+- [x] **Policy impact analysis** — "If I change this policy, what flows are affected?" (shipped: collapsible Impact card in PolicyInspector below the score card. Computes before/after diffs across all logged TrafficFlows on every keystroke. Reports outcome flips and match-rule shifts separately.)
 - [ ] **Simulator WebGroup support** — Resolve FQDN destinations in What-If tests
 - [ ] **Simulator ThreatGroup/GeoGroup support** — Check threat intel and geo blocks
 
 ### UX & Polish
 - [ ] **Keyboard shortcuts** — `Cmd/Ctrl+K` command palette, arrow keys in matrix
-- [ ] **Drag-and-drop policy reordering** — Reorder priorities visually
+- [x] **Drag-and-drop policy reordering** — ListOrdered button in header opens a sortable list of every policy. Drag rows via the grip handle (pointer + keyboard, accessible via @dnd-kit). Apply renumbers to a uniform 10-step ladder starting at priority 100.
 - [ ] **Onboarding tour** — First-time user guided walkthrough
 - [x] **Bundle size optimization** — Code-splitting, lazy load AI schemas (shipped: 500KB → 229KB initial chunk via React.lazy + manualChunks)
 - [x] **Independent matrix filters** — separate source (row) / destination (column) filter inputs

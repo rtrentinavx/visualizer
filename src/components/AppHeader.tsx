@@ -1,7 +1,7 @@
 import {
   LayoutGrid, Activity, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
-  RotateCcw, Lightbulb, FileText, LayoutTemplate,
+  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
@@ -18,6 +18,7 @@ export interface AppHeaderActions {
   loadCloud: () => void;
   openImport: () => void;
   openTemplates: () => void;
+  openReorderPolicies: () => void;
   openRecommendations: () => void;
   exportJSON: () => void;
   openTerraform: () => void;
@@ -165,6 +166,10 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         <button onClick={actions.openTemplates} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-purple)')} onMouseLeave={hoverOut} title="Policy Templates">
           <LayoutTemplate size={14} />
+        </button>
+
+        <button onClick={actions.openReorderPolicies} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="Reorder Policies">
+          <ListOrdered size={14} />
         </button>
 
         <button onClick={actions.exportJSON} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="Export JSON">
