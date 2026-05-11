@@ -1,46 +1,15 @@
 import { useState, useCallback, useEffect } from 'react';
+import type { DcfPolicy } from './types/dcf';
+
 import RecommendationsModal, { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './components/modals/RecommendationsModal';
 import BestPracticesModal from './components/modals/BestPracticesModal';
-import {
-  LayoutGrid,
-  Activity,
-  Search,
-  Sun,
-  Moon,
-  HelpCircle,
-  BookOpen,
-  FileCode,
-  CloudUpload,
-  CloudDownload,
-  Check,
-  Plus,
-  X,
-  GitGraph,
-  ShieldAlert,
-  Bot,
-  Sparkles,
-  FlaskConical,
-  Upload,
-  Trophy,
-  Medal,
-  RotateCcw,
-  Lightbulb,
-} from 'lucide-react';
-import type { DcfPolicyModel, DcfPolicy } from './types/dcf';
-
-import { decryptTopology, saveTopologyStorage } from './lib/cryptoStorage';
-import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
-import { generateTerraform, downloadTerraform } from './lib/terraformExport';
-import { downloadTopologyJSON } from './lib/importExport';
-import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
-import { scoreTopology } from './lib/policyScorer';
-import { checkAchievements, getAllAchievements, type Achievement } from './lib/achievements';
-import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
-import type { AISettings } from './lib/ai/types';
-import { useTheme } from './lib/useTheme';
-import { demoTopology } from './data/demoTopology';
+import AboutModal from './components/modals/AboutModal';
+import AchievementsModal from './components/modals/AchievementsModal';
+import ConfirmModal from './components/modals/ConfirmModal';
+import TerraformExportModal from './components/modals/TerraformExportModal';
+import AppHeader, { type ViewMode, type AppHeaderActions } from './components/AppHeader';
+import AchievementToaster from './components/AchievementToaster';
 import PolicyMatrix from './components/panels/PolicyMatrix';
-
 import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
@@ -50,7 +19,15 @@ import ImportPanel from './components/panels/ImportPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 
-type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator';
+import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
+import { downloadTopologyJSON } from './lib/importExport';
+import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
+import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
+import type { AISettings } from './lib/ai/types';
+import { useTheme } from './lib/useTheme';
+import { useTopology } from './lib/useTopology';
+import { useModalState } from './lib/useModalState';
+import { demoTopology } from './data/demoTopology';
 
 interface SelectedItem {
   type: 'policy' | 'smartGroup' | 'webGroup' | 'threatGroup' | 'geoGroup';
@@ -59,31 +36,24 @@ interface SelectedItem {
   dstId?: string;
 }
 
+interface ConfirmState {
+  open: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+}
+
 export default function App() {
   const { theme, toggleTheme } = useTheme();
-  const [topology, setTopology] = useState<DcfPolicyModel>(() => structuredClone(demoTopology));
+  const { topology, dispatch, isFreshLoad } = useTopology();
+  const modals = useModalState();
+
   const [viewMode, setViewMode] = useState<ViewMode>('matrix');
-  const [searchQuery, setSearchQuery] = useState('');
   const [selectedCell, setSelectedCell] = useState<{ srcId: string; dstId: string } | null>(null);
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
-  const [storageReady, setStorageReady] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'loading' | 'error'>('idle');
-  const [showAboutModal, setShowAboutModal] = useState(false);
-  const [showBestPractices, setShowBestPractices] = useState(false);
-  const [showTerraformModal, setShowTerraformModal] = useState(false);
-  const [confirmModal, setConfirmModal] = useState<{
-    open: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-  }>({ open: false, title: '', message: '', onConfirm: () => {} });
+  const [confirmModal, setConfirmModal] = useState<ConfirmState>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [evaluatorReport, setEvaluatorReport] = useState<EvaluationReport | null>(null);
-  const [showAISettings, setShowAISettings] = useState(false);
-  const [showAIChat, setShowAIChat] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
-  const [showAchievements, setShowAchievements] = useState(false);
-  const [showRecommendations, setShowRecommendations] = useState(false);
-  const [achievementToasts, setAchievementToasts] = useState<Achievement[]>([]);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
 
   // Load AI settings on mount
@@ -93,57 +63,12 @@ export default function App() {
     }).catch(() => {});
   }, []);
 
-  // Load encrypted topology on mount
+  // Offer recommendations on fresh load (no existing topology + not previously dismissed)
   useEffect(() => {
-    let cancelled = false;
-    decryptTopology<DcfPolicyModel>().then((saved) => {
-      if (cancelled) return;
-      if (saved) {
-        setTopology(saved);
-      } else {
-        try {
-          const plain = localStorage.getItem('dcf-topology-v1');
-          if (plain) {
-            const parsed = JSON.parse(plain);
-            setTopology(parsed);
-            saveTopologyStorage(parsed).catch(() => {});
-          } else {
-            // Fresh load — offer recommendations if not dismissed
-            if (!isRecommendationsDismissed()) {
-              setShowRecommendations(true);
-            }
-          }
-        } catch { /* ignore */ }
-      }
-      setStorageReady(true);
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  // Auto-save to encrypted localStorage
-  useEffect(() => {
-    if (!storageReady) return;
-    const timer = setTimeout(() => {
-      saveTopologyStorage(topology).catch(() => {});
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [topology, storageReady]);
-
-  // Check achievements when topology changes
-  useEffect(() => {
-    const scores = new Map(topology.policies.map((p) => [p.id, 0]));
-    // We'll compute scores lazily in the inspector; for achievements we just need existence checks
-    const newAchievements = checkAchievements(topology, 0, scores);
-    if (newAchievements.length > 0) {
-      queueMicrotask(() => {
-        setAchievementToasts((prev) => [...prev, ...newAchievements]);
-      });
+    if (isFreshLoad && !isRecommendationsDismissed()) {
+      modals.open('recommendations');
     }
-  }, [topology]);
-
-  const dismissToast = (id: string) => {
-    setAchievementToasts((prev) => prev.filter((a) => a.id !== id));
-  };
+  }, [isFreshLoad, modals]);
 
   const handleViewChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -151,9 +76,9 @@ export default function App() {
     setSelectedItem(null);
   };
 
-  const handleOpenEvaluator = () => {
+  const handleOpenEvaluator = useCallback(() => {
     setEvaluatorReport(evaluateTopology(topology));
-  };
+  }, [topology]);
 
   const handleSelectCell = useCallback((srcId: string, dstId: string) => {
     setSelectedCell({ srcId, dstId });
@@ -169,152 +94,22 @@ export default function App() {
   }, []);
 
   const handleUpdateItem = useCallback((itemType: string, itemId: string, data: Record<string, unknown>) => {
-    setTopology((prev) => {
-      switch (itemType) {
-        case 'smartGroup': {
-          if (itemId === '__new__') {
-            const newGroup = {
-              id: `sg-${Date.now()}`,
-              name: 'New Smart Group',
-              color: '#3b82f6',
-              criteria: [],
-              matchType: 'any' as const,
-              ...data,
-            };
-            return { ...prev, smartGroups: [...prev.smartGroups, newGroup as typeof prev.smartGroups[0]] };
-          }
-          return {
-            ...prev,
-            smartGroups: prev.smartGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
-          };
-        }
-        case 'webGroup': {
-          if (itemId === '__new__') {
-            const newGroup = { id: `wg-${Date.now()}`, name: 'New Web Group', fqdns: [], ...data };
-            return { ...prev, webGroups: [...prev.webGroups, newGroup as typeof prev.webGroups[0]] };
-          }
-          return {
-            ...prev,
-            webGroups: prev.webGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
-          };
-        }
-        case 'threatGroup': {
-          if (itemId === '__new__') {
-            const newGroup = { id: `tg-${Date.now()}`, name: 'New Threat Group', category: 'custom' as const, entryCount: 0, ...data };
-            return { ...prev, threatGroups: [...prev.threatGroups, newGroup as typeof prev.threatGroups[0]] };
-          }
-          return {
-            ...prev,
-            threatGroups: prev.threatGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
-          };
-        }
-        case 'geoGroup': {
-          if (itemId === '__new__') {
-            const newGroup = { id: `gg-${Date.now()}`, name: 'New Geo Group', countries: [], ...data };
-            return { ...prev, geoGroups: [...prev.geoGroups, newGroup as typeof prev.geoGroups[0]] };
-          }
-          return {
-            ...prev,
-            geoGroups: prev.geoGroups.map((g) => (g.id === itemId ? { ...g, ...data } as typeof g : g)),
-          };
-        }
-        case 'policy':
-          if (itemId === '__new__') {
-            const maxPriority = prev.policies.length > 0 ? Math.max(...prev.policies.map((p) => p.priority)) : 0;
-            const newPolicy: DcfPolicy = {
-              id: `pol-${Date.now()}`,
-              name: 'New Policy',
-              priority: maxPriority + 10,
-              srcGroupId: (data.srcGroupId as string) || 'sg-any',
-              dstGroupId: (data.dstGroupId as string) || 'sg-any',
-              action: 'allow',
-              protocol: 'tcp',
-              logging: false,
-              enforcement: true,
-              ...data,
-            };
-            return { ...prev, policies: [...prev.policies, newPolicy] };
-          }
-          return {
-            ...prev,
-            policies: prev.policies.map((p) => (p.id === itemId ? { ...p, ...data } as DcfPolicy : p)),
-          };
-        default:
-          return prev;
-      }
-    });
-  }, []);
+    dispatch({ type: 'updateItem', itemType: itemType as 'policy', itemId, data });
+  }, [dispatch]);
 
   const handleDeleteItem = useCallback((itemType: string, itemId: string) => {
-    setTopology((prev) => {
-      switch (itemType) {
-        case 'smartGroup':
-          return {
-            ...prev,
-            smartGroups: prev.smartGroups.filter((g) => g.id !== itemId),
-            policies: prev.policies.filter((p) => p.srcGroupId !== itemId && p.dstGroupId !== itemId),
-          };
-        case 'webGroup':
-          return {
-            ...prev,
-            webGroups: prev.webGroups.filter((g) => g.id !== itemId),
-            policies: prev.policies.map((p) => ({ ...p, webGroupIds: p.webGroupIds?.filter((id) => id !== itemId) })),
-          };
-        case 'threatGroup':
-          return {
-            ...prev,
-            threatGroups: prev.threatGroups.filter((g) => g.id !== itemId),
-            policies: prev.policies.map((p) => (p.threatGroup === itemId ? { ...p, threatGroup: undefined } : p)),
-          };
-        case 'geoGroup':
-          return {
-            ...prev,
-            geoGroups: prev.geoGroups.filter((g) => g.id !== itemId),
-            policies: prev.policies.map((p) => (p.geoGroup === itemId ? { ...p, geoGroup: undefined } : p)),
-          };
-        case 'policy':
-          return { ...prev, policies: prev.policies.filter((p) => p.id !== itemId) };
-        default:
-          return prev;
-      }
-    });
+    dispatch({ type: 'deleteItem', itemType: itemType as 'policy', itemId });
     setSelectedItem(null);
-  }, []);
+  }, [dispatch]);
 
   const handleCreateItem = useCallback((itemType: string, data: Record<string, unknown>) => {
     const id = `${itemType}-${Date.now()}`;
-    setTopology((prev) => {
-      switch (itemType) {
-        case 'smartGroup':
-          return {
-            ...prev,
-            smartGroups: [...prev.smartGroups, { id, name: 'New Smart Group', color: '#3b82f6', criteria: [], matchType: 'any', ...data } as typeof prev.smartGroups[0]],
-          };
-        case 'webGroup':
-          return {
-            ...prev,
-            webGroups: [...prev.webGroups, { id, name: 'New Web Group', fqdns: [], ...data } as typeof prev.webGroups[0]],
-          };
-        case 'threatGroup':
-          return {
-            ...prev,
-            threatGroups: [...prev.threatGroups, { id, name: 'New Threat Group', category: 'custom', entryCount: 0, ...data } as typeof prev.threatGroups[0]],
-          };
-        case 'geoGroup':
-          return {
-            ...prev,
-            geoGroups: [...prev.geoGroups, { id, name: 'New Geo Group', countries: [], ...data } as typeof prev.geoGroups[0]],
-          };
-        default:
-          return prev;
-      }
-    });
-    // After creating, select the new item for editing
+    dispatch({ type: 'createItem', itemType: itemType as 'smartGroup', id, data });
     setSelectedCell(null);
     setSelectedItem({ type: itemType as SelectedItem['type'], id });
-  }, []);
+  }, [dispatch]);
 
-  const handleSaveToCloud = async () => {
+  const handleSaveToCloud = useCallback(async () => {
     setCloudSyncStatus('saving');
     try {
       await saveTopologyToCloud(topology);
@@ -324,14 +119,14 @@ export default function App() {
       setCloudSyncStatus('error');
       setTimeout(() => setCloudSyncStatus('idle'), 3000);
     }
-  };
+  }, [topology]);
 
-  const handleLoadFromCloud = async () => {
+  const handleLoadFromCloud = useCallback(async () => {
     setCloudSyncStatus('loading');
     try {
       const saved = await loadTopologyFromCloud();
       if (saved) {
-        setTopology(saved);
+        dispatch({ type: 'replace', topology: saved });
         setSelectedItem(null);
       }
       setCloudSyncStatus('idle');
@@ -339,414 +134,75 @@ export default function App() {
       setCloudSyncStatus('error');
       setTimeout(() => setCloudSyncStatus('idle'), 3000);
     }
-  };
+  }, [dispatch]);
 
-  const handleCopyTerraform = () => {
-    const content = generateTerraform(topology);
-    navigator.clipboard.writeText(content).then(() => {
-      setShowTerraformModal(true);
-      setTimeout(() => setShowTerraformModal(false), 2000);
-    });
-  };
-
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
     setConfirmModal({
       open: true,
       title: 'Clear All',
       message: 'This will remove all groups and policies. This action cannot be undone.',
       onConfirm: () => {
-        setTopology({
-          smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
-          webGroups: [],
-          threatGroups: [],
-          geoGroups: [],
-          policies: [],
-          flows: [],
-        });
+        dispatch({ type: 'clearAll' });
         setSelectedItem(null);
         setConfirmModal((prev) => ({ ...prev, open: false }));
       },
     });
-  };
+  }, [dispatch]);
 
-  const handleResetDemo = () => {
+  const handleResetDemo = useCallback(() => {
     setConfirmModal({
       open: true,
       title: 'Reset Demo',
       message: 'This will restore the full demo topology with sample groups, policies, and WebGroup presets. Your current data will be replaced.',
       onConfirm: () => {
-        setTopology(structuredClone(demoTopology));
+        dispatch({ type: 'replace', topology: structuredClone(demoTopology) });
         setSelectedItem(null);
         setSelectedCell(null);
         clearRecommendationsDismissal();
-        setShowRecommendations(true);
+        modals.open('recommendations');
         setConfirmModal((prev) => ({ ...prev, open: false }));
       },
     });
+  }, [dispatch, modals]);
+
+  const headerActions: AppHeaderActions = {
+    openEvaluator: handleOpenEvaluator,
+    addGroup: () => handleCreateItem('smartGroup', {}),
+    resetDemo: handleResetDemo,
+    clearAll: handleClearAll,
+    saveCloud: handleSaveToCloud,
+    loadCloud: handleLoadFromCloud,
+    openImport: () => modals.open('import'),
+    openRecommendations: () => modals.open('recommendations'),
+    exportJSON: () => downloadTopologyJSON(topology),
+    openTerraform: () => modals.open('terraformExport'),
+    openAISettings: () => modals.open('aiSettings'),
+    openAIChat: () => modals.open('aiChat'),
+    openAchievements: () => modals.open('achievements'),
+    openBestPractices: () => modals.open('bestPractices'),
+    openAbout: () => modals.open('about'),
   };
+
+  const activeAIProfile = aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId);
 
   return (
     <div className="flex h-full w-full">
-      {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="min-h-14 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex items-center justify-between px-4 shrink-0 gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-2 shrink-0">
-              <img src="/logo-header.png" alt="DCF Visualizer" className="h-14 w-auto rounded-md" />
-              <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-wide hidden sm:inline">visualizer</h1>
-            </div>
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-1 shrink-0" />
-            <div className="flex items-center gap-1 bg-[var(--color-surface)] rounded-lg p-0.5 border border-[var(--color-border-subtle)] shrink-0">
-              <button
-                onClick={() => handleViewChange('matrix')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'matrix'
-                    ? 'bg-[var(--color-aviatrix)] text-white'
-                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
-                }`}
-              >
-                <LayoutGrid size={14} />
-                <span className="hidden sm:inline">Matrix</span>
-              </button>
-              <button
-                onClick={() => handleViewChange('graph')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'graph'
-                    ? 'bg-[var(--color-aviatrix)] text-white'
-                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
-                }`}
-              >
-                <GitGraph size={14} />
-                <span className="hidden sm:inline">Graph</span>
-              </button>
-              <button
-                onClick={() => handleViewChange('traffic')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'traffic'
-                    ? 'bg-[var(--color-aviatrix)] text-white'
-                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
-                }`}
-              >
-                <Activity size={14} />
-                <span className="hidden sm:inline">Traffic</span>
-              </button>
-              <button
-                onClick={() => handleViewChange('simulator')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === 'simulator'
-                    ? 'bg-[var(--color-aviatrix)] text-white'
-                    : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-button-hover)]'
-                }`}
-              >
-                <FlaskConical size={14} />
-                <span className="hidden sm:inline">Simulator</span>
-              </button>
-            </div>
+        <AppHeader
+          topology={topology}
+          viewMode={viewMode}
+          theme={theme}
+          cloudSyncStatus={cloudSyncStatus}
+          aiProfileActive={!!aiSettings.activeProfileId}
+          onViewChange={handleViewChange}
+          onToggleTheme={toggleTheme}
+          actions={headerActions}
+        />
 
-            {/* Topology Score */}
-            {(() => {
-              const score = scoreTopology(topology);
-              if (score.totalPolicies === 0) return null;
-              return (
-                <button
-                  onClick={handleOpenEvaluator}
-                  className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold border transition-colors"
-                  style={{
-                    backgroundColor: score.color + '15',
-                    borderColor: score.color + '40',
-                    color: score.color,
-                  }}
-                  title="Average policy score. Click to open Evaluator."
-                >
-                  <Trophy size={12} />
-                  {score.grade} · {score.average}
-                </button>
-              );
-            })()}
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Search -->
-            <div className="relative hidden xl:block">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search..."
-                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-36 border outline-none transition-colors"
-                style={{
-                  backgroundColor: 'var(--color-input-bg)',
-                  borderColor: 'var(--color-input-border)',
-                  color: 'var(--color-text-primary)',
-                }}
-                onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-focus)')}
-                onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
-              />
-            </div>
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
-
-            {/* Add Group */}
-            <button
-              onClick={() => handleCreateItem('smartGroup', {})}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Add Group"
-            >
-              <Plus size={14} />
-            </button>
-
-            {/* Reset Demo */}
-            <button
-              onClick={handleResetDemo}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-accent-blue)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Reset Demo"
-            >
-              <RotateCcw size={14} />
-            </button>
-
-            {/* Clear All */}
-            <button
-              onClick={handleClearAll}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = '#ef4444'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Clear All"
-            >
-              <X size={14} />
-            </button>
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
-
-            {/* Cloud Save */}
-            <button
-              onClick={handleSaveToCloud}
-              disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
-              className="p-1.5 rounded-md border transition-colors disabled:opacity-50 hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = cloudSyncStatus === 'saved' ? '#10b981' : cloudSyncStatus === 'error' ? '#ef4444' : 'var(--color-text-secondary)'; }}
-              title={cloudSyncStatus === 'saved' ? 'Saved to cloud' : cloudSyncStatus === 'error' ? 'Sync failed' : 'Save to Cloud'}
-            >
-              {cloudSyncStatus === 'saving' ? (
-                <span className="w-3.5 h-3.5 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
-              ) : cloudSyncStatus === 'saved' ? (
-                <Check size={14} />
-              ) : (
-                <CloudUpload size={14} />
-              )}
-            </button>
-
-            {/* Cloud Load */}
-            <button
-              onClick={handleLoadFromCloud}
-              disabled={cloudSyncStatus === 'saving' || cloudSyncStatus === 'loading'}
-              className="p-1.5 rounded-md border transition-colors disabled:opacity-50 hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { if (cloudSyncStatus !== 'saving' && cloudSyncStatus !== 'loading') { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Load from Cloud"
-            >
-              {cloudSyncStatus === 'loading' ? (
-                <span className="w-3.5 h-3.5 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <CloudDownload size={14} />
-              )}
-            </button>
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
-
-            {/* Import */}
-            <button
-              onClick={() => setShowImportModal(true)}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Import Topology"
-            >
-              <Upload size={14} />
-            </button>
-
-            {/* Recommendations */}
-            <button
-              onClick={() => setShowRecommendations(true)}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = '#f59e0b'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Recommended WebGroups"
-            >
-              <Lightbulb size={14} />
-            </button>
-
-            {/* JSON Export */}
-            <button
-              onClick={() => downloadTopologyJSON(topology)}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Export JSON"
-            >
-              <FileCode size={14} />
-            </button>
-
-            {/* Terraform Export */}
-            <button
-              onClick={() => setShowTerraformModal(true)}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Export Terraform"
-            >
-              <FileCode size={14} />
-            </button>
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
-
-            {/* Evaluator */}
-            <button
-              onClick={handleOpenEvaluator}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Policy Evaluator"
-            >
-              <ShieldAlert size={14} />
-            </button>
-
-            {/* AI Settings */}
-            <button
-              onClick={() => setShowAISettings(true)}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="AI Settings"
-            >
-              <Bot size={14} />
-            </button>
-
-            {/* Ask AI */}
-            {aiSettings.activeProfileId && (
-              <button
-                onClick={() => setShowAIChat(true)}
-                className="p-1.5 rounded-md border transition-colors"
-                style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                title="Ask AI"
-              >
-                <Sparkles size={14} />
-              </button>
-            )}
-
-            {/* Divider */}
-            <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5" />
-
-            {/* Theme Toggle */}
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-            </button>
-
-            {/* Achievements */}
-            {(() => {
-              const all = getAllAchievements();
-              const unlocked = all.filter((a) => a.unlockedAt).length;
-              return (
-                <button
-                  onClick={() => setShowAchievements(true)}
-                  className="p-1.5 rounded-md border transition-colors relative"
-                  style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-                  title="Achievements"
-                >
-                  <Medal size={14} />
-                  {unlocked > 0 && (
-                    <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[var(--color-aviatrix)] text-white text-[8px] flex items-center justify-center font-bold">
-                      {unlocked}
-                    </span>
-                  )}
-                </button>
-              );
-            })()}
-
-            {/* Best Practices */}
-            <button
-              onClick={() => setShowBestPractices(true)}
-              className="p-1.5 rounded-md border transition-colors hidden md:flex"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-accent-blue)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="Best Practices Reference"
-            >
-              <BookOpen size={14} />
-            </button>
-
-            {/* About */}
-            <button
-              onClick={() => setShowAboutModal(true)}
-              className="p-1.5 rounded-md border transition-colors"
-              style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-button-hover)'; e.currentTarget.style.color = 'var(--color-text-primary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-surface)'; e.currentTarget.style.color = 'var(--color-text-secondary)'; }}
-              title="About"
-            >
-              <HelpCircle size={14} />
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Search */}
-        <div className="lg:hidden px-4 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)]">
-          <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search groups, policies, protocols..."
-              className="w-full pl-8 pr-3 py-1.5 rounded-md text-xs border outline-none transition-colors"
-              style={{
-                backgroundColor: 'var(--color-input-bg)',
-                borderColor: 'var(--color-input-border)',
-                color: 'var(--color-text-primary)',
-              }}
-              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-focus)')}
-              onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
-            />
-          </div>
-        </div>
-
-        {/* Content */}
         <div className="flex-1 overflow-hidden">
           {viewMode === 'matrix' ? (
             <PolicyMatrix
               topology={topology}
-              searchQuery={searchQuery}
               selectedCell={selectedCell}
               onSelectCell={handleSelectCell}
               onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
@@ -765,43 +221,22 @@ export default function App() {
             />
           ) : viewMode === 'simulator' ? (
             <PolicySimulator topology={topology} />
-          ) : viewMode === 'traffic' ? (
+          ) : (
             <TrafficFlowPanel
               topology={topology}
-              filter={searchQuery}
-              onCreateFlow={(flow) => {
-                const newFlow = { ...flow, id: `flow-${Date.now()}` };
-                setTopology((prev) => ({ ...prev, flows: [...prev.flows, newFlow] }));
-              }}
-              onUpdateFlow={(id, data) => {
-                setTopology((prev) => ({
-                  ...prev,
-                  flows: prev.flows.map((f) => (f.id === id ? { ...f, ...data } : f)),
-                }));
-              }}
-              onDeleteFlow={(id) => {
-                setTopology((prev) => ({ ...prev, flows: prev.flows.filter((f) => f.id !== id) }));
-              }}
-            />
-          ) : (
-            <PolicyMatrix
-              topology={topology}
-              searchQuery={searchQuery}
-              selectedCell={selectedCell}
-              onSelectCell={handleSelectCell}
-              onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
-              onSelectPolicy={handleSelectPolicy}
+              onCreateFlow={(flow) => dispatch({ type: 'addFlow', flow: { ...flow, id: `flow-${Date.now()}` } })}
+              onUpdateFlow={(id, data) => dispatch({ type: 'updateFlow', id, data })}
+              onDeleteFlow={(id) => dispatch({ type: 'deleteFlow', id })}
             />
           )}
         </div>
       </div>
 
-      {/* Right Sidebar - Inspector */}
       <InspectorPanel
         topology={topology}
         selectedCell={selectedCell}
         selectedItem={selectedItem}
-        aiProfile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)}
+        aiProfile={activeAIProfile}
         onClose={() => {
           setSelectedCell(null);
           setSelectedItem(null);
@@ -812,151 +247,32 @@ export default function App() {
         onSelectPolicy={handleSelectPolicy}
       />
 
-      {/* Terraform Export Modal */}
-      {showTerraformModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div
-            className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
-            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-              <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Terraform Export</h2>
-              <button onClick={() => setShowTerraformModal(false)} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]">
-                <X size={14} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4">
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all" style={{ color: 'var(--color-text-secondary)' }}>
-                {generateTerraform(topology)}
-              </pre>
-            </div>
-            <div className="p-4 border-t border-[var(--color-border-subtle)] flex items-center gap-3">
-              <button
-                onClick={handleCopyTerraform}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-border-subtle)',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                <FileCode size={13} />
-                Copy to Clipboard
-              </button>
-              <button
-                onClick={() => downloadTerraform(topology)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
-                style={{ backgroundColor: 'var(--color-aviatrix)' }}
-              >
-                Download .tf
-              </button>
-            </div>
-          </div>
-        </div>
+      {modals.isOpen('terraformExport') && (
+        <TerraformExportModal topology={topology} onClose={modals.close} />
       )}
 
-      {/* Best Practices Modal */}
-      {showBestPractices && (
-        <BestPracticesModal onClose={() => setShowBestPractices(false)} />
+      {modals.isOpen('bestPractices') && (
+        <BestPracticesModal onClose={modals.close} />
       )}
 
-      {/* About Modal */}
-      {showAboutModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div
-            className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
-            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-              <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">About DCF Visualizer</h2>
-              <button onClick={() => setShowAboutModal(false)} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]">
-                <X size={14} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto p-4 space-y-4 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-              <p>
-                <strong>DCF Visualizer</strong> is an interactive design and validation tool for Aviatrix Distributed Cloud Firewall (DCF) policies.
-                Model SmartGroups, WebGroups, ThreatGroups, GeoGroups, and the policies that govern traffic between them — with real-time scoring and best-practice validation aligned to Aviatrix, CIS, and NIST Zero Trust frameworks.
-              </p>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Views</h3>
-                <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li><strong>Matrix</strong> — Grid view of SmartGroup → SmartGroup policies with sticky headers and priority-aware rendering</li>
-                  <li><strong>Graph</strong> — Circular node layout with draggable nodes, lock/unlock layout toggle, and Draw Policy mode</li>
-                  <li><strong>Traffic</strong> — Manual traffic flow logging with add/edit/delete and JSON/CSV import-export</li>
-                  <li><strong>Simulator</strong> — What-If traffic tester: enter source/destination IPs and the tool resolves them to SmartGroups via CIDR matching</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Policy Lifecycle</h3>
-                <ul className="list-disc list-inside space-y-1 text-xs">
-                  <li><strong>Create & Edit</strong> — Full policy editor with auto-naming, live score (0-100), and grade (F/D/C/B/A)</li>
-                  <li><strong>WebGroup Presets</strong> — Browse a curated library of 6 preset categories (SaaS, Social, Streaming, Dev Tools, Gambling, Ads) and add them with one click</li>
-                  <li><strong>Evaluate</strong> — 21 automated checks across Security, Compliance, Performance, Naming, and Hygiene. Compliance score (0–100), category filters, and framework badges (Aviatrix BP, CIS, NIST ZT)</li>
-                  <li><strong>Fix it for me</strong> — One-click auto-fix for common issues: enable logging, correct TLS settings, fix WebGroup destinations, disable shadowed policies, deduplicate names/priorities</li>
-                  <li><strong>AI Assist</strong> — Policy explanation, evaluator fix suggestions, and free-form chat via OpenAI, Anthropic, Google, Ollama, LM Studio, or AWS Bedrock</li>
-                  <li><strong>Export</strong> — Terraform (Aviatrix provider), JSON topology, CSV flows</li>
-                  <li><strong>Import</strong> — JSON round-trip or Terraform HCL (aviatrix_smart_group + aviatrix_dcf_policy_list)</li>
-                </ul>
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Gamification</h3>
-                <p className="text-xs">
-                  Earn achievements as you build: Policy Creator, Deny Master, Specificity King, Zero Shadow, High Performer, and more.
-                  Track your progress via the medal icon in the header.
-                </p>
-              </div>
-              <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-2">Security & Privacy</h3>
-                <p className="text-xs">
-                  Topology data is encrypted with AES-GCM in your browser's localStorage. API keys for AI providers are encrypted and never logged.
-                  Cloud sync (optional) uses Upstash Redis. No data leaves your browser unless you explicitly enable cloud sync or AI features.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+      {modals.isOpen('about') && (
+        <AboutModal onClose={modals.close} />
       )}
 
-      {/* Confirm Modal */}
       {confirmModal.open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div
-            className="w-full max-w-sm rounded-xl border shadow-2xl p-5"
-            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-          >
-            <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-2">{confirmModal.title}</h3>
-            <p className="text-xs text-[var(--color-text-secondary)] mb-4">{confirmModal.message}</p>
-            <div className="flex items-center justify-end gap-2">
-              <button
-                onClick={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
-                className="px-3 py-1.5 rounded-md text-xs font-medium border transition-colors"
-                style={{
-                  backgroundColor: 'var(--color-surface)',
-                  borderColor: 'var(--color-border-subtle)',
-                  color: 'var(--color-text-secondary)',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmModal.onConfirm}
-                className="px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
-                style={{ backgroundColor: 'var(--color-aviatrix)' }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
+        <ConfirmModal
+          title={confirmModal.title}
+          message={confirmModal.message}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => setConfirmModal((prev) => ({ ...prev, open: false }))}
+        />
       )}
 
-      {/* Policy Evaluator */}
       {evaluatorReport && (
         <EvaluatorPanel
           topology={topology}
           report={evaluatorReport}
-          aiProfile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)}
+          aiProfile={activeAIProfile}
           onClose={() => setEvaluatorReport(null)}
           onSelectPolicy={(policyId) => {
             setEvaluatorReport(null);
@@ -969,8 +285,7 @@ export default function App() {
           onApplyFix={(finding) => {
             const fixed = applyAutoFix(topology, finding);
             if (fixed) {
-              setTopology(fixed);
-              saveTopologyStorage(fixed).catch(() => {});
+              dispatch({ type: 'replace', topology: fixed });
               setEvaluatorReport(evaluateTopology(fixed));
             } else if (finding.affectedPolicyIds?.[0]) {
               setEvaluatorReport(null);
@@ -983,27 +298,24 @@ export default function App() {
         />
       )}
 
-      {/* AI Settings */}
-      {showAISettings && (
+      {modals.isOpen('aiSettings') && (
         <AISettingsPanel
           settings={aiSettings}
           onSave={(settings) => {
             setAISettings(settings);
             saveAISettings(settings).catch(() => {});
-            setShowAISettings(false);
+            modals.close();
           }}
-          onClose={() => setShowAISettings(false)}
+          onClose={modals.close}
         />
       )}
 
-      {/* AI Chat */}
-      {showAIChat && aiSettings.activeProfileId && (
+      {modals.isOpen('aiChat') && activeAIProfile && (
         <AIChatPanel
           topology={topology}
-          profile={aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId)!}
-          onClose={() => setShowAIChat(false)}
+          profile={activeAIProfile}
+          onClose={modals.close}
           onApplyPolicy={(data) => {
-            // Resolve group names to IDs
             const srcName = String(data.srcGroupName || '');
             const dstName = String(data.dstGroupName || '');
             const srcGroup = topology.smartGroups.find((g) => g.name.toLowerCase() === srcName.toLowerCase());
@@ -1027,121 +339,46 @@ export default function App() {
               decrypt: Boolean(data.decrypt),
             };
 
-            setTopology((prev) => ({ ...prev, policies: [...prev.policies, newPolicy] }));
-            setShowAIChat(false);
+            dispatch({ type: 'replace', topology: { ...topology, policies: [...topology.policies, newPolicy] } });
+            modals.close();
             setSelectedItem({ type: 'policy', id: newPolicy.id });
           }}
         />
       )}
 
-      {/* Import Panel */}
-      {showImportModal && (
+      {modals.isOpen('import') && (
         <ImportPanel
-          onImport={(imported) => {
-            setTopology(imported);
-            saveTopologyStorage(imported).catch(() => {});
-          }}
-          onClose={() => setShowImportModal(false)}
+          onImport={(imported) => dispatch({ type: 'replace', topology: imported })}
+          onClose={modals.close}
         />
       )}
 
-      {/* Achievement Toasts */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2">
-        {achievementToasts.map((ach) => (
-          <div
-            key={ach.id}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg animate-in fade-in slide-in-from-right-4"
-            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-          >
-            <span className="text-xl">{ach.icon}</span>
-            <div>
-              <p className="text-xs font-semibold text-[var(--color-text-primary)]">Achievement Unlocked!</p>
-              <p className="text-[10px] text-[var(--color-text-secondary)]">{ach.name}</p>
-              <p className="text-[10px] text-[var(--color-text-muted)]">{ach.description}</p>
-            </div>
-            <button
-              onClick={() => dismissToast(ach.id)}
-              className="ml-2 p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        ))}
-      </div>
+      <AchievementToaster topology={topology} />
 
-      {/* Recommendations Modal */}
-      {showRecommendations && (
+      {modals.isOpen('recommendations') && (
         <RecommendationsModal
           existingNames={topology.webGroups.map((g) => g.name)}
           onAccept={(presets) => {
-            setTopology((prev) => ({
-              ...prev,
-              webGroups: [
-                ...prev.webGroups,
-                ...presets.map((p) => ({
-                  id: `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  name: p.name,
-                  fqdns: p.fqdns,
-                })),
-              ],
-            }));
+            dispatch({
+              type: 'appendWebGroups',
+              webGroups: presets.map((p) => ({
+                id: `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                name: p.name,
+                fqdns: p.fqdns,
+              })),
+            });
             dismissRecommendations();
-            setShowRecommendations(false);
+            modals.close();
           }}
           onDismiss={() => {
             dismissRecommendations();
-            setShowRecommendations(false);
+            modals.close();
           }}
         />
       )}
 
-      {/* Achievements Modal */}
-      {showAchievements && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div
-            className="w-full max-w-md max-h-[85vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
-            style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-          >
-            <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-              <div className="flex items-center gap-3">
-                <Medal size={18} className="text-[var(--color-accent-blue)]" />
-                <div>
-                  <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Achievements</h2>
-                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                    {getAllAchievements().filter((a) => a.unlockedAt).length} / {getAllAchievements().length} unlocked
-                  </p>
-                </div>
-              </div>
-              <button onClick={() => setShowAchievements(false)} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]">
-                <X size={16} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {getAllAchievements().map((ach) => (
-                <div
-                  key={ach.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border ${
-                    ach.unlockedAt ? 'border-[var(--color-border-subtle)] bg-[var(--color-surface)]' : 'border-[var(--color-border-subtle)] opacity-50'
-                  }`}
-                >
-                  <span className="text-xl">{ach.icon}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-xs font-medium ${ach.unlockedAt ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'}`}>
-                      {ach.name}
-                    </p>
-                    <p className="text-[10px] text-[var(--color-text-muted)]">{ach.description}</p>
-                    {ach.unlockedAt && (
-                      <p className="text-[9px] text-green-400 mt-0.5">
-                        Unlocked {new Date(ach.unlockedAt).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-                  {ach.unlockedAt && <Trophy size={14} className="text-[var(--color-accent-blue)] shrink-0" />}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {modals.isOpen('achievements') && (
+        <AchievementsModal onClose={modals.close} />
       )}
     </div>
   );

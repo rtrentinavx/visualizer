@@ -12,6 +12,7 @@ import {
   ChevronDown,
   AlertTriangle,
   X,
+  Search,
 } from 'lucide-react';
 import type { DcfPolicyModel, TrafficFlow, Protocol, PolicyDirection } from '../../types/dcf';
 import {
@@ -23,7 +24,6 @@ import {
 
 interface TrafficFlowPanelProps {
   topology: DcfPolicyModel;
-  filter?: string;
   onCreateFlow: (flow: Omit<TrafficFlow, 'id'>) => void;
   onUpdateFlow: (id: string, flow: Partial<TrafficFlow>) => void;
   onDeleteFlow: (id: string) => void;
@@ -60,7 +60,6 @@ const emptyForm = {
 
 export default function TrafficFlowPanel({
   topology,
-  filter = '',
   onCreateFlow,
   onUpdateFlow,
   onDeleteFlow,
@@ -71,6 +70,7 @@ export default function TrafficFlowPanel({
   const [importMode, setImportMode] = useState(false);
   const [importText, setImportText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
 
   const f = filter.toLowerCase();
   const filteredFlows = topology.flows.filter((flow) => {
@@ -170,12 +170,25 @@ export default function TrafficFlowPanel({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="p-4 border-b border-[var(--color-border-subtle)]">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Traffic Flows</h2>
             <p className="text-xs text-[var(--color-text-muted)] mt-1">Manually log and analyze traffic between groups</p>
           </div>
-          <Activity size={18} className="text-[var(--color-accent-blue)]" />
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+              <input
+                type="text"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="Filter flows..."
+                className="pl-8 pr-3 py-1.5 rounded-md text-xs w-40 border outline-none"
+                style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+              />
+            </div>
+            <Activity size={18} className="text-[var(--color-accent-blue)]" />
+          </div>
         </div>
         <div className="grid grid-cols-3 gap-2 mt-3">
           <div className="px-2 py-1.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-center">

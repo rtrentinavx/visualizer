@@ -1,17 +1,17 @@
-import { useMemo } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe, Ban, LayoutGrid, Plus } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ShieldCheck, ShieldX, Lock, Globe, Ban, LayoutGrid, Plus, Search } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel } from '../../types/dcf';
 
 interface PolicyMatrixProps {
   topology: DcfPolicyModel;
-  searchQuery: string;
   selectedCell: { srcId: string; dstId: string } | null;
   onSelectCell: (srcId: string, dstId: string) => void;
   onSelectGroup: (groupId: string) => void;
   onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
 }
 
-export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
+export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
+  const [searchQuery, setSearchQuery] = useState('');
   const f = searchQuery.toLowerCase();
 
   const { groups, matrix } = useMemo(() => {
@@ -50,15 +50,28 @@ export default function PolicyMatrix({ topology, searchQuery, selectedCell, onSe
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between">
+      <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Matrix</h2>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             Row = Source → Column = Destination. Click a cell with policies to view them. Click an empty cell to create one.
           </p>
         </div>
-        <div className="text-xs text-[var(--color-text-muted)]">
-          {topology.policies.length} policies · {groups.length} groups
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter groups..."
+              className="pl-8 pr-3 py-1.5 rounded-md text-xs w-40 border outline-none"
+              style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+            />
+          </div>
+          <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">
+            {topology.policies.length} policies · {groups.length} groups
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-auto">
