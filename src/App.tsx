@@ -10,6 +10,8 @@ import ConfirmModal from './components/modals/ConfirmModal';
 import TerraformExportModal from './components/modals/TerraformExportModal';
 import AppHeader, { type ViewMode, type AppHeaderActions } from './components/AppHeader';
 import AchievementToaster from './components/AchievementToaster';
+import Tour from './components/Tour';
+import { isTourCompleted, wasTourAutoShown, markTourAutoShown } from './lib/tourDismissal';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import InspectorPanel from './components/panels/InspectorPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
@@ -89,6 +91,18 @@ export default function App() {
       modals.open('recommendations');
     }
   }, [isFreshLoad, modals]);
+
+  // Auto-open the onboarding tour once per device, after any blocking modal
+  // (recommendations / etc.) has closed.
+  useEffect(() => {
+    if (!isTourCompleted() && !wasTourAutoShown() && modals.active === null) {
+      const t = setTimeout(() => {
+        markTourAutoShown();
+        modals.open('tour');
+      }, 1200);
+      return () => clearTimeout(t);
+    }
+  }, [modals]);
 
   const handleViewChange = (mode: ViewMode) => {
     setViewMode(mode);
@@ -285,7 +299,7 @@ export default function App() {
       )}
 
       {modals.isOpen('about') && (
-        <AboutModal onClose={modals.close} />
+        <AboutModal onClose={modals.close} onReplayTour={() => modals.open('tour')} />
       )}
 
       {confirmModal.open && (
@@ -445,6 +459,13 @@ export default function App() {
       )}
 
       <AchievementToaster topology={topology} />
+
+      {modals.isOpen('tour') && (
+        <Tour
+          aiProfileActive={!!aiSettings.activeProfileId}
+          onClose={modals.close}
+        />
+      )}
 
       {modals.isOpen('recommendations') && (
         <RecommendationsModal

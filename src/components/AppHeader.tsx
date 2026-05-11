@@ -75,7 +75,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         </div>
         <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-1 shrink-0" />
 
-        <div className="flex items-center gap-1 bg-[var(--color-surface)] rounded-lg p-0.5 border border-[var(--color-border-subtle)] shrink-0">
+        <div data-tour="view-tabs" className="flex items-center gap-1 bg-[var(--color-surface)] rounded-lg p-0.5 border border-[var(--color-border-subtle)] shrink-0">
           <button onClick={() => onViewChange('matrix')} className={tabClass(viewMode === 'matrix')}>
             <LayoutGrid size={14} />
             <span className="hidden sm:inline">Matrix</span>
@@ -166,11 +166,11 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <Lightbulb size={14} />
         </button>
 
-        <button onClick={actions.openTemplates} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-purple)')} onMouseLeave={hoverOut} title="Policy Templates">
+        <button data-tour="templates-btn" onClick={actions.openTemplates} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-purple)')} onMouseLeave={hoverOut} title="Policy Templates">
           <LayoutTemplate size={14} />
         </button>
 
-        <button onClick={actions.openReorderPolicies} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="Reorder Policies">
+        <button data-tour="reorder-btn" onClick={actions.openReorderPolicies} className={`${ICON_BTN_BASE} hidden md:flex`} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="Reorder Policies">
           <ListOrdered size={14} />
         </button>
 
@@ -184,11 +184,11 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         <div className="h-5 w-px bg-[var(--color-border-subtle)] mx-0.5 hidden md:block" />
 
-        <button onClick={actions.openEvaluator} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="Policy Evaluator">
+        <button data-tour="evaluator-btn" onClick={actions.openEvaluator} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="Policy Evaluator">
           <ShieldAlert size={14} />
         </button>
 
-        <button onClick={actions.openAISettings} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="AI Settings">
+        <button data-tour="ai-settings-btn" onClick={actions.openAISettings} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="AI Settings">
           <Bot size={14} />
         </button>
 
@@ -235,7 +235,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <BookOpen size={14} />
         </button>
 
-        <button onClick={actions.openAbout} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="About">
+        <button data-tour="about-btn" onClick={actions.openAbout} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="About">
           <HelpCircle size={14} />
         </button>
       </div>

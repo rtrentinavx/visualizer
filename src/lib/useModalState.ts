@@ -13,7 +13,8 @@ export type ModalName =
   | 'reorderPolicies'
   | 'import'
   | 'achievements'
-  | 'recommendations';
+  | 'recommendations'
+  | 'tour';
 
 export interface UseModalState {
   active: ModalName | null;

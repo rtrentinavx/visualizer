@@ -1,6 +1,17 @@
-import { X } from 'lucide-react';
+import { X, Sparkles } from 'lucide-react';
+import { clearTourFlags } from '../../lib/tourDismissal';
 
-export default function AboutModal({ onClose }: { onClose: () => void }) {
+interface AboutModalProps {
+  onClose: () => void;
+  onReplayTour: () => void;
+}
+
+export default function AboutModal({ onClose, onReplayTour }: AboutModalProps) {
+  const handleReplayTour = () => {
+    clearTourFlags();
+    onClose();
+    onReplayTour();
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div
@@ -52,6 +63,14 @@ export default function AboutModal({ onClose }: { onClose: () => void }) {
               Topology data is encrypted with AES-GCM in your browser's localStorage. API keys for AI providers are encrypted and never logged.
               Cloud sync (optional) uses Upstash Redis. No data leaves your browser unless you explicitly enable cloud sync or AI features.
             </p>
+          </div>
+          <div className="pt-2 border-t border-[var(--color-border-subtle)]">
+            <button
+              onClick={handleReplayTour}
+              className="flex items-center gap-1.5 text-xs text-[var(--color-accent-purple)] hover:underline"
+            >
+              <Sparkles size={12} /> Take the tour
+            </button>
           </div>
         </div>
       </div>

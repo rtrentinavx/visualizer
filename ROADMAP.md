@@ -104,7 +104,7 @@
 ### UX & Polish
 - [ ] **Keyboard shortcuts** — `Cmd/Ctrl+K` command palette, arrow keys in matrix
 - [x] **Drag-and-drop policy reordering** — ListOrdered button in header opens a sortable list of every policy. Drag rows via the grip handle (pointer + keyboard, accessible via @dnd-kit). Apply renumbers to a uniform 10-step ladder starting at priority 100.
-- [ ] **Onboarding tour** — First-time user guided walkthrough
+- [x] **Onboarding tour** — 7-step spotlight walkthrough through the four views, templates, evaluator, AI features, reorder, and the About icon. Auto-shows once per device after the recommendations modal closes; replayable from About → "Take the tour". Keyboard: arrow keys to navigate, Esc to skip. No DnD library — DIY SVG mask + tooltip.
 - [x] **Bundle size optimization** — Code-splitting, lazy load AI schemas (shipped: 500KB → 229KB initial chunk via React.lazy + manualChunks)
 - [x] **Independent matrix filters** — separate source (row) / destination (column) filter inputs
 
