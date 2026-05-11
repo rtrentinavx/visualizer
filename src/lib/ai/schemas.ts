@@ -51,6 +51,29 @@ export const ReachabilityIntentSchema = z.object({
 
 export type ReachabilityIntent = z.infer<typeof ReachabilityIntentSchema>;
 
+/**
+ * AI-extracted filter from a natural-language policy-search question.
+ * The engine applies the filter; the AI doesn't return policy ids.
+ */
+export const PolicySearchFilterSchema = z.object({
+  canAnswer: z.boolean().describe('false if the question can\'t be turned into a filter'),
+  clarification: z.string().optional().describe('If canAnswer is false, what should the user provide?'),
+  srcGroupName: z.string().optional().describe('Exact SmartGroup name from the topology (or "Any"). Filter matches this name OR sg-any.'),
+  dstGroupName: z.string().optional().describe('Exact destination SmartGroup name.'),
+  dstWebGroupName: z.string().optional().describe('Exact WebGroup name if the user is asking about SaaS/FQDN destinations.'),
+  actions: z.array(z.enum(['allow', 'deny', 'learned'])).optional().describe('Restrict to these action types.'),
+  protocols: z.array(z.enum(['tcp', 'udp', 'icmp', 'any'])).optional().describe('Restrict to these protocols.'),
+  containsPort: z.string().optional().describe('A single port string the policy must include (e.g. "443").'),
+  hasThreatGroup: z.boolean().optional().describe('True → only policies with a ThreatGroup attached.'),
+  hasGeoGroup: z.boolean().optional().describe('True → only policies with a GeoGroup attached.'),
+  hasWebGroup: z.boolean().optional().describe('True → only policies with at least one WebGroup attached.'),
+  decryptOnly: z.boolean().optional().describe('True → only TLS-decrypting policies.'),
+  loggingDisabled: z.boolean().optional().describe('True → only policies with logging:false.'),
+  assumptions: z.array(z.string()).optional(),
+});
+
+export type PolicySearchFilter = z.infer<typeof PolicySearchFilterSchema>;
+
 export type PolicySuggestion = z.infer<typeof PolicySuggestionSchema>;
 export type PolicySuggestionArray = z.infer<typeof PolicySuggestionArraySchema>;
 export type PolicyExplanation = z.infer<typeof PolicyExplanationSchema>;

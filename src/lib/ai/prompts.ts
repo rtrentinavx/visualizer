@@ -13,6 +13,7 @@ export const PROMPT_VERSIONS = {
   explain: '1.0.0',
   autoDocs: '1.0.0',
   reachability: '1.0.0',
+  policySearch: '1.0.0',
 } as const;
 
 // =============================================================================

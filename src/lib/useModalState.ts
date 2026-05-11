@@ -8,6 +8,7 @@ export type ModalName =
   | 'aiChat'
   | 'autoDocs'
   | 'reachability'
+  | 'policySearch'
   | 'policyTemplates'
   | 'reorderPolicies'
   | 'import'

@@ -98,8 +98,8 @@
 - [ ] **Batch simulation** — Test multiple flows at once (e.g. from a packet capture)
 - [ ] **Path visualization** — Show the exact gateway path a packet would take
 - [x] **Policy impact analysis** — "If I change this policy, what flows are affected?" (shipped: collapsible Impact card in PolicyInspector below the score card. Computes before/after diffs across all logged TrafficFlows on every keystroke. Reports outcome flips and match-rule shifts separately.)
-- [ ] **Simulator WebGroup support** — Resolve FQDN destinations in What-If tests
-- [ ] **Simulator ThreatGroup/GeoGroup support** — Check threat intel and geo blocks
+- [x] **Simulator WebGroup support** — Optional "Destination FQDN" field in the simulator's Advanced section. The FQDN is glob-matched (case-insensitive, `*` wildcards) against every WebGroup's `fqdns` list. Policies that attach a WebGroup only match when the FQDN resolves to one of them; broad-internet policies (no WebGroup attached) still match.
+- [x] **Simulator ThreatGroup/GeoGroup support** — Optional Src/Dst ThreatGroup and Src/Dst GeoGroup dropdowns in Advanced (the simulator can't infer threat or country from an IP). Policies that attach a ThreatGroup or GeoGroup now require the override to be set to match — previously they matched silently regardless, which was incorrect.
 
 ### UX & Polish
 - [ ] **Keyboard shortcuts** — `Cmd/Ctrl+K` command palette, arrow keys in matrix
@@ -110,6 +110,6 @@
 
 ### AI Enhancements
 - [x] **Policy optimization suggestions** — "This policy can be merged with X" (shipped: 2 new evaluator checks — `redundant-*` info findings, `mergeable-*` with auto-fix that unions ports into the lowest-priority policy)
-- [ ] **Natural language search** — "Show me all policies that allow web tier to database"
+- [x] **Natural language search** — "Show me all policies that allow web tier to database" (shipped: FlaskConical button in header opens PolicySearchModal. AI extracts structured filter criteria (src/dst names, actions, protocols, port, hasThreat/Geo/WebGroup flags, decryptOnly, loggingDisabled), engine resolves names + applies AND-semantics filter, results listed with one-click open-in-inspector.)
 - [x] **Auto-documentation** — Generate human-readable policy docs from topology (shipped: FileText button in header opens streaming Markdown generation with copy/download)
 - [x] **AI-powered simulator** — "Will my web servers reach Salesforce?" (shipped: Route button in header opens ReachabilityModal. AI extracts structured intent (src/dst names, protocol, port), engine resolves names against the live topology and runs first-match-wins evaluation, modal shows verdict + matched policy + AI's assumptions for transparency.)

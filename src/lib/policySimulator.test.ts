@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DcfPolicyModel } from '../types/dcf';
-import { resolveIpToGroups, simulateTraffic } from './policySimulator';
+import { resolveIpToGroups, simulateTraffic, matchFqdn } from './policySimulator';
 
 function emptyTopology(): DcfPolicyModel {
   return {
@@ -301,5 +301,138 @@ describe('simulateTraffic', () => {
     expect(result.matchedPolicy?.id).toBe('pol-any');
     expect(result.srcGroups).toEqual([]);
     expect(result.dstGroups).toEqual([]);
+  });
+});
+
+describe('matchFqdn', () => {
+  it('matches exact hostnames case-insensitively', () => {
+    expect(matchFqdn('salesforce.com', 'salesforce.com')).toBe(true);
+    expect(matchFqdn('Salesforce.COM', 'salesforce.com')).toBe(true);
+    expect(matchFqdn('salesforce.com', 'other.com')).toBe(false);
+  });
+
+  it('star matches any sequence including subdomains', () => {
+    expect(matchFqdn('*.salesforce.com', 'www.salesforce.com')).toBe(true);
+    expect(matchFqdn('*.salesforce.com', 'api.cs1.salesforce.com')).toBe(true);
+    expect(matchFqdn('*.salesforce.com', 'salesforce.com')).toBe(false);
+    expect(matchFqdn('*.salesforce.com', 'evilsalesforce.com')).toBe(false);
+  });
+
+  it('star in middle works', () => {
+    expect(matchFqdn('api.*.com', 'api.salesforce.com')).toBe(true);
+    expect(matchFqdn('api.*.com', 'api.example.io')).toBe(false);
+  });
+
+  it('escapes regex special characters in the literal portion', () => {
+    expect(matchFqdn('foo.com', 'fooxcom')).toBe(false); // dot is literal, not "any char"
+    expect(matchFqdn('a+b.com', 'a+b.com')).toBe(true); // + is literal
+  });
+});
+
+describe('simulateTraffic — WebGroup destination (dstFqdn)', () => {
+  it('matches a policy whose attached WebGroup contains the dstFqdn', () => {
+    const topology = emptyTopology();
+    topology.webGroups.push({ id: 'wg-saas', name: 'SaaS', fqdns: ['*.salesforce.com'] });
+    topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
+    topology.policies.push({
+      id: 'pol-saas', name: 'Allow SaaS', priority: 100,
+      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      action: 'allow', protocol: 'tcp', ports: '443', logging: true,
+      webGroupIds: ['wg-saas'],
+    });
+    const r = simulateTraffic(topology, {
+      srcIp: '10.0.0.5', dstIp: '13.108.0.1', protocol: 'tcp', port: 443,
+      dstFqdn: 'login.salesforce.com',
+    });
+    expect(r.matched).toBe(true);
+    expect(r.matchedPolicy?.id).toBe('pol-saas');
+    expect(r.matchedWebGroupIds).toEqual(['wg-saas']);
+  });
+
+  it('does NOT match a WebGroup-attached policy when the dstFqdn is in a different webgroup', () => {
+    const topology = emptyTopology();
+    topology.webGroups.push({ id: 'wg-saas', name: 'SaaS', fqdns: ['*.salesforce.com'] });
+    topology.webGroups.push({ id: 'wg-dev', name: 'Dev', fqdns: ['*.github.com'] });
+    topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
+    topology.policies.push({
+      id: 'pol-dev', name: 'Allow Dev', priority: 100,
+      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      action: 'allow', protocol: 'tcp', ports: '443', logging: true,
+      webGroupIds: ['wg-dev'],
+    });
+    const r = simulateTraffic(topology, {
+      srcIp: '10.0.0.5', dstIp: '13.108.0.1', protocol: 'tcp', port: 443,
+      dstFqdn: 'login.salesforce.com',
+    });
+    expect(r.action).toBe('implicit-deny');
+  });
+
+  it('skips a WebGroup-attached policy when NO dstFqdn is provided (unknown FQDN cannot match)', () => {
+    const topology = emptyTopology();
+    topology.webGroups.push({ id: 'wg-saas', name: 'SaaS', fqdns: ['*.salesforce.com'] });
+    topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
+    topology.policies.push({
+      id: 'pol-saas', name: 'Allow SaaS', priority: 100,
+      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      action: 'allow', protocol: 'tcp', ports: '443', logging: true,
+      webGroupIds: ['wg-saas'],
+    });
+    const r = simulateTraffic(topology, {
+      srcIp: '10.0.0.5', dstIp: '13.108.0.1', protocol: 'tcp', port: 443,
+    });
+    expect(r.action).toBe('implicit-deny');
+  });
+});
+
+describe('simulateTraffic — Threat / Geo overrides', () => {
+  function topoWithMalicious() {
+    const t = emptyTopology();
+    t.threatGroups.push({ id: 'tg-malware', name: 'Malware', category: 'malware', entryCount: 1 });
+    t.geoGroups.push({ id: 'gg-cn', name: 'China', countries: ['CN'] });
+    t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
+    t.policies.push({
+      id: 'pol-block-malware', name: 'Block Malware', priority: 50,
+      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      action: 'deny', protocol: 'any', logging: true,
+      threatGroup: 'tg-malware',
+    });
+    t.policies.push({
+      id: 'pol-block-cn', name: 'Block China', priority: 60,
+      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      action: 'deny', protocol: 'any', logging: true,
+      geoGroup: 'gg-cn',
+    });
+    t.policies.push({
+      id: 'pol-allow-all', name: 'Allow All', priority: 100,
+      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      action: 'allow', protocol: 'any', logging: false,
+    });
+    return t;
+  }
+
+  it('skips a threatGroup-attached policy when no threat override is given', () => {
+    const r = simulateTraffic(topoWithMalicious(), {
+      srcIp: '10.0.0.5', dstIp: '8.8.8.8', protocol: 'tcp', port: 443,
+    });
+    // pol-block-malware and pol-block-cn are skipped (no overrides) — allow-all wins.
+    expect(r.matchedPolicy?.id).toBe('pol-allow-all');
+  });
+
+  it('matches a threatGroup-attached policy when dstThreatGroupId override is set', () => {
+    const r = simulateTraffic(topoWithMalicious(), {
+      srcIp: '10.0.0.5', dstIp: '8.8.8.8', protocol: 'tcp', port: 443,
+      dstThreatGroupId: 'tg-malware',
+    });
+    expect(r.action).toBe('deny');
+    expect(r.matchedPolicy?.id).toBe('pol-block-malware');
+  });
+
+  it('matches a geoGroup-attached policy when srcGeoGroupId override is set', () => {
+    const r = simulateTraffic(topoWithMalicious(), {
+      srcIp: '10.0.0.5', dstIp: '8.8.8.8', protocol: 'tcp', port: 443,
+      srcGeoGroupId: 'gg-cn',
+    });
+    expect(r.action).toBe('deny');
+    expect(r.matchedPolicy?.id).toBe('pol-block-cn');
   });
 });

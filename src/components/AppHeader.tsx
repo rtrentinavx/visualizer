@@ -26,6 +26,7 @@ export interface AppHeaderActions {
   openAIChat: () => void;
   openAutoDocs: () => void;
   openReachability: () => void;
+  openPolicySearch: () => void;
   openAchievements: () => void;
   openBestPractices: () => void;
   openAbout: () => void;
@@ -206,6 +207,12 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         {aiProfileActive && (
           <button onClick={actions.openReachability} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-purple)')} onMouseLeave={hoverOut} title="AI Reachability — natural-language What-If">
             <Route size={14} />
+          </button>
+        )}
+
+        {aiProfileActive && (
+          <button onClick={actions.openPolicySearch} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="AI Policy Search — natural-language filter">
+            <FlaskConical size={14} />
           </button>
         )}
 

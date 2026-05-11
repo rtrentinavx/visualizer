@@ -26,6 +26,7 @@ const ImportPanel = lazyImport(() => import('./components/panels/ImportPanel'));
 const BestPracticesModal = lazyImport(() => import('./components/modals/BestPracticesModal'));
 const AutoDocsModal = lazyImport(() => import('./components/modals/AutoDocsModal'));
 const ReachabilityModal = lazyImport(() => import('./components/modals/ReachabilityModal'));
+const PolicySearchModal = lazyImport(() => import('./components/modals/PolicySearchModal'));
 const PolicyTemplatesModal = lazyImport(() => import('./components/modals/PolicyTemplatesModal'));
 const PolicyReorderModal = lazyImport(() => import('./components/modals/PolicyReorderModal'));
 const EvaluatorPanel = lazyImport(() => import('./components/panels/EvaluatorPanel'));
@@ -201,6 +202,7 @@ export default function App() {
     openAIChat: () => modals.open('aiChat'),
     openAutoDocs: () => modals.open('autoDocs'),
     openReachability: () => modals.open('reachability'),
+    openPolicySearch: () => modals.open('policySearch'),
     openAchievements: () => modals.open('achievements'),
     openBestPractices: () => modals.open('bestPractices'),
     openAbout: () => modals.open('about'),
@@ -417,6 +419,20 @@ export default function App() {
       {modals.isOpen('reachability') && activeAIProfile && (
         <Suspense fallback={null}>
           <ReachabilityModal
+            topology={topology}
+            profile={activeAIProfile}
+            onSelectPolicy={(policyId) => {
+              modals.close();
+              setSelectedItem({ type: 'policy', id: policyId });
+            }}
+            onClose={modals.close}
+          />
+        </Suspense>
+      )}
+
+      {modals.isOpen('policySearch') && activeAIProfile && (
+        <Suspense fallback={null}>
+          <PolicySearchModal
             topology={topology}
             profile={activeAIProfile}
             onSelectPolicy={(policyId) => {

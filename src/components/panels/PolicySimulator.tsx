@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown, Network } from 'lucide-react';
+import { FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown, ChevronRight, Network, Globe } from 'lucide-react';
 import type { DcfPolicyModel, Protocol } from '../../types/dcf';
 import { simulateTraffic } from '../../lib/policySimulator';
 import type { SimulationResult } from '../../lib/policySimulator';
@@ -14,6 +14,12 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
   const [dstIp, setDstIp] = useState('');
   const [protocol, setProtocol] = useState<Protocol>('tcp');
   const [port, setPort] = useState('443');
+  const [dstFqdn, setDstFqdn] = useState('');
+  const [srcThreatGroupId, setSrcThreatGroupId] = useState('');
+  const [dstThreatGroupId, setDstThreatGroupId] = useState('');
+  const [srcGeoGroupId, setSrcGeoGroupId] = useState('');
+  const [dstGeoGroupId, setDstGeoGroupId] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [result, setResult] = useState<SimulationResult | null>(null);
 
   const smartGroupMap = useMemo(() => {
@@ -32,9 +38,17 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
       dstIp,
       protocol,
       port: portNum,
+      dstFqdn: dstFqdn.trim() || undefined,
+      srcThreatGroupId: srcThreatGroupId || undefined,
+      dstThreatGroupId: dstThreatGroupId || undefined,
+      srcGeoGroupId: srcGeoGroupId || undefined,
+      dstGeoGroupId: dstGeoGroupId || undefined,
     });
     setResult(res);
   };
+
+  const hasAdvancedOverrides =
+    dstFqdn.trim() !== '' || srcThreatGroupId !== '' || dstThreatGroupId !== '' || srcGeoGroupId !== '' || dstGeoGroupId !== '';
 
   const actionConfig = {
     allow: { icon: ShieldCheck, color: '#22c55e', label: 'ALLOWED' },
@@ -139,6 +153,113 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
               </div>
             </div>
 
+            <div className="border-t border-[var(--color-border-subtle)] pt-3">
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
+              >
+                {advancedOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                Advanced overrides
+                {hasAdvancedOverrides && !advancedOpen && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-[var(--color-accent-blue)]/15 text-[var(--color-accent-blue)]">active</span>
+                )}
+              </button>
+              <p className="text-[10px] text-[var(--color-text-muted)] mt-1">
+                Tell the simulator what the IPs and FQDN <em>should be treated as</em> — needed for matching policies that attach WebGroups, ThreatGroups, or GeoGroups.
+              </p>
+
+              {advancedOpen && (
+                <div className="mt-2 space-y-2">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Destination FQDN</label>
+                    <input
+                      type="text"
+                      value={dstFqdn}
+                      onChange={(e) => setDstFqdn(e.target.value)}
+                      placeholder="login.salesforce.com"
+                      className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
+                      style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    />
+                    <p className="text-[9px] text-[var(--color-text-muted)] mt-0.5">
+                      Enables matching of WebGroup-attached policies. The FQDN is glob-matched against each WebGroup's patterns (e.g. <code>*.salesforce.com</code>).
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Src ThreatGroup</label>
+                      <div className="relative">
+                        <select
+                          value={srcThreatGroupId}
+                          onChange={(e) => setSrcThreatGroupId(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                          style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                        >
+                          <option value="">— None —</option>
+                          {topology.threatGroups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.category})</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Dst ThreatGroup</label>
+                      <div className="relative">
+                        <select
+                          value={dstThreatGroupId}
+                          onChange={(e) => setDstThreatGroupId(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                          style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                        >
+                          <option value="">— None —</option>
+                          {topology.threatGroups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.category})</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Src GeoGroup</label>
+                      <div className="relative">
+                        <select
+                          value={srcGeoGroupId}
+                          onChange={(e) => setSrcGeoGroupId(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                          style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                        >
+                          <option value="">— None —</option>
+                          {topology.geoGroups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.countries.slice(0, 3).join(', ')}{g.countries.length > 3 ? '…' : ''})</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Dst GeoGroup</label>
+                      <div className="relative">
+                        <select
+                          value={dstGeoGroupId}
+                          onChange={(e) => setDstGeoGroupId(e.target.value)}
+                          className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                          style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                        >
+                          <option value="">— None —</option>
+                          {topology.geoGroups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name} ({g.countries.slice(0, 3).join(', ')}{g.countries.length > 3 ? '…' : ''})</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={runSimulation}
               disabled={!canRun}
@@ -176,6 +297,23 @@ export default function PolicySimulator({ topology }: PolicySimulatorProps) {
               <div className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
                 {result.explanation}
               </div>
+
+              {/* Matched WebGroups (when FQDN was provided) */}
+              {result.matchedWebGroupIds.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">FQDN Resolved To</p>
+                  <div className="flex flex-wrap gap-1">
+                    {result.matchedWebGroupIds.map((id) => {
+                      const wg = topology.webGroups.find((g) => g.id === id);
+                      return (
+                        <span key={id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: 'var(--color-accent-purple)15', color: 'var(--color-accent-purple)' }}>
+                          <Globe size={10} /> {wg?.name || id}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Resolved Groups */}
               <div className="space-y-2">
