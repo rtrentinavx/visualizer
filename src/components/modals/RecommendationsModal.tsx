@@ -9,28 +9,6 @@ interface RecommendationsModalProps {
   onDismiss: () => void;
 }
 
-const DISMISS_KEY = 'dcf-recommendations-dismissed';
-
-export function isRecommendationsDismissed(): boolean {
-  try {
-    return localStorage.getItem(DISMISS_KEY) === 'true';
-  } catch {
-    return false;
-  }
-}
-
-export function dismissRecommendations() {
-  try {
-    localStorage.setItem(DISMISS_KEY, 'true');
-  } catch { /* ignore */ }
-}
-
-export function clearRecommendationsDismissal() {
-  try {
-    localStorage.removeItem(DISMISS_KEY);
-  } catch { /* ignore */ }
-}
-
 export default function RecommendationsModal({ existingNames, onAccept, onDismiss }: RecommendationsModalProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 

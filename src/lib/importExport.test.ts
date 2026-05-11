@@ -75,15 +75,7 @@ describe('Terraform HCL import (from exported HCL)', () => {
   const hcl = generateTerraform(demoTopology);
   const imported = importTerraformHCL(hcl);
 
-  // TODO: pre-existing HCL parser bug — the first `aviatrix_smart_group` resource
-  // (the demo's "Web Tier") is dropped during import. Policies still round-trip, so
-  // the issue is localized to SmartGroup parsing, not name resolution. Likely cause:
-  // `tokenizeHcl` does not strip `#` comments, so when `parseBlock` encounters the
-  // `# === Smart Groups ===` header before the first resource, the `while (… !== '{')`
-  // skip in parseBlock consumes through to the first `{` and corrupts the first
-  // resource. Fix is probably one regex in the tokenizer. Skipped to keep the gate
-  // green; this is not regressed by current work — Phase 1 simply caught it.
-  it.skip('imports every exported SmartGroup (excluding sg-any / sg-internet)', () => {
+  it('imports every exported SmartGroup (excluding sg-any / sg-internet)', () => {
     const expectedNames = demoTopology.smartGroups
       .filter((g) => g.id !== 'sg-any' && g.id !== 'sg-internet')
       .map((g) => g.name)

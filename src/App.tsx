@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import type { DcfPolicy } from './types/dcf';
 
-import RecommendationsModal, { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './components/modals/RecommendationsModal';
+import RecommendationsModal from './components/modals/RecommendationsModal';
+import { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './lib/recommendationsDismissal';
 import AboutModal from './components/modals/AboutModal';
 import AchievementsModal from './components/modals/AchievementsModal';
 import ConfirmModal from './components/modals/ConfirmModal';

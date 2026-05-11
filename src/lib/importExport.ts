@@ -142,6 +142,29 @@ function parseValue(tokens: string[], idx: { i: number }): unknown {
     return arr;
   }
 
+  if (tok === '{') {
+    // Object literal: `attr = { key = value, ... }`. Without this, the `{` would
+    // be returned as a string and its matching `}` would orphan, desyncing brace
+    // counts and causing the next top-level block to be consumed as garbage.
+    idx.i++;
+    const obj: Record<string, unknown> = {};
+    while (idx.i < tokens.length && tokens[idx.i] !== '}') {
+      if (tokens[idx.i] === ',') {
+        idx.i++;
+        continue;
+      }
+      if (tokens[idx.i + 1] === '=') {
+        const key = tokens[idx.i];
+        idx.i += 2;
+        obj[key] = parseValue(tokens, idx);
+      } else {
+        idx.i++;
+      }
+    }
+    if (tokens[idx.i] === '}') idx.i++;
+    return obj;
+  }
+
   if (tok.startsWith('"') && tok.endsWith('"')) {
     idx.i++;
     return tok.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');

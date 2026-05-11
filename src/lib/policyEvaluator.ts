@@ -553,7 +553,7 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
 export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPolicyModel | null {
   if (!finding.fixable) return null;
 
-  let next = { ...topology, policies: [...topology.policies] };
+  const next = { ...topology, policies: [...topology.policies] };
 
   switch (finding.id) {
     case 'missing-deny-all':
