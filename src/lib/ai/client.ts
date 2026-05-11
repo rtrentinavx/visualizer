@@ -1,6 +1,36 @@
 import type { AIProfile, AIMessage, AIResponseChunk } from './types';
 import { scanInput, filterOutput } from './safety';
 
+/**
+ * Translate a failed proxy response into a useful client-side error. When the
+ * Vercel function crashes (timeout, OOM, unhandled throw), Vercel returns an
+ * HTML error page like "FUNCTION_INVOCATION_FAILED" — surfacing that raw to the
+ * user is alarming and unhelpful. We classify the response and produce a short
+ * actionable message instead.
+ */
+async function formatProxyError(response: Response): Promise<string> {
+  const text = await response.text().catch(() => '');
+  const looksLikeHtml = /^\s*<!doctype|^\s*<html/i.test(text);
+  // Try the structured `{ error }` shape first — that's what our own handlers return.
+  try {
+    const json = JSON.parse(text) as { error?: string };
+    if (json.error) return json.error;
+  } catch { /* not JSON — fall through */ }
+  if (text.includes('FUNCTION_INVOCATION_FAILED') || (response.status === 500 && looksLikeHtml)) {
+    return `The AI proxy timed out or crashed (HTTP ${response.status}). Slow models occasionally exceed the function timeout — try a smaller model, retry, or use a streaming chat instead of one-shot fixes.`;
+  }
+  if (response.status === 504) {
+    return `The AI proxy timed out waiting for the model (HTTP 504). Try a faster model or simpler prompt.`;
+  }
+  if (response.status === 429) {
+    return `Rate limit hit (30 requests/min/IP). Wait a minute and retry.`;
+  }
+  if (response.status === 413) {
+    return `Request too large (HTTP 413). The topology context may exceed the 50 KB message limit — reduce the topology size or split the question.`;
+  }
+  return text || `HTTP ${response.status} ${response.statusText}`;
+}
+
 export interface ModelInfo {
   id: string;
   name?: string;
@@ -96,8 +126,7 @@ export async function* streamChat(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`AI request failed: ${error}`);
+    throw new Error(await formatProxyError(response));
   }
 
   const reader = response.body?.getReader();
@@ -166,8 +195,7 @@ export async function chatCompletion(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`AI request failed: ${error}`);
+    throw new Error(await formatProxyError(response));
   }
 
   const data = await response.json();

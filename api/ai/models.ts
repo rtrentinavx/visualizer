@@ -1,5 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// Some providers' model-list endpoints are slow; give the function room to
+// complete instead of hitting the default 10s timeout and returning
+// FUNCTION_INVOCATION_FAILED. See proxy.ts for the same pattern + rationale.
+export const config = {
+  maxDuration: 30,
+};
+
 interface ModelsRequest {
   provider: string;
   apiKey?: string;

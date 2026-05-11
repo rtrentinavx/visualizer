@@ -12,6 +12,17 @@ import { proxyCustom } from './providers/custom';
 const redis = Redis.fromEnv();
 const RATE_LIMIT = 30; // requests per minute per IP
 
+// Extend the function's per-invocation timeout. Default on Vercel Hobby is 10s
+// (max 25s); Pro defaults to 60s (max 300s). Non-streaming AI calls — especially
+// the Evaluator's AI Fix that waits for a full JSON response — regularly exceed
+// 10s under load. Setting maxDuration to 60s gives slow models headroom; on the
+// Hobby plan this gets clamped to 25s, still better than the default 10s. When
+// the upstream provider itself is the slow one, the client gets a clear 504 or
+// the structured error from the catch block instead of FUNCTION_INVOCATION_FAILED.
+export const config = {
+  maxDuration: 60,
+};
+
 interface ProxyRequest {
   provider: string;
   apiKey: string;
