@@ -1,6 +1,52 @@
 import type { AIProfile, AIMessage, AIResponseChunk } from './types';
 import { scanInput, filterOutput } from './safety';
 
+export interface ModelInfo {
+  id: string;
+  name?: string;
+}
+
+/**
+ * Fetch the list of available models for a given AI profile. Local providers
+ * (Ollama, LMStudio) are called directly from the browser because the serverless
+ * proxy can't reach the user's localhost. Everything else goes through /api/ai/models.
+ */
+export async function fetchModels(profile: AIProfile): Promise<ModelInfo[]> {
+  if (profile.provider === 'ollama') {
+    const url = (profile.apiBaseUrl || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags';
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`Ollama: ${r.status} ${r.statusText}`);
+    const data = await r.json() as { models?: Array<{ name: string }> };
+    return (data.models ?? []).map((m) => ({ id: m.name }));
+  }
+  if (profile.provider === 'lmstudio') {
+    const url = (profile.apiBaseUrl || 'http://localhost:1234').replace(/\/+$/, '') + '/v1/models';
+    const headers: Record<string, string> = {};
+    if (profile.apiKey) headers.Authorization = `Bearer ${profile.apiKey}`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) throw new Error(`LM Studio: ${r.status} ${r.statusText}`);
+    const data = await r.json() as { data?: Array<{ id: string }> };
+    return (data.data ?? []).map((m) => ({ id: m.id }));
+  }
+  const r = await fetch('/api/ai/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      provider: profile.provider,
+      apiKey: profile.apiKey,
+      apiBaseUrl: profile.apiBaseUrl,
+    }),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    let detail = text;
+    try { detail = JSON.parse(text).error ?? text; } catch { /* keep raw text */ }
+    throw new Error(detail || `Model list failed: ${r.status}`);
+  }
+  const data = await r.json() as { models: ModelInfo[] };
+  return data.models;
+}
+
 export interface AIUsage {
   promptTokens?: number;
   completionTokens?: number;

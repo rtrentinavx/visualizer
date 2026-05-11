@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck } from 'lucide-react';
+import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck, RefreshCw } from 'lucide-react';
 import type { AIProfile, AISettings, AIProvider } from '../../lib/ai/types';
 import { providerConfigs, getProviderConfig } from '../../lib/ai/providers';
+import { fetchModels, type ModelInfo } from '../../lib/ai/client';
 
 interface AISettingsPanelProps {
   settings: AISettings;
@@ -18,11 +19,48 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
   const [editingProfile, setEditingProfile] = useState<AIProfile | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // Cache fetched models against the (provider, baseUrl) they came from. When
+  // the user switches provider or baseUrl, the cached list silently becomes
+  // invalid for the current profile — no effect needed, just a key comparison
+  // on render.
+  const [modelCache, setModelCache] = useState<{ key: string; models: ModelInfo[]; error: string | null } | null>(null);
+  const [fetchingModels, setFetchingModels] = useState(false);
 
   const isEditing = !!editingProfile;
   const activeProfile = localSettings.profiles.find((p) => p.id === localSettings.activeProfileId);
 
   const providerConfig = editingProfile ? getProviderConfig(editingProfile.provider) : undefined;
+
+  const profileKey = editingProfile ? `${editingProfile.provider}|${editingProfile.apiBaseUrl ?? ''}` : '';
+  const fetchedModels = modelCache?.key === profileKey ? modelCache.models : null;
+  const fetchError = modelCache?.key === profileKey ? modelCache.error : null;
+
+  const handleFetchModels = async () => {
+    if (!editingProfile) return;
+    const key = profileKey;
+    setFetchingModels(true);
+    setModelCache({ key, models: [], error: null });
+    try {
+      const models = await fetchModels(editingProfile);
+      if (models.length === 0) {
+        setModelCache({ key, models: [], error: 'No models returned by the provider.' });
+      } else {
+        setModelCache({ key, models, error: null });
+      }
+    } catch (err) {
+      setModelCache({ key, models: [], error: err instanceof Error ? err.message : 'Failed to fetch models' });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  // The list shown in the Model dropdown: fetched models if we have them,
+  // otherwise the curated static list, otherwise just the current value.
+  const modelOptions: string[] = (() => {
+    if (fetchedModels && fetchedModels.length > 0) return fetchedModels.map((m) => m.id);
+    if (providerConfig && providerConfig.models.length > 0) return providerConfig.models;
+    return editingProfile?.model ? [editingProfile.model] : [];
+  })();
 
   const startNewProfile = () => {
     const defaultProvider = 'openai';
@@ -194,20 +232,51 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
 
               {/* Model */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Model</label>
-                <div className="relative">
-                  <select
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Model</label>
+                  <button
+                    type="button"
+                    onClick={handleFetchModels}
+                    disabled={fetchingModels}
+                    className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline disabled:opacity-50 disabled:no-underline"
+                    title="Fetch available models from this provider"
+                  >
+                    <RefreshCw size={10} className={fetchingModels ? 'animate-spin' : ''} />
+                    {fetchingModels ? 'Fetching…' : fetchedModels ? `Refresh (${fetchedModels.length})` : 'Fetch models'}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <select
+                      value={editingProfile.model}
+                      onChange={(e) => updateEditingField('model', e.target.value)}
+                      className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                      style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    >
+                      {modelOptions.includes(editingProfile.model) ? null : (
+                        <option value={editingProfile.model}>{editingProfile.model} (current)</option>
+                      )}
+                      {modelOptions.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                    </select>
+                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                  </div>
+                  <input
+                    type="text"
                     value={editingProfile.model}
                     onChange={(e) => updateEditingField('model', e.target.value)}
-                    className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
+                    placeholder="Or type a model ID"
+                    className="w-32 px-2 py-1.5 rounded text-xs border outline-none font-mono"
                     style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
-                  >
-                    {providerConfig?.models.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    )) || <option value={editingProfile.model}>{editingProfile.model}</option>}
-                  </select>
-                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
+                  />
                 </div>
+                {fetchError && (
+                  <p className="mt-1 text-[10px] text-red-400">{fetchError}</p>
+                )}
+                {fetchedModels && !fetchError && (
+                  <p className="mt-1 text-[10px] text-emerald-500">Showing {fetchedModels.length} live model{fetchedModels.length === 1 ? '' : 's'} from provider.</p>
+                )}
               </div>
 
               {/* API Key */}
