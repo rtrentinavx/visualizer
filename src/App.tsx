@@ -1,8 +1,7 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import type { DcfPolicy } from './types/dcf';
 
 import RecommendationsModal, { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './components/modals/RecommendationsModal';
-import BestPracticesModal from './components/modals/BestPracticesModal';
 import AboutModal from './components/modals/AboutModal';
 import AchievementsModal from './components/modals/AchievementsModal';
 import ConfirmModal from './components/modals/ConfirmModal';
@@ -10,14 +9,26 @@ import TerraformExportModal from './components/modals/TerraformExportModal';
 import AppHeader, { type ViewMode, type AppHeaderActions } from './components/AppHeader';
 import AchievementToaster from './components/AchievementToaster';
 import PolicyMatrix from './components/panels/PolicyMatrix';
-import PolicyGraph from './components/panels/PolicyGraph';
 import InspectorPanel from './components/panels/InspectorPanel';
 import EvaluatorPanel from './components/panels/EvaluatorPanel';
-import AISettingsPanel from './components/panels/AISettingsPanel';
-import AIChatPanel from './components/panels/AIChatPanel';
-import ImportPanel from './components/panels/ImportPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
+
+// Lazy-loaded: pull @xyflow/react, AI schemas, HCL parser, and content-heavy modals
+// out of the initial bundle and load them only when the user opens them.
+const PolicyGraph = lazy(() => import('./components/panels/PolicyGraph'));
+const AISettingsPanel = lazy(() => import('./components/panels/AISettingsPanel'));
+const AIChatPanel = lazy(() => import('./components/panels/AIChatPanel'));
+const ImportPanel = lazy(() => import('./components/panels/ImportPanel'));
+const BestPracticesModal = lazy(() => import('./components/modals/BestPracticesModal'));
+
+function PanelLoader() {
+  return (
+    <div className="flex items-center justify-center h-full">
+      <div className="w-6 h-6 border-2 border-[var(--color-text-muted)] border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { downloadTopologyJSON } from './lib/importExport';
@@ -209,16 +220,18 @@ export default function App() {
               onSelectPolicy={handleSelectPolicy}
             />
           ) : viewMode === 'graph' ? (
-            <PolicyGraph
-              topology={topology}
-              onSelectNode={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
-              onSelectPolicy={(policyId) => setSelectedItem({ type: 'policy', id: policyId })}
-              onCreatePolicy={(srcId, dstId) => {
-                setSelectedCell({ srcId, dstId });
-                setSelectedItem({ type: 'policy', id: '__new__', srcId, dstId });
-              }}
-              onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
-            />
+            <Suspense fallback={<PanelLoader />}>
+              <PolicyGraph
+                topology={topology}
+                onSelectNode={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+                onSelectPolicy={(policyId) => setSelectedItem({ type: 'policy', id: policyId })}
+                onCreatePolicy={(srcId, dstId) => {
+                  setSelectedCell({ srcId, dstId });
+                  setSelectedItem({ type: 'policy', id: '__new__', srcId, dstId });
+                }}
+                onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+              />
+            </Suspense>
           ) : viewMode === 'simulator' ? (
             <PolicySimulator topology={topology} />
           ) : (
@@ -252,7 +265,9 @@ export default function App() {
       )}
 
       {modals.isOpen('bestPractices') && (
-        <BestPracticesModal onClose={modals.close} />
+        <Suspense fallback={null}>
+          <BestPracticesModal onClose={modals.close} />
+        </Suspense>
       )}
 
       {modals.isOpen('about') && (
@@ -299,18 +314,21 @@ export default function App() {
       )}
 
       {modals.isOpen('aiSettings') && (
-        <AISettingsPanel
-          settings={aiSettings}
-          onSave={(settings) => {
-            setAISettings(settings);
-            saveAISettings(settings).catch(() => {});
-            modals.close();
-          }}
-          onClose={modals.close}
-        />
+        <Suspense fallback={null}>
+          <AISettingsPanel
+            settings={aiSettings}
+            onSave={(settings) => {
+              setAISettings(settings);
+              saveAISettings(settings).catch(() => {});
+              modals.close();
+            }}
+            onClose={modals.close}
+          />
+        </Suspense>
       )}
 
       {modals.isOpen('aiChat') && activeAIProfile && (
+        <Suspense fallback={null}>
         <AIChatPanel
           topology={topology}
           profile={activeAIProfile}
@@ -344,13 +362,16 @@ export default function App() {
             setSelectedItem({ type: 'policy', id: newPolicy.id });
           }}
         />
+        </Suspense>
       )}
 
       {modals.isOpen('import') && (
-        <ImportPanel
-          onImport={(imported) => dispatch({ type: 'replace', topology: imported })}
-          onClose={modals.close}
-        />
+        <Suspense fallback={null}>
+          <ImportPanel
+            onImport={(imported) => dispatch({ type: 'replace', topology: imported })}
+            onClose={modals.close}
+          />
+        </Suspense>
       )}
 
       <AchievementToaster topology={topology} />

@@ -21,6 +21,18 @@ export default defineConfig(({ mode }) => {
     ].filter(Boolean),
     build: {
       sourcemap: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('@xyflow/react')) return 'xyflow';
+            if (id.includes('@sentry/react')) return 'sentry';
+            if (id.includes('lucide-react')) return 'lucide';
+            if (id.includes('react-dom') || /node_modules\/react\//.test(id)) return 'react';
+            return undefined;
+          },
+        },
+      },
     },
     test: {
       environment: 'node',
