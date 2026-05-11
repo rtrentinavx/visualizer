@@ -49,9 +49,15 @@ export async function encryptTopology<T>(data: T): Promise<string> {
   return btoa(JSON.stringify(payload));
 }
 
-export async function decryptTopology<T>(): Promise<T | null> {
+/**
+ * Decrypt a value from localStorage. The default key is the topology bucket;
+ * pass `storageKey` to decrypt any other AES-GCM blob written by
+ * `saveTopologyStorage` under a different localStorage key. The function name
+ * is historical — it predates having more than one encrypted bucket.
+ */
+export async function decryptTopology<T>(storageKey: string = STORAGE_KEY): Promise<T | null> {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(storageKey);
     if (!stored) return null;
     const payload = JSON.parse(atob(stored));
     const iv = base64ToArrayBuffer(payload.iv);
@@ -67,7 +73,7 @@ export async function decryptTopology<T>(): Promise<T | null> {
       const legacyKey = await deriveKey(LEGACY_PBKDF2_ITERATIONS);
       plaintext = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, legacyKey, ciphertext);
       const migrated = JSON.parse(new TextDecoder().decode(plaintext)) as T;
-      await saveTopologyStorage(migrated);
+      await saveTopologyStorage(migrated, storageKey);
       return migrated;
     }
     return JSON.parse(new TextDecoder().decode(plaintext)) as T;
@@ -81,7 +87,7 @@ export function clearTopologyStorage(): void {
   localStorage.removeItem(STORAGE_KEY);
 }
 
-export async function saveTopologyStorage<T>(data: T): Promise<void> {
+export async function saveTopologyStorage<T>(data: T, storageKey: string = STORAGE_KEY): Promise<void> {
   const encrypted = await encryptTopology(data);
-  localStorage.setItem(STORAGE_KEY, encrypted);
+  localStorage.setItem(storageKey, encrypted);
 }

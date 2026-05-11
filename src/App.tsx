@@ -197,7 +197,7 @@ export default function App() {
     openAbout: () => modals.open('about'),
   };
 
-  const activeAIProfile = aiSettings.profiles.find((p) => p.id === aiSettings.activeProfileId);
+  const activeAIProfile = aiSettings.profiles?.find((p) => p.id === aiSettings.activeProfileId);
 
   return (
     <div className="flex h-full w-full">
