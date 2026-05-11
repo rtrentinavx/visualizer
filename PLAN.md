@@ -4,6 +4,48 @@ Scope: code-quality improvements only. No new user-facing features. Roadmap item
 
 ---
 
+## Status (2026-05-11)
+
+All five phases shipped, plus an after-the-fact bug-audit wave once `noUncheckedIndexedAccess` was enabled. Original sequencing held — tests first, then decomposition, then bundle, then persistence, then polish.
+
+| Phase | Status | Commits |
+|---|---|---|
+| 1 — Safety net (Vitest + logic tests) | ✅ shipped | `0665041` |
+| 2 — Decompose App.tsx + InspectorPanel | ✅ shipped | `c7434bb` |
+| 3 — Bundle splitting + strict mode | ✅ shipped | `ffd86ce` |
+| 4 — Persistence and security tightening | ✅ shipped (bundled into Wave 1) | `0665041` |
+| 5 — Final polish (alias removal + AI proxy split) | ✅ shipped (bundled into Wave 1) | `0665041` |
+| Bonus — `noUncheckedIndexedAccess` audit | ✅ shipped | `c6d49e8` |
+| Bonus — HCL parser bug + lint cleanup | ✅ shipped | `dc3e7ec` |
+
+### Headline numbers
+- `App.tsx`: 1148 → 385 lines (66% reduction)
+- `InspectorPanel.tsx`: 817 → 90-line shell + 6 per-entity inspectors
+- `api/ai/proxy.ts`: 505 → 97-line dispatcher + 7 per-provider modules
+- Initial JS chunk: 500 KB → 229 KB (45% reduction; under the <250 KB target)
+- Tests: 0 → 127, runtime ~300 ms
+- TypeScript: strict mode on with `noUncheckedIndexedAccess`
+- Bundle is code-split: `PolicyGraph`, `AISettingsPanel`, `AIChatPanel`, `ImportPanel`, `BestPracticesModal`, `AutoDocsModal` all lazy
+
+### Real bugs surfaced and fixed during the tech-debt waves
+
+These were latent before the cleanup; the safety net (tests + strict mode) made each one immediately visible.
+
+| Bug | Where | Caught by |
+|---|---|---|
+| `ipInCidr` `/0` always returned false | `src/lib/ipUtils.ts` — `~0 << 32` shifts by 0 in JS | Phase 1 test |
+| `findTlsDecryptPortViolation` matched `8443` as `443` | `policyEvaluator.ts` — used `.includes('443')` | Phase 1 test |
+| HCL importer silently dropped the first `aviatrix_smart_group` | `importExport.ts` — `parseValue` had no case for `{}` object literals | Phase 1 test |
+| `importFlowsCSV` crashed on short CSV rows | `importExport.ts` — `cols[i].toLowerCase()` on undefined | `noUncheckedIndexedAccess` audit |
+| `loadAISettings` decrypted the wrong localStorage key | `cryptoStorage.ts` was hardcoded to the topology bucket | User report (App.tsx:200 crash) |
+
+### Deviations from the original plan
+
+- **Phase 5 step 3 (move achievement tracking into the reducer)** — not executed. The advisor flagged it as wrong while planning Phase 2: reducers must be pure, and the achievement check is a side-effect (`queueMicrotask` + `setAchievementToasts`). Kept as a `useEffect([topology])` inside `AchievementToaster`, which owns its own toast queue. The PLAN.md guidance below has not been retroactively edited; this status line is the correction.
+- **`noUncheckedIndexedAccess` initially deferred.** Phase 3 said pair with `strict` "if the fix-up is small enough." Initial wave was 80 errors; deferred with a TODO. Re-opened a few days later as the "let's fix all the bugs" sweep; turned up one real crash bug (`importFlowsCSV`) and a lot of provably-safe narrows. Now on.
+
+---
+
 ## Strategy
 
 The codebase ships and works, but three structural pressures will compound if untouched:
@@ -20,7 +62,7 @@ The codebase ships and works, but three structural pressures will compound if un
 
 ---
 
-## Phase 1 — Safety net (tests)
+## Phase 1 — Safety net (tests) ✅
 
 **Goal**: lock in the behavior of pure logic modules before any refactor touches them.
 
@@ -48,7 +90,7 @@ Phases 2–4 mutate code that has no automated verification. Adding tests first 
 
 ---
 
-## Phase 2 — Decompose `App.tsx`
+## Phase 2 — Decompose `App.tsx` ✅
 
 **Goal**: drop `App.tsx` from ~1150 lines to under 300, and stop having every interaction route through one component.
 
@@ -83,7 +125,7 @@ This is the highest-risk phase. Land it as **two PRs**: (a) introduce hook + red
 
 ---
 
-## Phase 3 — Bundle and build hygiene
+## Phase 3 — Bundle and build hygiene ✅
 
 **Goal**: ship a smaller initial bundle and a clean build with no suppressed errors.
 
@@ -116,7 +158,7 @@ This is the highest-risk phase. Land it as **two PRs**: (a) introduce hook + red
 
 ---
 
-## Phase 4 — Persistence and security tightening
+## Phase 4 — Persistence and security tightening ✅
 
 **Goal**: close the gaps the existing code openly acknowledges.
 
@@ -138,7 +180,7 @@ The crypto and storage code has comments admitting limits. Closing the cheap gap
 
 ---
 
-## Phase 5 — Final polish
+## Phase 5 — Final polish ✅ (partial — see Status note above for step 3)
 
 **Goal**: clear the remaining short-cycle cleanups.
 

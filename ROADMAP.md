@@ -13,10 +13,11 @@
 
 ### Policy Design
 - [x] **Matrix** — Grid view with sticky headers, diagonal blanking, cell click → policy editor
+- [x] **Matrix source/destination filters** — independent filters for the row dimension (source) and column dimension (destination), each with its own clear button and a live `rows×cols of N×N` counter. Replaces the single combined filter that narrowed both at once.
 - [x] **Graph** — Circular node layout with directed edges, drag-and-drop repositioning, lock/unlock toggle, "Draw Policy" connect mode
 - [x] **Auto-naming** — Generate names from rule attributes (src, dst, action, protocol, ports, webgroups)
 
-### Policy Evaluator (21 checks)
+### Policy Evaluator (23 checks)
 - [x] Shadowed policy detection
 - [x] Missing catch-all deny
 - [x] Overly permissive any→any allow
@@ -36,7 +37,9 @@
 - [x] Compliance score (0–100) with grade
 - [x] Category filters (Security, Naming, Performance, Compliance, Hygiene)
 - [x] Framework badges (Aviatrix BP, CIS, NIST ZT, Best Practice)
-- [x] "Fix it for me" auto-fix for 9 common issues
+- [x] "Fix it for me" auto-fix for 10 common issues (including mergeable-policy port-union)
+- [x] **Redundant-policy detection** — info finding when a same-action policy is fully covered by a later broader policy
+- [x] **Mergeable-policy detection** — info finding + auto-fix when 2+ policies differ only in ports; auto-fix unions ports into the lowest-priority policy
 
 ### Simulation
 - [x] **Traffic Flow** — Manual add/edit/delete/import/export (JSON/CSV)
@@ -52,6 +55,8 @@
 - [x] AI-powered evaluator fixes
 - [x] Free-form AI chat about topology
 - [x] Rate limiting on AI proxy
+- [x] **Live model list fetching** — "Fetch models" button in AI settings pulls the current model list from each provider. Remote providers go through `/api/ai/models`; Ollama and LM Studio are fetched directly from the browser (Vercel functions can't reach localhost). Bedrock returns a curated list pending the separate `@aws-sdk/client-bedrock` SDK.
+- [x] **Auto-documentation** — FileText button in header generates a Markdown summary of the topology with copy/download (see AI Enhancements).
 
 ### Import / Export
 - [x] Terraform HCL export (`aviatrix_smart_group`, `aviatrix_dcf_policy_list`)
@@ -101,6 +106,7 @@
 - [ ] **Drag-and-drop policy reordering** — Reorder priorities visually
 - [ ] **Onboarding tour** — First-time user guided walkthrough
 - [x] **Bundle size optimization** — Code-splitting, lazy load AI schemas (shipped: 500KB → 229KB initial chunk via React.lazy + manualChunks)
+- [x] **Independent matrix filters** — separate source (row) / destination (column) filter inputs
 
 ### AI Enhancements
 - [x] **Policy optimization suggestions** — "This policy can be merged with X" (shipped: 2 new evaluator checks — `redundant-*` info findings, `mergeable-*` with auto-fix that unions ports into the lowest-priority policy)
