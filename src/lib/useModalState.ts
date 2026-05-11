@@ -7,6 +7,7 @@ export type ModalName =
   | 'aiSettings'
   | 'aiChat'
   | 'autoDocs'
+  | 'reachability'
   | 'policyTemplates'
   | 'reorderPolicies'
   | 'import'

@@ -1,7 +1,7 @@
 import {
   LayoutGrid, Activity, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
-  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered,
+  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
@@ -25,6 +25,7 @@ export interface AppHeaderActions {
   openAISettings: () => void;
   openAIChat: () => void;
   openAutoDocs: () => void;
+  openReachability: () => void;
   openAchievements: () => void;
   openBestPractices: () => void;
   openAbout: () => void;
@@ -199,6 +200,12 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         {aiProfileActive && (
           <button onClick={actions.openAutoDocs} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-blue)')} onMouseLeave={hoverOut} title="Auto-Generate Docs">
             <FileText size={14} />
+          </button>
+        )}
+
+        {aiProfileActive && (
+          <button onClick={actions.openReachability} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-accent-purple)')} onMouseLeave={hoverOut} title="AI Reachability — natural-language What-If">
+            <Route size={14} />
           </button>
         )}
 

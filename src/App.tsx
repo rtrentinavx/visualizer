@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, Suspense } from 'react';
 import type { DcfPolicy } from './types/dcf';
+import { lazyImport } from './lib/lazyImport';
 
 import RecommendationsModal from './components/modals/RecommendationsModal';
 import { isRecommendationsDismissed, dismissRecommendations, clearRecommendationsDismissal } from './lib/recommendationsDismissal';
@@ -11,20 +12,23 @@ import AppHeader, { type ViewMode, type AppHeaderActions } from './components/Ap
 import AchievementToaster from './components/AchievementToaster';
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import InspectorPanel from './components/panels/InspectorPanel';
-import EvaluatorPanel from './components/panels/EvaluatorPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
 import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
 
-// Lazy-loaded: pull @xyflow/react, AI schemas, HCL parser, and content-heavy modals
-// out of the initial bundle and load them only when the user opens them.
-const PolicyGraph = lazy(() => import('./components/panels/PolicyGraph'));
-const AISettingsPanel = lazy(() => import('./components/panels/AISettingsPanel'));
-const AIChatPanel = lazy(() => import('./components/panels/AIChatPanel'));
-const ImportPanel = lazy(() => import('./components/panels/ImportPanel'));
-const BestPracticesModal = lazy(() => import('./components/modals/BestPracticesModal'));
-const AutoDocsModal = lazy(() => import('./components/modals/AutoDocsModal'));
-const PolicyTemplatesModal = lazy(() => import('./components/modals/PolicyTemplatesModal'));
-const PolicyReorderModal = lazy(() => import('./components/modals/PolicyReorderModal'));
+// Lazy-loaded: pull @xyflow/react, AI schemas, HCL parser, and content-heavy
+// modals out of the initial bundle. lazyImport wraps React.lazy with a
+// one-shot stale-chunk reload so a hashed filename change after a new deploy
+// doesn't strand users with an open tab on a 404.
+const PolicyGraph = lazyImport(() => import('./components/panels/PolicyGraph'));
+const AISettingsPanel = lazyImport(() => import('./components/panels/AISettingsPanel'));
+const AIChatPanel = lazyImport(() => import('./components/panels/AIChatPanel'));
+const ImportPanel = lazyImport(() => import('./components/panels/ImportPanel'));
+const BestPracticesModal = lazyImport(() => import('./components/modals/BestPracticesModal'));
+const AutoDocsModal = lazyImport(() => import('./components/modals/AutoDocsModal'));
+const ReachabilityModal = lazyImport(() => import('./components/modals/ReachabilityModal'));
+const PolicyTemplatesModal = lazyImport(() => import('./components/modals/PolicyTemplatesModal'));
+const PolicyReorderModal = lazyImport(() => import('./components/modals/PolicyReorderModal'));
+const EvaluatorPanel = lazyImport(() => import('./components/panels/EvaluatorPanel'));
 
 function PanelLoader() {
   return (
@@ -196,6 +200,7 @@ export default function App() {
     openAISettings: () => modals.open('aiSettings'),
     openAIChat: () => modals.open('aiChat'),
     openAutoDocs: () => modals.open('autoDocs'),
+    openReachability: () => modals.open('reachability'),
     openAchievements: () => modals.open('achievements'),
     openBestPractices: () => modals.open('bestPractices'),
     openAbout: () => modals.open('about'),
@@ -291,6 +296,7 @@ export default function App() {
       )}
 
       {evaluatorReport && (
+        <Suspense fallback={null}>
         <EvaluatorPanel
           topology={topology}
           report={evaluatorReport}
@@ -318,6 +324,7 @@ export default function App() {
             }
           }}
         />
+        </Suspense>
       )}
 
       {modals.isOpen('aiSettings') && (
@@ -404,6 +411,20 @@ export default function App() {
       {modals.isOpen('autoDocs') && activeAIProfile && (
         <Suspense fallback={null}>
           <AutoDocsModal topology={topology} profile={activeAIProfile} onClose={modals.close} />
+        </Suspense>
+      )}
+
+      {modals.isOpen('reachability') && activeAIProfile && (
+        <Suspense fallback={null}>
+          <ReachabilityModal
+            topology={topology}
+            profile={activeAIProfile}
+            onSelectPolicy={(policyId) => {
+              modals.close();
+              setSelectedItem({ type: 'policy', id: policyId });
+            }}
+            onClose={modals.close}
+          />
         </Suspense>
       )}
 

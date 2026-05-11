@@ -12,6 +12,7 @@ export const PROMPT_VERSIONS = {
   autoFix: '1.0.0',
   explain: '1.0.0',
   autoDocs: '1.0.0',
+  reachability: '1.0.0',
 } as const;
 
 // =============================================================================
@@ -237,3 +238,7 @@ export function buildAutoDocsContext(topology: DcfPolicyModel): string {
 export function buildAutoDocsPrompt(topology: DcfPolicyModel): string {
   return `Generate Markdown documentation for this DCF policy topology.\n\n${buildAutoDocsContext(topology)}`;
 }
+
+// Reachability prompts live in their own module (./promptsReachability.ts) so
+// the large system prompt only loads with the ReachabilityModal lazy chunk and
+// doesn't inflate the main bundle via InspectorPanel.

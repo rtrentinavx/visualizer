@@ -33,6 +33,24 @@ export const EvaluatorFixSchema = z.object({
   policyData: PolicySuggestionSchema.optional().describe('New or modified policy data'),
 });
 
+/**
+ * AI-extracted intent from a natural-language reachability question.
+ * The engine resolves names against the live topology; the AI just extracts.
+ */
+export const ReachabilityIntentSchema = z.object({
+  canAnswer: z.boolean().describe('false if the question is too vague or out of scope'),
+  clarification: z.string().optional().describe('If canAnswer is false, what should the user provide?'),
+  srcGroupName: z.string().optional().describe('Name of the source SmartGroup, exactly as listed in the topology. Use "Any" if the user did not specify a source.'),
+  dstGroupName: z.string().optional().describe('Name of the destination SmartGroup, exactly as listed. Omit if the destination is a WebGroup (SaaS) or just generic internet.'),
+  dstWebGroupName: z.string().optional().describe('Name of the destination WebGroup, exactly as listed. Use this for SaaS, FQDN-based destinations (e.g. Salesforce → SaaS Essentials if that WebGroup contains salesforce.com).'),
+  isInternet: z.boolean().optional().describe('True when the destination is generic internet (no specific group or webgroup).'),
+  protocol: z.enum(['tcp', 'udp', 'icmp', 'any']).optional().describe('Network protocol. Infer from context (HTTPS → tcp, DNS → udp).'),
+  port: z.number().optional().describe('Destination port. Infer if obvious (HTTPS → 443, SSH → 22, DNS → 53).'),
+  assumptions: z.array(z.string()).optional().describe('What you inferred vs. what was explicit. Mark each inferred value: e.g. "Salesforce uses HTTPS over TCP/443 [INFERRED]".'),
+});
+
+export type ReachabilityIntent = z.infer<typeof ReachabilityIntentSchema>;
+
 export type PolicySuggestion = z.infer<typeof PolicySuggestionSchema>;
 export type PolicySuggestionArray = z.infer<typeof PolicySuggestionArraySchema>;
 export type PolicyExplanation = z.infer<typeof PolicyExplanationSchema>;

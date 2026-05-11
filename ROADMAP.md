@@ -112,4 +112,4 @@
 - [x] **Policy optimization suggestions** — "This policy can be merged with X" (shipped: 2 new evaluator checks — `redundant-*` info findings, `mergeable-*` with auto-fix that unions ports into the lowest-priority policy)
 - [ ] **Natural language search** — "Show me all policies that allow web tier to database"
 - [x] **Auto-documentation** — Generate human-readable policy docs from topology (shipped: FileText button in header opens streaming Markdown generation with copy/download)
-- [ ] **AI-powered simulator** — "Will my web servers reach Salesforce?"
+- [x] **AI-powered simulator** — "Will my web servers reach Salesforce?" (shipped: Route button in header opens ReachabilityModal. AI extracts structured intent (src/dst names, protocol, port), engine resolves names against the live topology and runs first-match-wins evaluation, modal shows verdict + matched policy + AI's assumptions for transparency.)
