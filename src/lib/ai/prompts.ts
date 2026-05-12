@@ -1,5 +1,6 @@
 import type { DcfPolicyModel } from '../../types/dcf';
 import type { Finding } from '../policyEvaluator';
+import { wrapTopologyContext } from './safety';
 
 // =============================================================================
 // Prompt Versioning
@@ -138,7 +139,8 @@ export function buildContextPrompt(topology: DcfPolicyModel): string {
     return `- ${p.name}: ${src} → ${dst} | ${p.action} | ${p.protocol}/${p.ports || 'any'} | priority ${p.priority}`;
   }).join('\n');
 
-  return `Current policy model context:\n\nSmartGroups:\n${groups || '(none)'}\n\nPolicies:\n${policies || '(none)'}`;
+  const body = `Current policy model context:\n\nSmartGroups:\n${groups || '(none)'}\n\nPolicies:\n${policies || '(none)'}`;
+  return wrapTopologyContext(body);
 }
 
 export function buildPolicyGenerationPrompt(topology: DcfPolicyModel, userRequest: string): string {
@@ -216,7 +218,7 @@ export function buildAutoDocsContext(topology: DcfPolicyModel): string {
       return `- ${parts.join(' ')}`;
     }).join('\n');
 
-  return [
+  const body = [
     `Counts: ${topology.smartGroups.length} SmartGroups, ${topology.webGroups.length} WebGroups, ${topology.threatGroups.length} ThreatGroups, ${topology.geoGroups.length} GeoGroups, ${topology.policies.length} Policies.`,
     '',
     'SmartGroups:',
@@ -234,6 +236,7 @@ export function buildAutoDocsContext(topology: DcfPolicyModel): string {
     'Policies (priority order):',
     policies || '(none)',
   ].join('\n');
+  return wrapTopologyContext(body);
 }
 
 export function buildAutoDocsPrompt(topology: DcfPolicyModel): string {

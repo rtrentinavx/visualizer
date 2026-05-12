@@ -1,4 +1,5 @@
 import type { DcfPolicyModel } from '../../types/dcf';
+import { wrapTopologyContext } from './safety';
 
 const GUARDRAILS = `
 ---
@@ -43,13 +44,14 @@ export function buildPolicySearchContext(topology: DcfPolicyModel): string {
     .map((g) => `- ${g.name}`)
     .join('\n');
   const wg = topology.webGroups.map((g) => `- ${g.name}`).join('\n');
-  return [
+  const body = [
     'SmartGroups (exact names — use "Any" for sg-any):',
     sg || '(none)',
     '',
     'WebGroups (exact names):',
     wg || '(none)',
   ].join('\n');
+  return wrapTopologyContext(body);
 }
 
 export function buildPolicySearchPrompt(topology: DcfPolicyModel, question: string): string {

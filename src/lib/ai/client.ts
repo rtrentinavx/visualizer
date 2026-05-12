@@ -1,5 +1,23 @@
 import type { AIProfile, AIMessage, AIResponseChunk } from './types';
-import { scanInput, filterOutput } from './safety';
+import { scanInput, filterOutput, redactSecrets } from './safety';
+import { hasAIDataConsent } from '../aiDataConsent';
+
+/**
+ * Thrown when an AI call is attempted before the user has acknowledged the
+ * data-egress consent. Callers should catch and surface a clear message
+ * directing the user to the consent flow (the header AI buttons trigger the
+ * consent modal automatically; this is the deep-entry fallback).
+ */
+export class AIDataConsentRequiredError extends Error {
+  constructor() {
+    super('AI data egress consent required. Open AI Settings to acknowledge what data will be sent to your provider.');
+    this.name = 'AIDataConsentRequiredError';
+  }
+}
+
+function requireConsent(): void {
+  if (!hasAIDataConsent()) throw new AIDataConsentRequiredError();
+}
 
 /**
  * Translate a failed proxy response into a useful client-side error. When the
@@ -100,6 +118,7 @@ export async function* streamChat(
   promptVersion?: string,
   signal?: AbortSignal
 ): AsyncGenerator<AIResponseChunk, void, unknown> {
+  requireConsent();
   // Safety: scan the last user message for injection patterns
   const lastUserMsg = messages.findLast((m) => m.role === 'user');
   if (lastUserMsg) {
@@ -170,6 +189,7 @@ export async function chatCompletion(
   promptVersion?: string,
   signal?: AbortSignal
 ): Promise<AICompletionResult> {
+  requireConsent();
   const lastUserMsg = messages.findLast((m) => m.role === 'user');
   if (lastUserMsg) {
     const scan = scanInput(lastUserMsg.content);
@@ -199,13 +219,18 @@ export async function chatCompletion(
   }
 
   const data = await response.json();
-  const content = data.content || '';
+  const rawContent = data.content || '';
 
   // Output content filtering for non-streaming responses
-  const filter = filterOutput(content);
+  const filter = filterOutput(rawContent);
   if (filter.status === 'blocked') {
     throw new Error(`Output blocked: ${filter.reason}`);
   }
+
+  // Redact credential-shaped substrings before returning, regardless of filter
+  // status. Catches keys the model may have echoed from debug prompts or jailbreak
+  // attempts — see safety.ts REDACTION_RULES.
+  const content = redactSecrets(rawContent);
 
   return {
     content,
@@ -217,13 +242,16 @@ export async function chatCompletion(
  * Post-process a fully-assembled streaming AI response.
  * Combines output content filtering with caller-provided schema validation.
  * Call this after streaming completes and you have the full response text.
+ *
+ * Returns the redacted text when ok — callers should re-render with this version
+ * (the streamed UI may have shown raw chunks; the final pass sanitizes).
  */
-export function postProcessAIOutput(fullText: string): { ok: true } | { ok: false; reason: string } {
+export function postProcessAIOutput(fullText: string): { ok: true; text: string } | { ok: false; reason: string } {
   const filter = filterOutput(fullText);
   if (filter.status === 'blocked') {
     return { ok: false, reason: `Output blocked: ${filter.reason}` };
   }
-  return { ok: true };
+  return { ok: true, text: redactSecrets(fullText) };
 }
 
 function parseSSELine(line: string): AIResponseChunk | null {

@@ -5,6 +5,7 @@ export type ModalName =
   | 'about'
   | 'bestPractices'
   | 'aiSettings'
+  | 'aiDataConsent'
   | 'aiChat'
   | 'autoDocs'
   | 'reachability'

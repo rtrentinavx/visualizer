@@ -1,4 +1,5 @@
 import type { DcfPolicyModel } from '../../types/dcf';
+import { wrapTopologyContext } from './safety';
 
 // Reachability prompts live in their own module so they only load with the
 // ReachabilityModal chunk. The main prompts.ts is imported by InspectorPanel
@@ -60,13 +61,14 @@ export function buildReachabilityContext(topology: DcfPolicyModel): string {
   const webGroups = topology.webGroups
     .map((g) => `- ${g.name} — FQDNs: ${g.fqdns.slice(0, 8).join(', ')}${g.fqdns.length > 8 ? `, +${g.fqdns.length - 8} more` : ''}`)
     .join('\n');
-  return [
+  const body = [
     'SmartGroups (exact names — use "Any" for unspecified source):',
     smartGroups || '(none)',
     '',
     'WebGroups (FQDN-based destinations — use exact name when the user mentions a SaaS/domain that appears in one of these FQDN lists):',
     webGroups || '(none)',
   ].join('\n');
+  return wrapTopologyContext(body);
 }
 
 export function buildReachabilityPrompt(topology: DcfPolicyModel, question: string): string {

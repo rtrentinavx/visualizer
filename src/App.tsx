@@ -12,6 +12,8 @@ import AppHeader, { type ViewMode, type AppHeaderActions } from './components/Ap
 import AchievementToaster from './components/AchievementToaster';
 import Tour from './components/Tour';
 import { isTourCompleted, wasTourAutoShown, markTourAutoShown } from './lib/tourDismissal';
+import { hasAIDataConsent } from './lib/aiDataConsent';
+const AIDataConsentModal = lazyImport(() => import('./components/modals/AIDataConsentModal'));
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import InspectorPanel from './components/panels/InspectorPanel';
 import PolicySimulator from './components/panels/PolicySimulator';
@@ -183,6 +185,16 @@ export default function App() {
     });
   }, [dispatch]);
 
+  // Pending AI action: when the user clicks an AI button without having granted
+  // data-egress consent, we stash the action here and open the consent modal.
+  // The modal's onConfirm pops the action and runs it.
+  const [pendingAIAction, setPendingAIAction] = useState<(() => void) | null>(null);
+  const gateAI = useCallback((action: () => void) => () => {
+    if (hasAIDataConsent()) { action(); return; }
+    setPendingAIAction(() => action);
+    modals.open('aiDataConsent');
+  }, [modals]);
+
   const handleResetDemo = useCallback(() => {
     setConfirmModal({
       open: true,
@@ -213,10 +225,10 @@ export default function App() {
     exportJSON: () => downloadTopologyJSON(topology),
     openTerraform: () => modals.open('terraformExport'),
     openAISettings: () => modals.open('aiSettings'),
-    openAIChat: () => modals.open('aiChat'),
-    openAutoDocs: () => modals.open('autoDocs'),
-    openReachability: () => modals.open('reachability'),
-    openPolicySearch: () => modals.open('policySearch'),
+    openAIChat: gateAI(() => modals.open('aiChat')),
+    openAutoDocs: gateAI(() => modals.open('autoDocs')),
+    openReachability: gateAI(() => modals.open('reachability')),
+    openPolicySearch: gateAI(() => modals.open('policySearch')),
     openAchievements: () => modals.open('achievements'),
     openBestPractices: () => modals.open('bestPractices'),
     openAbout: () => modals.open('about'),
@@ -340,6 +352,24 @@ export default function App() {
             }
           }}
         />
+        </Suspense>
+      )}
+
+      {modals.isOpen('aiDataConsent') && (
+        <Suspense fallback={null}>
+          <AIDataConsentModal
+            profile={activeAIProfile ?? null}
+            onCancel={() => {
+              setPendingAIAction(null);
+              modals.close();
+            }}
+            onConfirm={() => {
+              modals.close();
+              const action = pendingAIAction;
+              setPendingAIAction(null);
+              if (action) action();
+            }}
+          />
         </Suspense>
       )}
 

@@ -3,7 +3,7 @@ import { X, Send, Bot, User, Check, Loader2, AlertCircle, Sparkles, ThumbsUp, Th
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat, postProcessAIOutput } from '../../lib/ai/client';
 import { SYSTEM_PROMPT_POLICY_GENERATION, buildPolicyGenerationPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
-import { sanitizeInput, delimitUserInput, scanInput } from '../../lib/ai/safety';
+import { sanitizeInput, delimitUserInput, scanInput, validatePolicySuggestion } from '../../lib/ai/safety';
 import { PolicySuggestionArraySchema, safeParseAIOutput } from '../../lib/ai/schemas';
 import type { DcfPolicyModel } from '../../types/dcf';
 
@@ -121,6 +121,18 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
 
   const handleApply = (msg: ChatMessage) => {
     if (!msg.parsed) return;
+    const safety = validatePolicySuggestion(msg.parsed);
+    if (!safety.safe) {
+      setMessages((prev) => {
+        const next = [...prev];
+        const idx = next.indexOf(msg);
+        if (idx !== -1) {
+          next[idx] = { ...msg, safetyWarning: `Safety check blocked this policy: ${safety.reason}` };
+        }
+        return next;
+      });
+      return;
+    }
     onApplyPolicy(msg.parsed);
   };
 
