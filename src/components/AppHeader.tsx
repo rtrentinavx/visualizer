@@ -238,7 +238,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <IconButton icon={LayoutTemplate} label="Policy templates" onClick={actions.openTemplates} accent="purple" dataTour="templates-btn" />
           <IconButton icon={ListOrdered} label="Reorder policies" onClick={actions.openReorderPolicies} accent="blue" dataTour="reorder-btn" />
           <IconButton icon={Lightbulb} label="WebGroup recommendations" onClick={actions.openRecommendations} accent="amber" />
-          <IconButton icon={RotateCcw} label="Reset to demo topology" onClick={actions.resetDemo} accent="blue" />
+          <IconButton icon={RotateCcw} label="Reset to starter topology" onClick={actions.resetDemo} accent="blue" />
           <IconButton icon={X} label="Clear all" onClick={actions.clearAll} accent="red" />
         </ToolbarGroup>
 

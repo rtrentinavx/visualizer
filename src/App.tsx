@@ -198,8 +198,8 @@ export default function App() {
   const handleResetDemo = useCallback(() => {
     setConfirmModal({
       open: true,
-      title: 'Reset Demo',
-      message: 'This will restore the full demo topology with sample groups, policies, and WebGroup presets. Your current data will be replaced.',
+      title: 'Reset Topology',
+      message: 'This will restore the bundled starter topology with example groups, policies, and WebGroup presets. Your current data will be replaced.',
       onConfirm: () => {
         dispatch({ type: 'replace', topology: structuredClone(demoTopology) });
         setSelectedItem(null);
