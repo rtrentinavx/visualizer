@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { fetchWithTimeout, isTimeoutError } from './_timeout';
 
 // Some providers' model-list endpoints are slow; give the function room to
 // complete instead of hitting the default 10s timeout and returning
@@ -58,6 +59,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.status(200).json({ models });
   } catch (err) {
+    if (isTimeoutError(err)) {
+      return res.status(504).json({ error: `Provider "${provider}" model list did not respond in time. Check the endpoint or retry.` });
+    }
     const message = err instanceof Error ? err.message : 'Failed to list models';
     return res.status(502).json({ error: message });
   }
@@ -69,7 +73,7 @@ function requireKey(key: string | undefined, provider: string): string {
 }
 
 async function listOpenAI(apiKey: string): Promise<ModelInfo[]> {
-  const r = await fetch('https://api.openai.com/v1/models', {
+  const r = await fetchWithTimeout('https://api.openai.com/v1/models', {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
   if (!r.ok) throw new Error(`OpenAI: ${r.status} ${r.statusText}`);
@@ -83,7 +87,7 @@ async function listOpenAI(apiKey: string): Promise<ModelInfo[]> {
 }
 
 async function listAnthropic(apiKey: string): Promise<ModelInfo[]> {
-  const r = await fetch('https://api.anthropic.com/v1/models', {
+  const r = await fetchWithTimeout('https://api.anthropic.com/v1/models', {
     headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
   });
   if (!r.ok) throw new Error(`Anthropic: ${r.status} ${r.statusText}`);
@@ -92,7 +96,7 @@ async function listAnthropic(apiKey: string): Promise<ModelInfo[]> {
 }
 
 async function listGoogle(apiKey: string): Promise<ModelInfo[]> {
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`);
+  const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`, {});
   if (!r.ok) throw new Error(`Google: ${r.status} ${r.statusText}`);
   const data = await r.json() as { models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }> };
   return (data.models ?? [])
@@ -104,7 +108,7 @@ async function listOpenAICompatible(baseUrl: string, apiKey?: string): Promise<M
   const url = baseUrl.replace(/\/+$/, '') + '/v1/models';
   const headers: Record<string, string> = {};
   if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-  const r = await fetch(url, { headers });
+  const r = await fetchWithTimeout(url, { headers });
   if (!r.ok) throw new Error(`Endpoint: ${r.status} ${r.statusText}`);
   const data = await r.json() as { data?: Array<{ id: string }>; models?: Array<{ id: string }> };
   return (data.data ?? data.models ?? []).map((m) => ({ id: m.id }));

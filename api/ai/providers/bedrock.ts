@@ -1,6 +1,7 @@
 import type { VercelResponse } from '@vercel/node';
 import { BedrockRuntimeClient, ConverseStreamCommand, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../types';
+import { PROVIDER_FETCH_TIMEOUT_MS } from '../_timeout';
 
 export async function proxyBedrock(
   res: VercelResponse,
@@ -32,7 +33,7 @@ export async function proxyBedrock(
       system: systemMsg ? [{ text: systemMsg.content }] : undefined,
       inferenceConfig: { temperature },
     });
-    const response = await client.send(command);
+    const response = await client.send(command, { abortSignal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS) });
     const text = response.output?.message?.content?.[0]?.text || '';
     return res.json({ content: text });
   }
@@ -44,7 +45,7 @@ export async function proxyBedrock(
     inferenceConfig: { temperature },
   });
 
-  const response = await client.send(command);
+  const response = await client.send(command, { abortSignal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS) });
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');

@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { fetchWithTimeout, isTimeoutError } from './_timeout';
 
 // Same per-invocation timeout posture as the other AI endpoints — see proxy.ts.
 export const config = {
@@ -37,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (input.length > 32_000) return res.status(413).json({ error: 'Input too large for moderation (max 32 KB)' });
 
   try {
-    const r = await fetch('https://api.openai.com/v1/moderations', {
+    const r = await fetchWithTimeout('https://api.openai.com/v1/moderations', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -74,6 +75,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     return res.status(200).json(response);
   } catch (err) {
+    if (isTimeoutError(err)) {
+      return res.status(504).json({ error: 'OpenAI moderation did not respond in time.' });
+    }
     const message = err instanceof Error ? err.message : 'Moderation failed';
     return res.status(502).json({ error: message });
   }
