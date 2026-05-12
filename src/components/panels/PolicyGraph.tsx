@@ -143,6 +143,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
   const nodeRadius = 28;
 
   const handleNodeClick = (nodeId: string) => {
+    console.log('[PolicyGraph] node click', { nodeId, connectMode, connectSource });
     if (!connectMode) {
       onSelectNode(nodeId);
       return;
