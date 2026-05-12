@@ -596,6 +596,93 @@ function findMergeablePolicies(policies: DcfPolicy[]): Finding[] {
   return findings;
 }
 
+/**
+ * A policy is "L7" iff it forwards the packet from the L4 (eBPF) engine to the
+ * L7 (ATS) engine for evaluation — i.e. it has a WebGroup attached and/or TLS
+ * decrypt is on. Without either, the policy is pure L4 and never leaves eBPF.
+ */
+function isL7Policy(p: DcfPolicy): boolean {
+  return (p.webGroupIds !== undefined && p.webGroupIds.length > 0) || p.decrypt === true;
+}
+
+/**
+ * Does the broader (L4) policy's selector COVER the narrower (L7) policy's
+ * selector — meaning every src/dst/proto/port combination that matches the L7
+ * also matches the broader? If yes, and the broader is a deny that's
+ * evaluated first, the L7 allow can never fire.
+ *
+ * Excludes are honored: if the broader policy explicitly excludes the
+ * narrower's src or dst group, the L7 allow's traffic *escapes* the deny via
+ * the exclude path — no shadowing.
+ */
+function l4SelectorCoversL7(broader: DcfPolicy, narrower: DcfPolicy): boolean {
+  const srcCovers = broader.srcGroupId === narrower.srcGroupId || broader.srcGroupId === 'sg-any';
+  const dstCovers = broader.dstGroupId === narrower.dstGroupId || broader.dstGroupId === 'sg-any';
+  const protoCovers = broader.protocol === narrower.protocol || broader.protocol === 'any';
+  const portCovers = portsCoverAll(broader.ports, narrower.ports);
+  if (!srcCovers || !dstCovers || !protoCovers || !portCovers) return false;
+
+  // If the broader policy excludes the narrower's src or dst, the narrower's
+  // traffic escapes the deny — not shadowed.
+  if (broader.srcExcludeGroupIds?.includes(narrower.srcGroupId)) return false;
+  if (broader.dstExcludeGroupIds?.includes(narrower.dstGroupId)) return false;
+
+  return true;
+}
+
+/**
+ * Compute, for a given ORDERED list of policies (first item = lowest priority
+ * number = evaluated first), which L7 allows are shadowed by an earlier
+ * pure-L4 deny. Used both by the evaluator (current saved topology) and by
+ * the reorder modal (proposed-but-unsaved order).
+ *
+ * Returns a map keyed by the L7 allow policy's id; the value is the id of the
+ * earliest covering L4 deny.
+ */
+export function findL4ShadowingInOrder(orderedPolicies: DcfPolicy[]): Map<string, string> {
+  const result = new Map<string, string>();
+  for (let i = 0; i < orderedPolicies.length; i++) {
+    const l7 = orderedPolicies[i]!;
+    if (l7.enforcement === false) continue;
+    if (l7.action !== 'allow') continue;
+    if (!isL7Policy(l7)) continue;
+
+    for (let j = 0; j < i; j++) {
+      const earlier = orderedPolicies[j]!;
+      if (earlier.enforcement === false) continue;
+      if (earlier.action !== 'deny') continue;
+      if (isL7Policy(earlier)) continue; // only pure L4 denies short-circuit
+      if (!l4SelectorCoversL7(earlier, l7)) continue;
+
+      result.set(l7.id, earlier.id);
+      break;
+    }
+  }
+  return result;
+}
+
+function findL4DenyShadowsL7Allow(policies: DcfPolicy[]): Finding[] {
+  const sorted = [...policies].sort((a, b) => a.priority - b.priority);
+  const shadowed = findL4ShadowingInOrder(sorted);
+  const findings: Finding[] = [];
+
+  shadowed.forEach((denyId, allowId) => {
+    const l7 = policies.find((p) => p.id === allowId)!;
+    const l4 = policies.find((p) => p.id === denyId)!;
+    findings.push({
+      id: `l4-shadows-l7-${allowId}`,
+      severity: 'warning',
+      category: 'security',
+      frameworks: ['Aviatrix BP', 'Best Practice'],
+      title: 'L4 Deny Shadows L7 Allow',
+      description: `Policy "${l7.name}" (priority ${l7.priority}) is an L7 allow (WebGroup or decrypt attached), but the pure-L4 deny "${l4.name}" (priority ${l4.priority}) is evaluated first and covers a superset of its selector. The L4 engine drops the packet before it reaches the ATS / L7 engine, so the L7 allow never fires. Move the L7 allow above the L4 deny in priority.`,
+      affectedPolicyIds: [allowId, denyId],
+    });
+  });
+
+  return findings;
+}
+
 // ---------- Main Export ----------
 
 export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
@@ -633,6 +720,9 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   // Optimization suggestions
   findings.push(...findRedundantPolicies(topology.policies));
   findings.push(...findMergeablePolicies(topology.policies));
+
+  // L4 (eBPF) / L7 (ATS) interaction
+  findings.push(...findL4DenyShadowsL7Allow(topology.policies));
 
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };

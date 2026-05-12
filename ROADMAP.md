@@ -40,6 +40,7 @@
 - [x] "Fix it for me" auto-fix for 10 common issues (including mergeable-policy port-union)
 - [x] **Redundant-policy detection** — info finding when a same-action policy is fully covered by a later broader policy
 - [x] **Mergeable-policy detection** — info finding + auto-fix when 2+ policies differ only in ports; auto-fix unions ports into the lowest-priority policy
+- [x] **L4-deny-shadows-L7-allow** — warning when a pure-L4 deny earlier in the priority queue covers an L7 allow's selector. The L4 (eBPF) engine drops the packet before it reaches the L7 (ATS) engine, so the L7 allow never fires. Reused live in the reorder modal: drags that create this pattern surface a banner + per-row highlight.
 
 ### Simulation
 - [x] **Traffic Simulator (merged view)** — Top: IP-based What-If with CIDR-to-SmartGroup resolution + optional FQDN/Threat/Geo overrides. Bottom: saved-flows log with edit/delete, filter, JSON/CSV import-export. The result block has a "Save as flow" button that persists the simulated flow so it counts toward Policy Impact analysis.
@@ -111,3 +112,4 @@
 - [x] **Natural language search** — "Show me all policies that allow web tier to database" (shipped: FlaskConical button in header opens PolicySearchModal. AI extracts structured filter criteria (src/dst names, actions, protocols, port, hasThreat/Geo/WebGroup flags, decryptOnly, loggingDisabled), engine resolves names + applies AND-semantics filter, results listed with one-click open-in-inspector.)
 - [x] **Auto-documentation** — Generate human-readable policy docs from topology (shipped: FileText button in header opens streaming Markdown generation with copy/download)
 - [x] **AI-powered simulator** — "Will my web servers reach Salesforce?" (shipped: Route button in header opens ReachabilityModal. AI extracts structured intent (src/dst names, protocol, port), engine resolves names against the live topology and runs first-match-wins evaluation, modal shows verdict + matched policy + AI's assumptions for transparency.)
+Johnston

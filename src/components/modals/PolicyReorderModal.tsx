@@ -21,6 +21,7 @@ import type { DcfPolicy, DcfPolicyModel } from '../../types/dcf';
 import type { AIProfile } from '../../lib/ai/types';
 import { reorderPolicies } from '../../lib/reorderPolicies';
 import { suggestPolicyOrder } from '../../lib/aiPolicyOrder';
+import { findL4ShadowingInOrder } from '../../lib/policyEvaluator';
 
 interface PolicyReorderModalProps {
   topology: DcfPolicyModel;
@@ -39,11 +40,17 @@ function SortableRow({
   policy,
   topology,
   ladderPriority,
+  shadowedByName,
+  causesShadowOf,
 }: {
   id: string;
   policy: DcfPolicy;
   topology: DcfPolicyModel;
   ladderPriority: number;
+  /** When this policy is an L7 allow whose L4 sibling will short-circuit it. */
+  shadowedByName?: string;
+  /** When this policy is the L4 deny that will short-circuit a later L7 allow. */
+  causesShadowOf?: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   const style: React.CSSProperties = {
@@ -52,12 +59,17 @@ function SortableRow({
     opacity: isDragging ? 0.6 : 1,
   };
   const priorityChanged = policy.priority !== ladderPriority;
+  const hasShadowWarning = shadowedByName || causesShadowOf;
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center gap-2 px-2 py-1.5 rounded border bg-[var(--color-surface)] border-[var(--color-border-subtle)]"
+      className={`flex items-center gap-2 px-2 py-1.5 rounded border ${
+        hasShadowWarning
+          ? 'bg-amber-500/5 border-amber-500/40'
+          : 'bg-[var(--color-surface)] border-[var(--color-border-subtle)]'
+      }`}
     >
       <button
         {...attributes}
@@ -93,6 +105,18 @@ function SortableRow({
         <div className="text-[10px] text-[var(--color-text-muted)] truncate">
           {nameOf(topology, policy.srcGroupId)} → {nameOf(topology, policy.dstGroupId)} · {policy.protocol}/{policy.ports || 'any'}
         </div>
+        {shadowedByName && (
+          <div className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
+            <AlertTriangle size={9} className="shrink-0" />
+            <span className="truncate">L7 allow shadowed by earlier L4 deny "{shadowedByName}"</span>
+          </div>
+        )}
+        {causesShadowOf && (
+          <div className="text-[10px] text-amber-400 mt-0.5 flex items-center gap-1">
+            <AlertTriangle size={9} className="shrink-0" />
+            <span className="truncate">L4 deny short-circuits later L7 allow "{causesShadowOf}"</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -137,6 +161,25 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
     topology.policies.forEach((p) => m.set(p.id, p));
     return m;
   }, [topology.policies]);
+
+  // Compute L4/L7 shadow warnings for the CURRENT proposed order. Recomputes
+  // on every drag. shadowedByMap maps L7-allow.id → L4-deny.id; we invert it
+  // so we can also flag the offending L4 deny on its own row.
+  const { shadowedByMap, causesShadowMap } = useMemo(() => {
+    const orderedPolicies = order
+      .map((id) => policyById.get(id))
+      .filter((p): p is DcfPolicy => p !== undefined);
+    const shadowed = findL4ShadowingInOrder(orderedPolicies);
+    const inverse = new Map<string, string>();
+    shadowed.forEach((denyId, allowId) => {
+      // Multiple allows can be shadowed by the same deny — keep the first name
+      // shown on the deny row; that's enough to flag the issue.
+      if (!inverse.has(denyId)) inverse.set(denyId, allowId);
+    });
+    return { shadowedByMap: shadowed, causesShadowMap: inverse };
+  }, [order, policyById]);
+
+  const warningCount = shadowedByMap.size;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -237,6 +280,17 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
             </div>
           )}
 
+          {warningCount > 0 && (
+            <div className="mb-3 flex items-start gap-2 p-2.5 rounded-lg border bg-amber-500/10 border-amber-500/30">
+              <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-200 leading-relaxed">
+                <strong>{warningCount}</strong> L7 allow{warningCount === 1 ? '' : 's'} would be short-circuited by an earlier pure-L4 deny under this order.
+                The L4 (eBPF) engine drops the packet before it reaches L7 (ATS) — affected rows are highlighted below.
+                Drag the L7 allow above its blocking L4 deny to fix.
+              </p>
+            </div>
+          )}
+
           {order.length === 0 ? (
             <div className="text-xs text-[var(--color-text-muted)] text-center py-8">
               No policies to reorder.
@@ -248,6 +302,8 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
                   {order.map((id, idx) => {
                     const p = policyById.get(id);
                     if (!p) return null;
+                    const shadowedById = shadowedByMap.get(id);
+                    const shadowsId = causesShadowMap.get(id);
                     return (
                       <SortableRow
                         key={id}
@@ -255,6 +311,8 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
                         policy={p}
                         topology={topology}
                         ladderPriority={100 + idx * 10}
+                        shadowedByName={shadowedById ? policyById.get(shadowedById)?.name : undefined}
+                        causesShadowOf={shadowsId ? policyById.get(shadowsId)?.name : undefined}
                       />
                     );
                   })}

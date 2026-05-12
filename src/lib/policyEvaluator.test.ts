@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DcfPolicy, DcfPolicyModel } from '../types/dcf';
-import { evaluateTopology, applyAutoFix } from './policyEvaluator';
+import { evaluateTopology, applyAutoFix, findL4ShadowingInOrder } from './policyEvaluator';
 
 // ---------- Helpers ----------
 
@@ -717,5 +717,84 @@ describe('applyAutoFix', () => {
       fixable: false,
     };
     expect(applyAutoFix(t, fakeFinding)).toBeNull();
+  });
+});
+
+// ---------- L4 deny shadows L7 allow ----------
+
+describe('findL4DenyShadowsL7Allow', () => {
+  function topoWithSGs(): DcfPolicyModel {
+    const t = emptyTopology();
+    t.smartGroups.push(
+      { id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' },
+    );
+    t.webGroups.push({ id: 'wg-sfdc', name: 'Salesforce', fqdns: ['*.salesforce.com'] });
+    return t;
+  }
+
+  it('flags an L7 allow when an earlier pure-L4 deny covers its selector', () => {
+    const t = topoWithSGs();
+    t.policies = [
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+    ];
+    const findings = findingsWithIdPrefix(t, 'l4-shadows-l7-');
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.affectedPolicyIds).toEqual(['p-l7-allow', 'p-l4-deny']);
+    expect(findings[0]!.severity).toBe('warning');
+    expect(findings[0]!.category).toBe('security');
+  });
+
+  it('does NOT flag when the L7 allow has a LOWER priority number (evaluated first)', () => {
+    const t = topoWithSGs();
+    t.policies = [
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
+    ];
+    expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
+  });
+
+  it('does NOT flag when the earlier deny is itself an L7 policy (decrypt or WebGroup)', () => {
+    const t = topoWithSGs();
+    t.policies = [
+      // Earlier deny is L7 (decrypt=true) → doesn't short-circuit at L4.
+      policy({ id: 'p-l7-deny', name: 'L7 Block', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', decrypt: true }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+    ];
+    expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
+  });
+
+  it('does NOT flag when the L4 deny excludes the L7 allow\'s src group', () => {
+    const t = topoWithSGs();
+    t.policies = [
+      policy({ id: 'p-l4-deny', name: 'Block Egress (Web excluded)', priority: 50, srcGroupId: 'sg-any', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', srcExcludeGroupIds: ['sg-web'] }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+    ];
+    expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
+  });
+
+  it('does NOT flag when the policy attaches WebGroups but is a DENY (only L7 allows can be "lost")', () => {
+    // A blocked-FQDN policy that an L4 deny short-circuits isn't a correctness
+    // problem — the FQDN is denied either way. Only L7 ALLOWS matter here.
+    const t = topoWithSGs();
+    t.policies = [
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-l7-deny', name: 'Block Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+    ];
+    expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
+  });
+
+  it('findL4ShadowingInOrder operates on the given order, not policy.priority', () => {
+    const t = topoWithSGs();
+    const l4Deny = policy({ id: 'p-l4', name: 'L4 Deny', priority: 999, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' });
+    const l7Allow = policy({ id: 'p-l7', name: 'L7 Allow', priority: 1, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] });
+    t.policies = [l4Deny, l7Allow];
+
+    // By saved priority: L7 allow (1) comes first → not shadowed.
+    expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
+
+    // But if the reorder modal proposes [L4Deny, L7Allow] → shadowed.
+    const proposed = findL4ShadowingInOrder([l4Deny, l7Allow]);
+    expect(proposed.get('p-l7')).toBe('p-l4');
   });
 });
