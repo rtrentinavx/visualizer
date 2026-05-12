@@ -222,7 +222,6 @@ export default function App() {
     openReorderPolicies: () => modals.open('reorderPolicies'),
     openRecommendations: () => modals.open('recommendations'),
     openTerraform: () => modals.open('terraformExport'),
-    openAISettings: () => modals.open('aiSettings'),
     openAIChat: gateAI(() => modals.open('aiChat')),
     openAutoDocs: gateAI(() => modals.open('autoDocs')),
     openReachability: gateAI(() => modals.open('reachability')),
@@ -272,6 +271,16 @@ export default function App() {
             </Suspense>
           ) : viewMode === 'simulator' ? (
             <PolicySimulator topology={topology} />
+          ) : viewMode === 'aiSettings' ? (
+            <Suspense fallback={<PanelLoader />}>
+              <AISettingsPanel
+                settings={aiSettings}
+                onSave={(settings) => {
+                  setAISettings(settings);
+                  saveAISettings(settings).catch(() => {});
+                }}
+              />
+            </Suspense>
           ) : (
             <TrafficFlowPanel
               topology={topology}
@@ -367,20 +376,6 @@ export default function App() {
               setPendingAIAction(null);
               if (action) action();
             }}
-          />
-        </Suspense>
-      )}
-
-      {modals.isOpen('aiSettings') && (
-        <Suspense fallback={null}>
-          <AISettingsPanel
-            settings={aiSettings}
-            onSave={(settings) => {
-              setAISettings(settings);
-              saveAISettings(settings).catch(() => {});
-              modals.close();
-            }}
-            onClose={modals.close}
           />
         </Suspense>
       )}

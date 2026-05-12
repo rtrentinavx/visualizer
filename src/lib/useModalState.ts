@@ -4,7 +4,6 @@ export type ModalName =
   | 'terraformExport'
   | 'about'
   | 'bestPractices'
-  | 'aiSettings'
   | 'aiDataConsent'
   | 'aiChat'
   | 'autoDocs'

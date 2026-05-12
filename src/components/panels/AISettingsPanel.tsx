@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck, RefreshCw, Search, MapPin, X, Eye, EyeOff,
+} from 'lucide-react';
 import type { AIProfile, AISettings, AIProvider } from '../../lib/ai/types';
 import { providerConfigs, getProviderConfig } from '../../lib/ai/providers';
 import { fetchModels, type ModelInfo } from '../../lib/ai/client';
@@ -8,121 +10,282 @@ import { getResidency } from '../../lib/ai/residency';
 interface AISettingsPanelProps {
   settings: AISettings;
   onSave: (settings: AISettings) => void;
-  onClose: () => void;
 }
 
 function generateId(): string {
   return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-export default function AISettingsPanel({ settings, onSave, onClose }: AISettingsPanelProps) {
+// =============================================================================
+// Subcomponents
+// =============================================================================
+
+function SectionHeader({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div className="mb-2">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">{title}</div>
+      {hint && <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{hint}</div>}
+    </div>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">{label}</label>
+      {children}
+      {hint && <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">{hint}</p>}
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  backgroundColor: 'var(--color-input-bg)',
+  borderColor: 'var(--color-input-border)',
+  color: 'var(--color-text-primary)',
+};
+
+/** Combobox replacing the old dropdown+text-input dual control for the model picker. */
+function ModelCombobox({
+  value, onChange, options, onFetch, fetching, fetchedCount, fetchError,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: string[];
+  onFetch: () => void;
+  fetching: boolean;
+  fetchedCount: number | null;
+  fetchError: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filtered = useMemo(() => {
+    if (!value) return options;
+    const lower = value.toLowerCase();
+    return options.filter((o) => o.toLowerCase().includes(lower));
+  }, [options, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOut(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOut);
+    return () => document.removeEventListener('mousedown', onClickOut);
+  }, [open]);
+
+  const pick = (v: string) => {
+    onChange(v);
+    setOpen(false);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setOpen(true); setHighlight((i) => Math.min(i + 1, filtered.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlight((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter') {
+      if (open && filtered[highlight]) { e.preventDefault(); pick(filtered[highlight]!); }
+    } else if (e.key === 'Escape') setOpen(false);
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="flex items-center gap-1 rounded border px-2 py-1.5" style={inputStyle}>
+        <Search size={12} className="text-[var(--color-text-muted)] shrink-0" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setOpen(true); setHighlight(0); }}
+          onFocus={() => { setOpen(true); setHighlight(0); }}
+          onKeyDown={onKeyDown}
+          placeholder="Type or pick a model"
+          className="flex-1 text-xs bg-transparent outline-none font-mono"
+          style={{ color: 'var(--color-text-primary)' }}
+          aria-autocomplete="list"
+          aria-expanded={open}
+          role="combobox"
+        />
+        <button
+          type="button"
+          onClick={() => { setOpen((v) => !v); inputRef.current?.focus(); }}
+          className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+          aria-label="Show all models"
+        >
+          <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+
+      <div className="mt-1 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onFetch}
+          disabled={fetching}
+          className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline disabled:opacity-50"
+        >
+          <RefreshCw size={10} className={fetching ? 'animate-spin' : ''} />
+          {fetching ? 'Fetching…' : fetchedCount != null ? `Refresh (${fetchedCount} live)` : 'Fetch live models'}
+        </button>
+        {fetchError && <span className="text-[10px] text-red-400 truncate ml-2">{fetchError}</span>}
+      </div>
+
+      {open && (
+        <div
+          className="absolute top-full mt-1 left-0 right-0 z-20 max-h-56 overflow-y-auto rounded border shadow-lg"
+          style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          role="listbox"
+        >
+          {filtered.length === 0 ? (
+            <div className="px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] italic">
+              No matches — press <kbd className="px-1 rounded bg-[var(--color-surface-elevated)]">Enter</kbd> to keep "{value}" as a custom model id.
+            </div>
+          ) : (
+            filtered.map((m, i) => (
+              <button
+                key={m}
+                type="button"
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => pick(m)}
+                className={`w-full text-left px-2 py-1.5 text-xs font-mono transition-colors ${i === highlight ? 'bg-[var(--color-surface-elevated)]' : ''}`}
+                role="option"
+                aria-selected={i === highlight}
+              >
+                {m}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Main component — top-level view (not a modal)
+// =============================================================================
+
+export default function AISettingsPanel({ settings, onSave }: AISettingsPanelProps) {
   const [localSettings, setLocalSettings] = useState<AISettings>({ ...settings });
   const [editingProfile, setEditingProfile] = useState<AIProfile | null>(null);
   const [showKey, setShowKey] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  // Cache fetched models against the (provider, baseUrl) they came from. When
-  // the user switches provider or baseUrl, the cached list silently becomes
-  // invalid for the current profile — no effect needed, just a key comparison
-  // on render.
+
+  // Cache fetched models by (provider, baseUrl). When the user switches either,
+  // the cache silently becomes invalid for the current profile — no effect
+  // needed, just key comparison on render.
   const [modelCache, setModelCache] = useState<{ key: string; models: ModelInfo[]; error: string | null } | null>(null);
   const [fetchingModels, setFetchingModels] = useState(false);
 
-  const isEditing = !!editingProfile;
+  // Keep local settings in sync if the parent's settings prop changes (e.g. on
+  // initial load after decrypt). We DON'T overwrite once the user starts editing.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external sync: localStorage decrypt may complete after mount, and parent re-emits the same object on every save which would otherwise loop forever without a guard.
+    if (!editingProfile) setLocalSettings({ ...settings });
+  }, [settings, editingProfile]);
+
   const activeProfile = localSettings.profiles.find((p) => p.id === localSettings.activeProfileId);
-
   const providerConfig = editingProfile ? getProviderConfig(editingProfile.provider) : undefined;
-
   const profileKey = editingProfile ? `${editingProfile.provider}|${editingProfile.apiBaseUrl ?? ''}` : '';
   const fetchedModels = modelCache?.key === profileKey ? modelCache.models : null;
   const fetchError = modelCache?.key === profileKey ? modelCache.error : null;
 
-  const handleFetchModels = async () => {
-    if (!editingProfile) return;
-    const key = profileKey;
-    setFetchingModels(true);
-    setModelCache({ key, models: [], error: null });
-    try {
-      const models = await fetchModels(editingProfile);
-      if (models.length === 0) {
-        setModelCache({ key, models: [], error: 'No models returned by the provider.' });
-      } else {
-        setModelCache({ key, models, error: null });
-      }
-    } catch (err) {
-      setModelCache({ key, models: [], error: err instanceof Error ? err.message : 'Failed to fetch models' });
-    } finally {
-      setFetchingModels(false);
-    }
-  };
-
-  // The list shown in the Model dropdown: fetched models if we have them,
-  // otherwise the curated static list, otherwise just the current value.
-  const modelOptions: string[] = (() => {
-    if (fetchedModels && fetchedModels.length > 0) return fetchedModels.map((m) => m.id);
-    if (providerConfig && providerConfig.models.length > 0) return providerConfig.models;
-    return editingProfile?.model ? [editingProfile.model] : [];
-  })();
+  const needsKey = editingProfile && editingProfile.provider !== 'ollama' && editingProfile.provider !== 'lmstudio';
+  const needsSecret = editingProfile && editingProfile.provider === 'bedrock';
+  const needsBaseUrl = !!editingProfile && (
+    editingProfile.provider === 'ollama' ||
+    editingProfile.provider === 'lmstudio' ||
+    editingProfile.provider === 'bedrock' ||
+    editingProfile.provider === 'custom'
+  );
 
   const startNewProfile = () => {
-    const defaultProvider = 'openai';
+    const defaultProvider: AIProvider = 'openai';
     const config = providerConfigs[defaultProvider]!;
     setEditingProfile({
       id: generateId(),
-      name: 'New Profile',
+      name: 'New profile',
       provider: defaultProvider,
       model: config.defaultModel,
       apiKey: '',
       temperature: config.defaultTemperature,
     });
     setShowKey(false);
+    setShowSecret(false);
   };
 
   const startEditProfile = (profile: AIProfile) => {
     setEditingProfile({ ...profile });
     setShowKey(false);
+    setShowSecret(false);
     setConfirmDelete(null);
   };
 
-  const saveEditingProfile = () => {
+  const cancelEdit = () => {
+    setEditingProfile(null);
+    setModelCache(null);
+  };
+
+  /** Commit the editing profile to the parent in one step. No two-stage "save profile then save settings" anymore. */
+  const saveProfile = () => {
     if (!editingProfile) return;
-    if (!editingProfile.name.trim() || !editingProfile.apiKey.trim()) return;
+    if (!editingProfile.name.trim() || (needsKey && !editingProfile.apiKey.trim()) || (needsSecret && !(editingProfile.apiSecret || '').trim())) return;
 
     setLocalSettings((prev) => {
       const exists = prev.profiles.find((p) => p.id === editingProfile.id);
       const profiles = exists
         ? prev.profiles.map((p) => (p.id === editingProfile.id ? editingProfile : p))
         : [...prev.profiles, editingProfile];
-      return {
+      const next: AISettings = {
         ...prev,
         profiles,
         activeProfileId: prev.activeProfileId || editingProfile.id,
       };
+      // Persist immediately — the parent owns the AISettings storage round-trip.
+      onSave(next);
+      return next;
     });
     setEditingProfile(null);
+    setModelCache(null);
   };
 
   const deleteProfile = (id: string) => {
     setLocalSettings((prev) => {
       const profiles = prev.profiles.filter((p) => p.id !== id);
-      return {
+      const next: AISettings = {
         ...prev,
         profiles,
         activeProfileId: prev.activeProfileId === id ? (profiles[0]?.id || null) : prev.activeProfileId,
       };
+      onSave(next);
+      return next;
     });
     setConfirmDelete(null);
-    if (editingProfile?.id === id) setEditingProfile(null);
+    if (editingProfile?.id === id) cancelEdit();
   };
 
   const activateProfile = (id: string) => {
-    setLocalSettings((prev) => ({ ...prev, activeProfileId: id }));
+    setLocalSettings((prev) => {
+      const next: AISettings = { ...prev, activeProfileId: id };
+      onSave(next);
+      return next;
+    });
+  };
+
+  const setConsent = (consentGiven: boolean) => {
+    setLocalSettings((prev) => {
+      const next = { ...prev, consentGiven };
+      onSave(next);
+      return next;
+    });
   };
 
   const updateEditingField = <K extends keyof AIProfile>(field: K, value: AIProfile[K]) => {
     setEditingProfile((prev) => {
       if (!prev) return prev;
       const next = { ...prev, [field]: value };
-      // Auto-update model when provider changes
       if (field === 'provider') {
         const config = getProviderConfig(value as string);
         if (config) {
@@ -134,104 +297,109 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
     });
   };
 
-  const needsKey = editingProfile && editingProfile.provider !== 'ollama' && editingProfile.provider !== 'lmstudio';
-  const needsSecret = editingProfile && editingProfile.provider === 'bedrock';
-  const canSaveEditing = editingProfile && editingProfile.name.trim() && (!needsKey || editingProfile.apiKey.trim()) && (!needsSecret || (editingProfile.apiSecret || '').trim());
+  const handleFetchModels = async () => {
+    if (!editingProfile) return;
+    setFetchingModels(true);
+    setModelCache({ key: profileKey, models: [], error: null });
+    try {
+      const models = await fetchModels(editingProfile);
+      if (models.length === 0) {
+        setModelCache({ key: profileKey, models: [], error: 'No models returned by the provider.' });
+      } else {
+        setModelCache({ key: profileKey, models, error: null });
+      }
+    } catch (err) {
+      setModelCache({ key: profileKey, models: [], error: err instanceof Error ? err.message : 'Failed to fetch models' });
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  const modelOptions: string[] = (() => {
+    if (fetchedModels && fetchedModels.length > 0) return fetchedModels.map((m) => m.id);
+    if (providerConfig && providerConfig.models.length > 0) return providerConfig.models;
+    return editingProfile?.model ? [editingProfile.model] : [];
+  })();
+
+  const canSaveEditing = !!editingProfile && editingProfile.name.trim() && (!needsKey || editingProfile.apiKey.trim()) && (!needsSecret || (editingProfile.apiSecret || '').trim());
+
+  // ===========================================================================
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div
-        className="w-full max-w-lg max-h-[90vh] flex flex-col rounded-xl border shadow-2xl overflow-hidden"
-        style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-          <div className="flex items-center gap-3">
-            <Bot size={18} className="text-[var(--color-accent-blue)]" />
-            <div>
-              <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">AI Settings</h2>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                {localSettings.profiles.length} profile{localSettings.profiles.length !== 1 ? 's' : ''}
-                {activeProfile ? ` · Active: ${activeProfile.name}` : ''}
+    <div className="flex flex-col h-full overflow-y-auto">
+      <header className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Bot size={20} className="text-[var(--color-accent-blue)]" />
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">AI Settings</h2>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              {localSettings.profiles.length} profile{localSettings.profiles.length !== 1 ? 's' : ''}
+              {activeProfile ? ` · Active: ${activeProfile.name}` : ' · No active profile'}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 text-[10px] text-emerald-500" title="Active safety controls">
+          <ShieldCheck size={12} />
+          <span className="hidden sm:inline">Input scan · output redaction · consent · prompt versioning</span>
+        </div>
+      </header>
+
+      <div className="flex-1 p-4 max-w-3xl mx-auto w-full space-y-4">
+        {/* Consent banner — only shown until the user acknowledges. */}
+        {!localSettings.consentGiven && (
+          <div className="p-3 rounded-lg border bg-amber-500/10 border-amber-500/30 flex gap-3">
+            <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-[var(--color-text-secondary)] space-y-1">
+              <p>
+                API keys are stored locally in this browser with AES-GCM encryption and forwarded server-side through the
+                Vercel edge proxy, never logged. Topology data (group names, FQDNs, CIDRs, policy attributes) is sent to
+                whichever provider you configure when AI features are used — see the{' '}
+                <a href="https://github.com/rtrentinavx/visualizer/blob/main/AI_USE_POLICY.md" target="_blank" rel="noreferrer noopener" className="text-[var(--color-accent-blue)] hover:underline">
+                  AI Use Policy
+                </a>.
               </p>
+              <label className="flex items-center gap-2 mt-1 cursor-pointer">
+                <input type="checkbox" checked={localSettings.consentGiven} onChange={(e) => setConsent(e.target.checked)} className="rounded" />
+                I understand and consent to local key storage and topology data egress.
+              </label>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
-            <X size={16} />
-          </button>
-        </div>
+        )}
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Consent Banner */}
-          {!localSettings.consentGiven && (
-            <div className="p-3 rounded-lg border bg-amber-500/10 border-amber-500/30 flex gap-3">
-              <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  API keys are stored <strong>locally in this browser</strong> using AES-GCM encryption.
-                  They are never logged on our servers, but they do pass through the Vercel edge proxy.
-                  Topology data (group names, FQDNs, CIDRs, policy attributes) is sent to whichever provider you
-                  configure when AI features are used — see the{' '}
-                  <a
-                    href="https://github.com/rtrentinavx/visualizer/blob/main/AI_USE_POLICY.md"
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    className="text-[var(--color-accent-blue)] hover:underline"
-                  >
-                    AI Use Policy
-                  </a>.
-                </p>
-                <label className="flex items-center gap-2 mt-2 text-xs text-[var(--color-text-secondary)] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.consentGiven}
-                    onChange={(e) => setLocalSettings((prev) => ({ ...prev, consentGiven: e.target.checked }))}
-                    className="rounded"
-                  />
-                  I understand and consent to local key storage
-                </label>
-              </div>
+        {/* ============ Edit form OR profile list ============ */}
+        {editingProfile ? (
+          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-primary)]">
+                {localSettings.profiles.find((p) => p.id === editingProfile.id) ? 'Edit profile' : 'New profile'}
+              </h3>
+              <button onClick={cancelEdit} className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]">
+                Discard changes
+              </button>
             </div>
-          )}
 
-          {isEditing ? (
-            /* Edit Profile Form */
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">
-                  {localSettings.profiles.find((p) => p.id === editingProfile.id) ? 'Edit Profile' : 'New Profile'}
-                </h3>
-                <button
-                  onClick={() => setEditingProfile(null)}
-                  className="text-[10px] text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-                >
-                  Cancel
-                </button>
-              </div>
+            {/* --- Section 1: Identity --- */}
+            <section className="space-y-3">
+              <SectionHeader title="1. Identity" hint="A label you'll see in the AI tools, plus which provider this profile uses." />
 
-              {/* Profile Name */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Profile Name</label>
+              <Field label="Profile name">
                 <input
                   type="text"
                   value={editingProfile.name}
                   onChange={(e) => updateEditingField('name', e.target.value)}
-                  placeholder="Work OpenAI"
+                  placeholder="Work · OpenAI"
                   className="w-full px-2 py-1.5 rounded text-xs border outline-none"
-                  style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                  style={inputStyle}
                 />
-              </div>
+              </Field>
 
-              {/* Provider */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Provider</label>
+              <Field label="Provider">
                 <div className="relative">
                   <select
                     value={editingProfile.provider}
                     onChange={(e) => updateEditingField('provider', e.target.value as AIProvider)}
                     className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    style={inputStyle}
                   >
                     {Object.values(providerConfigs).map((c) => (
                       <option key={c.id} value={c.id}>{c.name} — {getResidency(c.id).short}</option>
@@ -242,131 +410,104 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                 {(() => {
                   const r = getResidency(editingProfile.provider);
                   return (
-                    <p className={`mt-1 text-[10px] ${r.local ? 'text-emerald-500' : 'text-amber-400'}`}>
-                      Data residency: {r.long}
-                    </p>
+                    <div className={`mt-1.5 flex items-start gap-1.5 text-[10px] ${r.local ? 'text-emerald-500' : 'text-amber-400'}`}>
+                      <MapPin size={11} className="mt-0.5 shrink-0" />
+                      <span>Data residency: {r.long}</span>
+                    </div>
                   );
                 })()}
-              </div>
+              </Field>
+            </section>
 
-              {/* Model */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Model</label>
-                  <button
-                    type="button"
-                    onClick={handleFetchModels}
-                    disabled={fetchingModels}
-                    className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline disabled:opacity-50 disabled:no-underline"
-                    title="Fetch available models from this provider"
-                  >
-                    <RefreshCw size={10} className={fetchingModels ? 'animate-spin' : ''} />
-                    {fetchingModels ? 'Fetching…' : fetchedModels ? `Refresh (${fetchedModels.length})` : 'Fetch models'}
-                  </button>
-                </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <select
-                      value={editingProfile.model}
-                      onChange={(e) => updateEditingField('model', e.target.value)}
-                      className="w-full px-2 py-1.5 rounded text-xs border outline-none appearance-none"
-                      style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
-                    >
-                      {modelOptions.includes(editingProfile.model) ? null : (
-                        <option value={editingProfile.model}>{editingProfile.model} (current)</option>
-                      )}
-                      {modelOptions.map((m) => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
-                    </select>
-                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
-                  </div>
-                  <input
-                    type="text"
-                    value={editingProfile.model}
-                    onChange={(e) => updateEditingField('model', e.target.value)}
-                    placeholder="Or type a model ID"
-                    className="w-32 px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
-                  />
-                </div>
-                {fetchError && (
-                  <p className="mt-1 text-[10px] text-red-400">{fetchError}</p>
-                )}
-                {fetchedModels && !fetchError && (
-                  <p className="mt-1 text-[10px] text-emerald-500">Showing {fetchedModels.length} live model{fetchedModels.length === 1 ? '' : 's'} from provider.</p>
-                )}
-              </div>
+            {/* --- Section 2: Credentials --- */}
+            <section className="space-y-3 pt-4 border-t border-[var(--color-border-subtle)]">
+              <SectionHeader
+                title="2. Credentials"
+                hint={editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio'
+                  ? 'Local models don\'t need a key. Set the base URL where your runtime listens.'
+                  : 'Your provider key. Encrypted at rest in this browser; forwarded through the proxy, never logged.'}
+              />
 
-              {/* API Key */}
-              <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">API Key</label>
+              <Field label={editingProfile.provider === 'bedrock' ? 'AWS Access Key ID' : 'API key'}>
                 <div className="flex gap-2">
                   <input
                     type={showKey ? 'text' : 'password'}
                     value={editingProfile.apiKey}
                     onChange={(e) => updateEditingField('apiKey', e.target.value)}
-                    placeholder={editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' ? 'Optional for local models' : editingProfile.provider === 'bedrock' ? 'AKIA...' : 'sk-...'}
+                    placeholder={
+                      editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' ? 'Optional for local models'
+                      : editingProfile.provider === 'bedrock' ? 'AKIA…'
+                      : editingProfile.provider === 'anthropic' ? 'sk-ant-…'
+                      : 'sk-…'
+                    }
                     className="flex-1 px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    style={inputStyle}
                   />
-                  <button
-                    onClick={() => setShowKey((v) => !v)}
-                    className="px-2 py-1 rounded text-[10px] border"
-                    style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
-                  >
-                    {showKey ? 'Hide' : 'Show'}
+                  <button type="button" onClick={() => setShowKey((v) => !v)} className="px-2 py-1.5 rounded text-[10px] border flex items-center gap-1" style={{ ...inputStyle, color: 'var(--color-text-muted)' }} aria-label={showKey ? 'Hide key' : 'Show key'}>
+                    {showKey ? <EyeOff size={12} /> : <Eye size={12} />}
                   </button>
                 </div>
-              </div>
+              </Field>
 
-              {/* Secret Access Key (Bedrock) */}
-              {editingProfile.provider === 'bedrock' && (
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">Secret Access Key</label>
+              {needsSecret && (
+                <Field label="AWS Secret Access Key">
                   <div className="flex gap-2">
                     <input
-                      type={showKey ? 'text' : 'password'}
+                      type={showSecret ? 'text' : 'password'}
                       value={editingProfile.apiSecret || ''}
                       onChange={(e) => updateEditingField('apiSecret', e.target.value)}
-                      placeholder='...'
                       className="flex-1 px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                      style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                      style={inputStyle}
                     />
-                    <button
-                      onClick={() => setShowKey((v) => !v)}
-                      className="px-2 py-1 rounded text-[10px] border"
-                      style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
-                    >
-                      {showKey ? 'Hide' : 'Show'}
+                    <button type="button" onClick={() => setShowSecret((v) => !v)} className="px-2 py-1.5 rounded text-[10px] border flex items-center gap-1" style={{ ...inputStyle, color: 'var(--color-text-muted)' }} aria-label={showSecret ? 'Hide secret' : 'Show secret'}>
+                      {showSecret ? <EyeOff size={12} /> : <Eye size={12} />}
                     </button>
                   </div>
-                </div>
+                </Field>
               )}
 
-              {/* Base URL / Region */}
-              {(editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' || editingProfile.provider === 'bedrock' || editingProfile.provider === 'custom') && (
-                <div>
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">
-                    {editingProfile.provider === 'bedrock' ? 'AWS Region' : 'Base URL'}
-                  </label>
+              {needsBaseUrl && (
+                <Field
+                  label={editingProfile.provider === 'bedrock' ? 'AWS Region' : 'Base URL'}
+                  hint={editingProfile.provider === 'bedrock' ? 'The AWS region where Bedrock runs (data residency follows this).' : undefined}
+                >
                   <input
                     type="text"
                     value={editingProfile.apiBaseUrl || providerConfig?.defaultBaseUrl || ''}
                     onChange={(e) => updateEditingField('apiBaseUrl', e.target.value)}
-                    placeholder={editingProfile.provider === 'bedrock' ? 'us-east-1' : editingProfile.provider === 'lmstudio' ? 'http://localhost:1234' : 'http://localhost:11434'}
+                    placeholder={
+                      editingProfile.provider === 'bedrock' ? 'us-east-1'
+                      : editingProfile.provider === 'lmstudio' ? 'http://localhost:1234'
+                      : editingProfile.provider === 'ollama' ? 'http://localhost:11434'
+                      : 'https://api.example.com'
+                    }
                     className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                    style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
+                    style={inputStyle}
                   />
-                </div>
+                </Field>
               )}
+            </section>
 
-              {/* Temperature */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Temperature</label>
-                  <span className="text-[10px] font-mono text-[var(--color-text-muted)]">{editingProfile.temperature.toFixed(1)}</span>
-                </div>
+            {/* --- Section 3: Model & behavior --- */}
+            <section className="space-y-3 pt-4 border-t border-[var(--color-border-subtle)]">
+              <SectionHeader title="3. Model & behavior" hint="Pick a model — type to search, or click Fetch live models to query the provider." />
+
+              <Field label="Model">
+                <ModelCombobox
+                  value={editingProfile.model}
+                  onChange={(v) => updateEditingField('model', v)}
+                  options={modelOptions}
+                  onFetch={handleFetchModels}
+                  fetching={fetchingModels}
+                  fetchedCount={fetchedModels ? fetchedModels.length : null}
+                  fetchError={fetchError}
+                />
+              </Field>
+
+              <Field
+                label={`Temperature · ${editingProfile.temperature.toFixed(1)}`}
+                hint="0.0 = deterministic (recommended for policy work). 1.0 = creative."
+              >
                 <input
                   type="range"
                   min="0"
@@ -376,126 +517,105 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                   onChange={(e) => updateEditingField('temperature', Number(e.target.value))}
                   className="w-full"
                 />
-                <div className="flex justify-between text-[9px] text-[var(--color-text-muted)] mt-1">
-                  <span>Deterministic (0.0)</span>
-                  <span>Recommended: 0.2</span>
-                  <span>Creative (1.0)</span>
-                </div>
-              </div>
+              </Field>
+            </section>
 
-              {/* Save */}
+            {/* --- Footer actions --- */}
+            <div className="pt-4 border-t border-[var(--color-border-subtle)] flex items-center justify-end gap-2">
+              <button onClick={cancelEdit} className="px-3 py-1.5 rounded-md text-xs font-medium border" style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}>
+                Cancel
+              </button>
               <button
-                onClick={saveEditingProfile}
+                onClick={saveProfile}
                 disabled={!canSaveEditing}
-                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium text-white transition-colors disabled:opacity-40"
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-xs font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ backgroundColor: 'var(--color-aviatrix)' }}
+                title={canSaveEditing ? undefined : 'Fill in the name and required credentials first.'}
               >
                 <Check size={13} />
-                Save Profile
+                Save profile
               </button>
             </div>
-          ) : (
-            /* Profile List */
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Profiles</h3>
-                <button
-                  onClick={startNewProfile}
-                  className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline"
-                >
-                  <Plus size={12} /> New Profile
+          </div>
+        ) : (
+          // ============ Profile list ============
+          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Profiles</h3>
+              <button onClick={startNewProfile} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white" style={{ backgroundColor: 'var(--color-aviatrix)' }}>
+                <Plus size={11} /> New profile
+              </button>
+            </div>
+
+            {localSettings.profiles.length === 0 ? (
+              <div className="text-center py-10 px-4">
+                <Bot size={28} className="mx-auto text-[var(--color-text-muted)] mb-2" />
+                <p className="text-sm font-medium text-[var(--color-text-secondary)]">No AI profiles yet</p>
+                <p className="text-xs text-[var(--color-text-muted)] mt-1 mb-4 max-w-md mx-auto">
+                  Add a profile to unlock AI Chat, Reachability, Auto-docs, Policy Search, and AI-suggested reorder.
+                </p>
+                <button onClick={startNewProfile} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white" style={{ backgroundColor: 'var(--color-aviatrix)' }}>
+                  <Plus size={12} /> Create your first profile
                 </button>
               </div>
-
-              {localSettings.profiles.length === 0 ? (
-                <div className="text-center py-6 text-xs text-[var(--color-text-muted)]">
-                  No profiles yet. Create one to enable AI features.
-                </div>
-              ) : (
-                localSettings.profiles.map((profile) => {
+            ) : (
+              <div className="space-y-2">
+                {localSettings.profiles.map((profile) => {
                   const isActive = localSettings.activeProfileId === profile.id;
                   const isConfirming = confirmDelete === profile.id;
-
+                  const r = getResidency(profile.provider);
                   return (
                     <div
                       key={profile.id}
                       className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                        isActive ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/5' : 'border-[var(--color-border-subtle)]'
+                        isActive ? 'border-[var(--color-accent-blue)] bg-[var(--color-accent-blue)]/5' : 'border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)]'
                       }`}
                     >
                       <button
                         onClick={() => activateProfile(profile.id)}
                         className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                          isActive ? 'border-[var(--color-accent-blue)]' : 'border-[var(--color-border-subtle)]'
+                          isActive ? 'border-[var(--color-accent-blue)]' : 'border-[var(--color-border-subtle)] hover:border-[var(--color-text-muted)]'
                         }`}
+                        title={isActive ? 'Active profile' : 'Activate this profile'}
                       >
                         {isActive && <div className="w-2 h-2 rounded-full bg-[var(--color-accent-blue)]" />}
                       </button>
 
-                      <div className="flex-1 min-w-0" onClick={() => startEditProfile(profile)}>
+                      <button onClick={() => startEditProfile(profile)} className="flex-1 min-w-0 text-left">
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{profile.name}</span>
                           {isActive && <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--color-accent-blue)]/10 text-[var(--color-accent-blue)]">Active</span>}
                         </div>
-                        <div className="text-[10px] text-[var(--color-text-muted)]">
+                        <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
                           {providerConfigs[profile.provider]?.name} · {profile.model} · T={profile.temperature}
                         </div>
                         <div className="text-[9px] text-[var(--color-text-muted)] mt-0.5 flex items-center gap-1">
-                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${getResidency(profile.provider).local ? 'bg-emerald-500' : 'bg-amber-400'}`} />
-                          Residency: {getResidency(profile.provider).short}
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${r.local ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                          Residency: {r.short}
                         </div>
-                      </div>
+                      </button>
 
                       {isConfirming ? (
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => deleteProfile(profile.id)}
-                            className="px-2 py-1 rounded text-[10px] bg-red-500/10 text-red-400 border border-red-500/30"
-                          >
+                          <button onClick={() => deleteProfile(profile.id)} className="px-2 py-1 rounded text-[10px] bg-red-500/10 text-red-400 border border-red-500/30">
                             Confirm
                           </button>
-                          <button
-                            onClick={() => setConfirmDelete(null)}
-                            className="px-2 py-1 rounded text-[10px] text-[var(--color-text-muted)]"
-                          >
-                            Cancel
+                          <button onClick={() => setConfirmDelete(null)} className="px-2 py-1 rounded text-[10px] text-[var(--color-text-muted)]">
+                            <X size={11} />
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setConfirmDelete(profile.id)}
-                          className="p-1 rounded hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-400 transition-colors"
-                        >
+                        <button onClick={() => setConfirmDelete(profile.id)} className="p-1 rounded hover:bg-red-500/10 text-[var(--color-text-muted)] hover:text-red-400" aria-label="Delete profile">
                           <Trash2 size={12} />
                         </button>
                       )}
                     </div>
                   );
-                })
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-3 border-t border-[var(--color-border-subtle)] flex items-center justify-between">
-          <div className="flex flex-col gap-1">
-            <p className="text-[10px] text-[var(--color-text-muted)]">
-              Keys stored encrypted locally. Pass through edge proxy.
-            </p>
-            <div className="flex items-center gap-1 text-[10px] text-emerald-500">
-              <ShieldCheck size={10} />
-              <span>Input scanning · XML delimiters · Output validation · Prompt versioning</span>
-            </div>
+                })}
+              </div>
+            )}
           </div>
-          <button
-            onClick={() => onSave(localSettings)}
-            className="px-4 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
-            style={{ backgroundColor: 'var(--color-aviatrix)' }}
-          >
-            Save Settings
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );

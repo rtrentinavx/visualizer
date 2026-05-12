@@ -8,7 +8,7 @@ import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
 import { getAllAchievements } from '../lib/achievements';
 
-export type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator';
+export type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator' | 'aiSettings';
 
 export interface AppHeaderActions {
   openEvaluator: () => void;
@@ -22,7 +22,6 @@ export interface AppHeaderActions {
   openReorderPolicies: () => void;
   openRecommendations: () => void;
   openTerraform: () => void;
-  openAISettings: () => void;
   openAIChat: () => void;
   openAutoDocs: () => void;
   openReachability: () => void;
@@ -214,6 +213,15 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
             <FlaskConical size={14} />
             <span className="hidden sm:inline">Simulator</span>
           </button>
+          <button
+            onClick={() => onViewChange('aiSettings')}
+            className={tabClass(viewMode === 'aiSettings')}
+            aria-current={viewMode === 'aiSettings' ? 'page' : undefined}
+            data-tour="ai-settings-btn"
+          >
+            <Bot size={14} />
+            <span className="hidden sm:inline">AI</span>
+          </button>
         </div>
 
         {score.totalPolicies > 0 && (
@@ -260,20 +268,19 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         <GroupDivider />
 
-        {/* Group 4 — AI tools */}
-        <ToolbarGroup>
-          <IconButton icon={Bot} label="AI settings" onClick={actions.openAISettings} dataTour="ai-settings-btn" />
-          {aiProfileActive && (
-            <>
+        {/* Group 4 — AI tools (the gear lives in the top tab strip; these are the active-profile actions) */}
+        {aiProfileActive && (
+          <>
+            <ToolbarGroup>
               <IconButton icon={Sparkles} label="Ask AI (free-form chat)" onClick={actions.openAIChat} accent="purple" />
               <IconButton icon={Route} label="AI reachability — natural-language What-If" onClick={actions.openReachability} accent="purple" />
               <IconButton icon={FlaskConical} label="AI policy search" onClick={actions.openPolicySearch} accent="blue" />
               <IconButton icon={FileText} label="Auto-generate Markdown documentation" onClick={actions.openAutoDocs} accent="blue" />
-            </>
-          )}
-        </ToolbarGroup>
+            </ToolbarGroup>
 
-        <GroupDivider />
+            <GroupDivider />
+          </>
+        )}
 
         {/* Group 5 — Settings / Help */}
         <ToolbarGroup>
