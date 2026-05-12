@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { X, ShieldAlert, Check } from 'lucide-react';
+import { X, ShieldAlert, Check, MapPin } from 'lucide-react';
 import type { AIProfile } from '../../lib/ai/types';
 import { grantAIDataConsent } from '../../lib/aiDataConsent';
+import { getResidency } from '../../lib/ai/residency';
 
 interface AIDataConsentModalProps {
   /** The profile the user is about to use, so we can name the provider. */
@@ -23,7 +24,8 @@ const PROVIDER_LABEL: Record<string, string> = {
 export default function AIDataConsentModal({ profile, onCancel, onConfirm }: AIDataConsentModalProps) {
   const [acked, setAcked] = useState(false);
   const providerLabel = profile ? (PROVIDER_LABEL[profile.provider] ?? profile.provider) : 'the configured AI provider';
-  const isLocal = profile?.provider === 'ollama' || profile?.provider === 'lmstudio';
+  const residency = profile ? getResidency(profile.provider) : null;
+  const isLocal = residency?.local ?? false;
 
   const handleConfirm = () => {
     if (!acked) return;
@@ -51,6 +53,16 @@ export default function AIDataConsentModal({ profile, onCancel, onConfirm }: AID
           <p>
             AI features send your topology to <strong>{providerLabel}</strong>{isLocal ? ' running on your machine' : ''}.
           </p>
+          {residency && (
+            <div className="flex items-start gap-2 px-2.5 py-2 rounded border" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-surface)' }}>
+              <MapPin size={12} className={residency.local ? 'text-emerald-500 mt-0.5' : 'text-amber-400 mt-0.5'} />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Data residency</div>
+                <div className="text-[11px] text-[var(--color-text-primary)] mt-0.5">{residency.short}</div>
+                <div className="text-[10px] text-[var(--color-text-muted)] mt-0.5">{residency.long}</div>
+              </div>
+            </div>
+          )}
           <div>
             <p className="font-medium text-[var(--color-text-primary)] mb-1">What gets sent:</p>
             <ul className="list-disc list-inside space-y-0.5 pl-1">
@@ -86,6 +98,18 @@ export default function AIDataConsentModal({ profile, onCancel, onConfirm }: AID
             />
             <span>I understand the data above will be sent to {providerLabel} and I want to proceed.</span>
           </label>
+
+          <p className="text-[10px] text-[var(--color-text-muted)]">
+            For the full policy — data classes, safety controls, provider residency, audit hooks — see the{' '}
+            <a
+              href="https://github.com/rtrentinavx/visualizer/blob/main/AI_USE_POLICY.md"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-[var(--color-accent-blue)] hover:underline"
+            >
+              AI Use Policy
+            </a>.
+          </p>
         </div>
 
         <div className="p-3 border-t border-[var(--color-border-subtle)] flex items-center justify-end gap-2">

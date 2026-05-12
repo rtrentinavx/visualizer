@@ -232,9 +232,9 @@ The crypto and storage code has comments admitting limits. Closing the cheap gap
 **P2 — mature it**
 
 9. **LLM-as-judge** for AI-Fix's auto-apply flow. Cheap secondary call verifies suggestion is safe before "Apply" is enabled.
-10. **Content moderation API call** (OpenAI Moderation / Anthropic safety) on input. Catches harmful and off-topic input the regex misses.
-11. **Per-provider data-residency badges** in AI Settings — show where each provider processes data.
-12. **AI use policy document** in repo + link from the consent banner. Required for any formal customer-facing audit.
+10. ✅ **Content moderation API call** — new `api/ai/moderate.ts` endpoint hits OpenAI's free `/v1/moderations` with the user's key. `moderateInput(profile, text)` in `client.ts` runs before every `streamChat` / `chatCompletion` call when the active provider is OpenAI; flagged content throws with the category list. No-op for other providers (no equivalent free endpoint). Fails open on transient errors — the remaining safety layers still run.
+11. ✅ **Per-provider data-residency badges** — new `src/lib/ai/residency.ts` maps each provider to a `{short, long, local}` record. Surfaced in three places: the consent modal (full residency block with map-pin icon), the AI Settings provider selector (`Name — Residency` in each `<option>` + a colored note under the dropdown), and the profile-list rows (small colored dot + short label).
+12. ✅ **AI use policy document** — `AI_USE_POLICY.md` at repo root covers scope, data classes sent, data classes NOT sent, supported providers + residency, consent flow, safety controls (input pipeline, output pipeline, transport, architectural), limitations, user responsibilities, opt-out, and audit hooks. Linked from both the consent modal footer and the AI Settings consent banner.
 
 ### OWASP LLM Top 10 mapping (current state)
 

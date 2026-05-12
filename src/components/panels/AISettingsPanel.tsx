@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Check, AlertTriangle, Bot, ChevronDown, ShieldCheck, R
 import type { AIProfile, AISettings, AIProvider } from '../../lib/ai/types';
 import { providerConfigs, getProviderConfig } from '../../lib/ai/providers';
 import { fetchModels, type ModelInfo } from '../../lib/ai/client';
+import { getResidency } from '../../lib/ai/residency';
 
 interface AISettingsPanelProps {
   settings: AISettings;
@@ -170,6 +171,16 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                 <p className="text-xs text-[var(--color-text-secondary)]">
                   API keys are stored <strong>locally in this browser</strong> using AES-GCM encryption.
                   They are never logged on our servers, but they do pass through the Vercel edge proxy.
+                  Topology data (group names, FQDNs, CIDRs, policy attributes) is sent to whichever provider you
+                  configure when AI features are used — see the{' '}
+                  <a
+                    href="https://github.com/rtrentinavx/visualizer/blob/main/AI_USE_POLICY.md"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-[var(--color-accent-blue)] hover:underline"
+                  >
+                    AI Use Policy
+                  </a>.
                 </p>
                 <label className="flex items-center gap-2 mt-2 text-xs text-[var(--color-text-secondary)] cursor-pointer">
                   <input
@@ -223,11 +234,19 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                     style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' }}
                   >
                     {Object.values(providerConfigs).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                      <option key={c.id} value={c.id}>{c.name} — {getResidency(c.id).short}</option>
                     ))}
                   </select>
                   <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
                 </div>
+                {(() => {
+                  const r = getResidency(editingProfile.provider);
+                  return (
+                    <p className={`mt-1 text-[10px] ${r.local ? 'text-emerald-500' : 'text-amber-400'}`}>
+                      Data residency: {r.long}
+                    </p>
+                  );
+                })()}
               </div>
 
               {/* Model */}
@@ -420,6 +439,10 @@ export default function AISettingsPanel({ settings, onSave, onClose }: AISetting
                         </div>
                         <div className="text-[10px] text-[var(--color-text-muted)]">
                           {providerConfigs[profile.provider]?.name} · {profile.model} · T={profile.temperature}
+                        </div>
+                        <div className="text-[9px] text-[var(--color-text-muted)] mt-0.5 flex items-center gap-1">
+                          <span className={`inline-block w-1.5 h-1.5 rounded-full ${getResidency(profile.provider).local ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                          Residency: {getResidency(profile.provider).short}
                         </div>
                       </div>
 

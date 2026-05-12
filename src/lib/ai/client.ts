@@ -54,6 +54,40 @@ export interface ModelInfo {
   name?: string;
 }
 
+export interface ModerationResult {
+  flagged: boolean;
+  categories: string[];
+}
+
+/**
+ * Run OpenAI's free moderation endpoint against the user-typed input. Returns
+ * { flagged: false, categories: [] } for non-OpenAI providers (the endpoint is
+ * OpenAI-specific; routing other providers' text through it would require the
+ * user to also have an OpenAI key, which we don't assume). Failures during the
+ * moderation call itself fail open — we don't block on transient errors.
+ */
+export async function moderateInput(profile: AIProfile, input: string): Promise<ModerationResult> {
+  if (profile.provider !== 'openai' || !profile.apiKey) {
+    return { flagged: false, categories: [] };
+  }
+  try {
+    const r = await fetch('/api/ai/moderate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: profile.apiKey, input }),
+    });
+    if (!r.ok) {
+      // Fail open on transient infra errors; the AI call will proceed with the
+      // remaining safety layers (scanInput, output filter, redaction).
+      return { flagged: false, categories: [] };
+    }
+    const data = await r.json() as ModerationResult;
+    return data;
+  } catch {
+    return { flagged: false, categories: [] };
+  }
+}
+
 /**
  * Fetch the list of available models for a given AI profile. Local providers
  * (Ollama, LMStudio) are called directly from the browser because the serverless
@@ -126,6 +160,11 @@ export async function* streamChat(
     if (scan.status === 'blocked') {
       throw new Error(`Safety check failed: ${scan.reason}`);
     }
+    // Content moderation (OpenAI free endpoint). No-op for other providers.
+    const mod = await moderateInput(profile, lastUserMsg.content);
+    if (mod.flagged) {
+      throw new Error(`Input blocked by content moderation: ${mod.categories.join(', ') || 'flagged'}`);
+    }
   }
 
   const response = await fetch('/api/ai/proxy', {
@@ -195,6 +234,10 @@ export async function chatCompletion(
     const scan = scanInput(lastUserMsg.content);
     if (scan.status === 'blocked') {
       throw new Error(`Safety check failed: ${scan.reason}`);
+    }
+    const mod = await moderateInput(profile, lastUserMsg.content);
+    if (mod.flagged) {
+      throw new Error(`Input blocked by content moderation: ${mod.categories.join(', ') || 'flagged'}`);
     }
   }
 
