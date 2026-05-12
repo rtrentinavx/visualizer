@@ -74,6 +74,32 @@ export const PolicySearchFilterSchema = z.object({
 
 export type PolicySearchFilter = z.infer<typeof PolicySearchFilterSchema>;
 
+/**
+ * LLM-as-judge verdict on an AI-generated policy suggestion. A second AI call
+ * with this schema runs against every AI suggestion before the user can apply
+ * it. Fails closed: an unparseable verdict is treated as `safe: false`.
+ */
+export const JudgeVerdictSchema = z.object({
+  safe: z.boolean().describe('false = block the user from applying this policy'),
+  reason: z.string().min(1).describe('One-line summary of why the policy is safe or unsafe'),
+  concerns: z.array(z.string()).optional().describe('Specific issues found (e.g. "references non-existent group X")'),
+});
+
+export type JudgeVerdict = z.infer<typeof JudgeVerdictSchema>;
+
+/**
+ * AI suggestion for the priority order of every policy in the topology.
+ * The engine takes `orderedIds`, validates that the set matches the topology,
+ * and renumbers via the existing 10-step ladder in `reorderPolicies`.
+ */
+export const PolicyOrderSuggestionSchema = z.object({
+  orderedIds: z.array(z.string().min(1)).min(1).describe('Every policy id from the topology, sorted from highest-precedence (first-match) to lowest.'),
+  rationale: z.array(z.string()).optional().describe('Short bullet points explaining the rearrangement.'),
+  assumptions: z.array(z.string()).optional().describe('Anything the model inferred rather than read directly from the topology.'),
+});
+
+export type PolicyOrderSuggestion = z.infer<typeof PolicyOrderSuggestionSchema>;
+
 export type PolicySuggestion = z.infer<typeof PolicySuggestionSchema>;
 export type PolicySuggestionArray = z.infer<typeof PolicySuggestionArraySchema>;
 export type PolicyExplanation = z.infer<typeof PolicyExplanationSchema>;

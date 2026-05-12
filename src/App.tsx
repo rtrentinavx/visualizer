@@ -448,6 +448,7 @@ export default function App() {
         <Suspense fallback={null}>
           <PolicyReorderModal
             topology={topology}
+            aiProfile={hasAIDataConsent() ? activeAIProfile : null}
             onApply={(newTopology) => dispatch({ type: 'replace', topology: newTopology })}
             onClose={modals.close}
           />

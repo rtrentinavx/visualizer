@@ -15,6 +15,8 @@ export const PROMPT_VERSIONS = {
   autoDocs: '1.0.0',
   reachability: '1.0.0',
   policySearch: '1.0.0',
+  judge: '1.0.0',
+  reorder: '1.0.0',
 } as const;
 
 // =============================================================================

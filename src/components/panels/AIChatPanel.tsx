@@ -5,6 +5,7 @@ import { streamChat, postProcessAIOutput } from '../../lib/ai/client';
 import { SYSTEM_PROMPT_POLICY_GENERATION, buildPolicyGenerationPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
 import { sanitizeInput, delimitUserInput, scanInput, validatePolicySuggestion } from '../../lib/ai/safety';
 import { PolicySuggestionArraySchema, safeParseAIOutput } from '../../lib/ai/schemas';
+import { judgePolicySuggestion } from '../../lib/policyJudge';
 import type { DcfPolicyModel } from '../../types/dcf';
 
 interface AIChatPanelProps {
@@ -14,6 +15,8 @@ interface AIChatPanelProps {
   onApplyPolicy: (policyData: Record<string, unknown>) => void;
 }
 
+type JudgeStatus = 'pending' | 'safe' | 'unsafe';
+
 interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
@@ -21,6 +24,10 @@ interface ChatMessage {
   error?: boolean;
   safetyWarning?: string;
   feedback?: 'up' | 'down' | null;
+  /** LLM-as-judge verdict on a parsed policy suggestion. */
+  judgeStatus?: JudgeStatus;
+  judgeReason?: string;
+  judgeConcerns?: string[];
 }
 
 export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy }: AIChatPanelProps) {
@@ -100,9 +107,26 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
       setMessages((prev) => {
         const next = [...prev];
         const last = next[next.length - 1];
-        if (last) next[next.length - 1] = { ...last, parsed };
+        if (last) next[next.length - 1] = { ...last, parsed, judgeStatus: parsed ? 'pending' : undefined };
         return next;
       });
+
+      // LLM-as-judge: defense-in-depth review of the AI's policy suggestion
+      // before the user can apply it. Fails closed (unsafe) on any error.
+      if (parsed) {
+        const suggestion = parsed;
+        judgePolicySuggestion(profile, suggestion, topology).then((verdict) => {
+          setMessages((prev) => prev.map((m) => {
+            if (m.parsed !== suggestion) return m;
+            return {
+              ...m,
+              judgeStatus: verdict.safe ? 'safe' : 'unsafe',
+              judgeReason: verdict.reason,
+              judgeConcerns: verdict.concerns,
+            };
+          }));
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${msg}`, error: true }]);
@@ -121,6 +145,7 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
 
   const handleApply = (msg: ChatMessage) => {
     if (!msg.parsed) return;
+    // Layer 1: deterministic validator (validatePolicySuggestion).
     const safety = validatePolicySuggestion(msg.parsed);
     if (!safety.safe) {
       setMessages((prev) => {
@@ -133,6 +158,9 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
       });
       return;
     }
+    // Layer 2: LLM-as-judge. Pending/unsafe both block — the button is
+    // disabled in the UI, but we double-check here defensively.
+    if (msg.judgeStatus !== 'safe') return;
     onApplyPolicy(msg.parsed);
   };
 
@@ -259,16 +287,49 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
                       <div className="flex justify-between"><span className="text-[var(--color-text-muted)]">Source</span><span>{String(msg.parsed.srcGroupName || '—')}</span></div>
                       <div className="flex justify-between"><span className="text-[var(--color-text-muted)]">Destination</span><span>{String(msg.parsed.dstGroupName || '—')}</span></div>
                     </div>
+                    {/* LLM-as-judge verdict — gates Apply */}
+                    {msg.judgeStatus === 'pending' && (
+                      <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[var(--color-text-muted)]">
+                        <Loader2 size={11} className="animate-spin" />
+                        Reviewer is checking this policy…
+                      </div>
+                    )}
+                    {msg.judgeStatus === 'safe' && (
+                      <div className="mt-3 flex items-start gap-1.5 text-[10px] text-emerald-500">
+                        <ShieldAlert size={11} className="mt-0.5 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Reviewer approved</div>
+                          {msg.judgeReason && <div className="text-[var(--color-text-muted)]">{msg.judgeReason}</div>}
+                        </div>
+                      </div>
+                    )}
+                    {msg.judgeStatus === 'unsafe' && (
+                      <div className="mt-3 flex items-start gap-1.5 text-[10px] text-red-400">
+                        <ShieldAlert size={11} className="mt-0.5 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Reviewer rejected</div>
+                          <div>{msg.judgeReason}</div>
+                          {msg.judgeConcerns && msg.judgeConcerns.length > 0 && (
+                            <ul className="mt-1 list-disc list-inside text-[var(--color-text-muted)]">
+                              {msg.judgeConcerns.map((c, j) => <li key={j}>{c}</li>)}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       onClick={() => handleApply(msg)}
-                      className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
+                      disabled={msg.judgeStatus !== 'safe'}
+                      className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       style={{ backgroundColor: 'var(--color-aviatrix)' }}
+                      title={msg.judgeStatus !== 'safe' ? 'Reviewer must approve before applying' : 'Apply this policy'}
                     >
                       <Check size={12} />
-                      Apply Policy
+                      {msg.judgeStatus === 'pending' ? 'Reviewing…' : msg.judgeStatus === 'unsafe' ? 'Blocked by reviewer' : 'Apply Policy'}
                     </button>
                     <p className="text-[9px] text-[var(--color-text-muted)] mt-2 text-center">
-                      AI-generated suggestion · Review before applying · Values marked [INFERRED] are not from your topology
+                      AI-generated suggestion · Two-layer review (deterministic + LLM-as-judge) · Values marked [INFERRED] are not from your topology
                     </p>
                   </div>
                 )}

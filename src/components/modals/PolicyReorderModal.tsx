@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { X, GripVertical, Check, ListOrdered, ShieldCheck, ShieldX, RotateCcw } from 'lucide-react';
+import { X, GripVertical, Check, ListOrdered, ShieldCheck, ShieldX, RotateCcw, Sparkles, Loader2, AlertTriangle } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -18,10 +18,14 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { DcfPolicy, DcfPolicyModel } from '../../types/dcf';
+import type { AIProfile } from '../../lib/ai/types';
 import { reorderPolicies } from '../../lib/reorderPolicies';
+import { suggestPolicyOrder } from '../../lib/aiPolicyOrder';
 
 interface PolicyReorderModalProps {
   topology: DcfPolicyModel;
+  /** When provided, an "Suggest with AI" button surfaces in the modal footer. */
+  aiProfile?: AIProfile | null;
   onApply: (newTopology: DcfPolicyModel) => void;
   onClose: () => void;
 }
@@ -94,13 +98,39 @@ function SortableRow({
   );
 }
 
-export default function PolicyReorderModal({ topology, onApply, onClose }: PolicyReorderModalProps) {
+export default function PolicyReorderModal({ topology, aiProfile, onApply, onClose }: PolicyReorderModalProps) {
   const initialOrder = useMemo(
     () => [...topology.policies].sort((a, b) => a.priority - b.priority).map((p) => p.id),
     [topology.policies],
   );
   const [order, setOrder] = useState<string[]>(initialOrder);
   const [applied, setApplied] = useState(false);
+  const [aiRunning, setAiRunning] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiRationale, setAiRationale] = useState<string[] | null>(null);
+  const [aiAssumptions, setAiAssumptions] = useState<string[] | null>(null);
+
+  const handleAISuggest = async () => {
+    if (!aiProfile) return;
+    setAiRunning(true);
+    setAiError(null);
+    setAiRationale(null);
+    setAiAssumptions(null);
+    try {
+      const result = await suggestPolicyOrder(aiProfile, topology);
+      if (!result.ok || !result.orderedIds) {
+        setAiError(result.error ?? 'AI returned no order.');
+        return;
+      }
+      setOrder(result.orderedIds);
+      setAiRationale(result.rationale ?? []);
+      setAiAssumptions(result.assumptions ?? []);
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : 'AI call failed.');
+    } finally {
+      setAiRunning(false);
+    }
+  };
 
   const policyById = useMemo(() => {
     const m = new Map<string, DcfPolicy>();
@@ -124,7 +154,12 @@ export default function PolicyReorderModal({ topology, onApply, onClose }: Polic
     });
   };
 
-  const reset = () => setOrder(initialOrder);
+  const reset = () => {
+    setOrder(initialOrder);
+    setAiRationale(null);
+    setAiAssumptions(null);
+    setAiError(null);
+  };
 
   const isDirty = order.some((id, i) => id !== initialOrder[i]);
 
@@ -158,6 +193,50 @@ export default function PolicyReorderModal({ topology, onApply, onClose }: Polic
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
+          {aiProfile && order.length > 0 && (
+            <div className="mb-3 flex items-center justify-between flex-wrap gap-2">
+              <button
+                onClick={handleAISuggest}
+                disabled={aiRunning}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors disabled:opacity-40"
+                style={{ backgroundColor: 'var(--color-accent-purple)15', borderColor: 'var(--color-accent-purple)40', color: 'var(--color-accent-purple)' }}
+                title="Ask the AI to reorder these policies for best-practice security and performance"
+              >
+                {aiRunning ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                {aiRunning ? 'Reviewing…' : 'Suggest order with AI'}
+              </button>
+              <span className="text-[10px] text-[var(--color-text-muted)]">
+                AI sees policies + topology, returns a recommended order. You can still drag-edit before applying.
+              </span>
+            </div>
+          )}
+
+          {aiError && (
+            <div className="mb-3 flex items-start gap-2 p-2.5 rounded-lg border bg-red-500/10 border-red-500/30">
+              <AlertTriangle size={14} className="text-red-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-red-400">{aiError}</p>
+            </div>
+          )}
+
+          {aiRationale && aiRationale.length > 0 && (
+            <div className="mb-3 p-3 rounded-lg border bg-[var(--color-accent-purple)]/5" style={{ borderColor: 'var(--color-accent-purple)40' }}>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-[var(--color-accent-purple)] mb-1.5">
+                <Sparkles size={11} /> Why the AI reordered
+              </div>
+              <ul className="space-y-0.5 text-[11px] text-[var(--color-text-secondary)] pl-1">
+                {aiRationale.map((r, i) => <li key={i}>· {r}</li>)}
+              </ul>
+              {aiAssumptions && aiAssumptions.length > 0 && (
+                <>
+                  <div className="text-[10px] text-[var(--color-text-muted)] mt-2">Assumptions:</div>
+                  <ul className="space-y-0.5 text-[10px] text-[var(--color-text-muted)] pl-1">
+                    {aiAssumptions.map((a, i) => <li key={i}>· {a}</li>)}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+
           {order.length === 0 ? (
             <div className="text-xs text-[var(--color-text-muted)] text-center py-8">
               No policies to reorder.
