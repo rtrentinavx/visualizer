@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ShieldCheck, ShieldX, Lock, Globe, Ban, LayoutGrid, Plus, Search, ArrowRight, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ShieldCheck, ShieldX, Lock, Globe, Ban, LayoutGrid, Plus, Search, ArrowRight, X, ChevronDown } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel, SmartGroup } from '../../types/dcf';
 
 interface PolicyMatrixProps {
@@ -15,6 +15,143 @@ function matchesFilter(g: SmartGroup, q: string): boolean {
   const lower = q.toLowerCase();
   if (g.name.toLowerCase().includes(lower)) return true;
   return g.criteria.some((c) => c.key?.toLowerCase().includes(lower) || c.value?.toLowerCase().includes(lower));
+}
+
+function FilterCombobox({
+  label,
+  value,
+  onChange,
+  groups,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  groups: SmartGroup[];
+  placeholder: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Filtered list. Empty input → show everything. Otherwise → name + criteria match.
+  const filtered = useMemo(() => groups.filter((g) => matchesFilter(g, value)), [groups, value]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!isOpen) return;
+    function onClickOut(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOut);
+    return () => document.removeEventListener('mousedown', onClickOut);
+  }, [isOpen]);
+
+  const selectGroup = (g: SmartGroup) => {
+    onChange(g.name);
+    setIsOpen(false);
+    inputRef.current?.blur();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setIsOpen(true);
+      setHighlight((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter') {
+      if (isOpen && filtered[highlight]) {
+        e.preventDefault();
+        selectGroup(filtered[highlight]!);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="flex items-center gap-1.5 rounded-md border px-2 py-1" style={{ backgroundColor: 'var(--color-input-bg)', borderColor: value ? 'var(--color-accent-blue)' : 'var(--color-input-border)' }}>
+        <Search size={12} className="text-[var(--color-text-muted)] shrink-0" />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] shrink-0">{label}</span>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => { onChange(e.target.value); setIsOpen(true); setHighlight(0); }}
+          onFocus={() => { setIsOpen(true); setHighlight(0); }}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="w-32 text-xs bg-transparent outline-none"
+          style={{ color: 'var(--color-text-primary)' }}
+          aria-autocomplete="list"
+          aria-expanded={isOpen}
+          role="combobox"
+        />
+        <button
+          type="button"
+          onClick={() => { setIsOpen((v) => !v); setHighlight(0); inputRef.current?.focus(); }}
+          className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+          title="Show all groups"
+        >
+          <ChevronDown size={10} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {value && (
+          <button
+            type="button"
+            onClick={() => { onChange(''); inputRef.current?.focus(); }}
+            className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+            title={`Clear ${label.toLowerCase()} filter`}
+          >
+            <X size={10} />
+          </button>
+        )}
+      </div>
+
+      {isOpen && (
+        <div
+          className="absolute top-full mt-1 left-0 z-30 w-64 max-h-60 overflow-y-auto rounded-md border shadow-lg"
+          style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          role="listbox"
+        >
+          {filtered.length === 0 ? (
+            <div className="px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] italic">
+              No groups match "{value}"
+            </div>
+          ) : (
+            filtered.map((g, i) => (
+              <button
+                key={g.id}
+                type="button"
+                onMouseEnter={() => setHighlight(i)}
+                onClick={() => selectGroup(g)}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
+                  i === highlight ? 'bg-[var(--color-surface-elevated)]' : ''
+                }`}
+                role="option"
+                aria-selected={i === highlight}
+              >
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[var(--color-text-primary)] truncate">{g.name}</div>
+                  {g.criteria.length > 0 && (
+                    <div className="text-[9px] text-[var(--color-text-muted)] truncate">
+                      {g.criteria.map((c) => c.type === 'vm' ? `${c.key}=${c.value}` : `subnet ${c.cidr}`).join(g.matchType === 'all' ? ' AND ' : ' OR ')}
+                    </div>
+                  )}
+                </div>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
@@ -62,49 +199,9 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="flex items-center gap-1.5 rounded-md border px-2 py-1" style={{ backgroundColor: 'var(--color-input-bg)', borderColor: sourceFilter ? 'var(--color-accent-blue)' : 'var(--color-input-border)' }}>
-            <Search size={12} className="text-[var(--color-text-muted)] shrink-0" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] shrink-0">Src</span>
-            <input
-              type="text"
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              placeholder="rows…"
-              className="w-28 text-xs bg-transparent outline-none"
-              style={{ color: 'var(--color-text-primary)' }}
-            />
-            {sourceFilter && (
-              <button
-                onClick={() => setSourceFilter('')}
-                className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
-                title="Clear source filter"
-              >
-                <X size={10} />
-              </button>
-            )}
-          </div>
+          <FilterCombobox label="Src" value={sourceFilter} onChange={setSourceFilter} groups={groups} placeholder="rows…" />
           <ArrowRight size={12} className="text-[var(--color-text-muted)] shrink-0" />
-          <div className="flex items-center gap-1.5 rounded-md border px-2 py-1" style={{ backgroundColor: 'var(--color-input-bg)', borderColor: destFilter ? 'var(--color-accent-blue)' : 'var(--color-input-border)' }}>
-            <Search size={12} className="text-[var(--color-text-muted)] shrink-0" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] shrink-0">Dst</span>
-            <input
-              type="text"
-              value={destFilter}
-              onChange={(e) => setDestFilter(e.target.value)}
-              placeholder="columns…"
-              className="w-28 text-xs bg-transparent outline-none"
-              style={{ color: 'var(--color-text-primary)' }}
-            />
-            {destFilter && (
-              <button
-                onClick={() => setDestFilter('')}
-                className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
-                title="Clear destination filter"
-              >
-                <X size={10} />
-              </button>
-            )}
-          </div>
+          <FilterCombobox label="Dst" value={destFilter} onChange={setDestFilter} groups={groups} placeholder="columns…" />
           <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap pl-2">
             {isFiltered ? (
               <>
