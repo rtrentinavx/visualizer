@@ -8,6 +8,7 @@ import { proxyOllama } from './providers/ollama';
 import { proxyLMStudio } from './providers/lmstudio';
 import { proxyBedrock } from './providers/bedrock';
 import { proxyCustom } from './providers/custom';
+import { isTimeoutError, PROVIDER_FETCH_TIMEOUT_MS } from './_timeout';
 
 const redis = Redis.fromEnv();
 const RATE_LIMIT = 30; // requests per minute per IP
@@ -102,6 +103,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(400).json({ error: `Unknown provider: ${provider}` });
     }
   } catch (err) {
+    // Translate an aborted upstream fetch (fetchWithTimeout fired its watchdog)
+    // into a clean 504 instead of letting it bubble as a 500. The client's
+    // formatProxyError surfaces 504 as "Try a faster model or simpler prompt."
+    if (isTimeoutError(err)) {
+      return res.status(504).json({
+        error: `Provider "${provider}" did not respond within ${Math.round(PROVIDER_FETCH_TIMEOUT_MS / 1000)}s. Try a faster model (e.g. gpt-4o-mini, claude-haiku, gemini-flash) or shorten the prompt.`,
+      });
+    }
     const message = err instanceof Error ? err.message : 'Unknown error';
     return res.status(500).json({ error: message });
   }

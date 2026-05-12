@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyCustom(
   res: VercelResponse,
@@ -14,7 +15,7 @@ export async function proxyCustom(
     return res.status(400).json({ error: 'Custom provider requires apiBaseUrl' });
   }
 
-  const response = await fetch(`${apiBaseUrl}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${apiBaseUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,

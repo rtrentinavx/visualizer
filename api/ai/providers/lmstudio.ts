@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyLMStudio(
   res: VercelResponse,
@@ -18,7 +19,7 @@ export async function proxyLMStudio(
     headers['Authorization'] = `Bearer ${apiKey}`;
   }
 
-  const response = await fetch(`${base}/v1/chat/completions`, {
+  const response = await fetchWithTimeout(`${base}/v1/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ model, messages, temperature, stream }),

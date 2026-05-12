@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyGoogle(
   res: VercelResponse,
@@ -28,7 +29,7 @@ export async function proxyGoogle(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

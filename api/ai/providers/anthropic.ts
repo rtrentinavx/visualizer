@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyAnthropic(
   res: VercelResponse,
@@ -9,7 +10,7 @@ export async function proxyAnthropic(
   temperature: number,
   stream: boolean
 ) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'x-api-key': apiKey,

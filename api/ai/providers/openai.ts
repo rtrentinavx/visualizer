@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyOpenAI(
   res: VercelResponse,
@@ -9,7 +10,7 @@ export async function proxyOpenAI(
   temperature: number,
   stream: boolean
 ) {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const response = await fetchWithTimeout('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${apiKey}`,

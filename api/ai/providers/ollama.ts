@@ -1,5 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
 import type { ChatMessage } from '../types';
+import { fetchWithTimeout } from '../_timeout';
 
 export async function proxyOllama(
   res: VercelResponse,
@@ -10,7 +11,7 @@ export async function proxyOllama(
   stream: boolean
 ) {
   const base = apiBaseUrl || 'http://localhost:11434';
-  const response = await fetch(`${base}/api/chat`, {
+  const response = await fetchWithTimeout(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, messages, stream, options: { temperature } }),
