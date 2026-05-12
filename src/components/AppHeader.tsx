@@ -67,8 +67,8 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
   };
 
   return (
-    <div className="min-h-14 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex items-center justify-between px-4 shrink-0 gap-3">
-      <div className="flex items-center gap-3 min-w-0">
+    <div className="min-h-14 py-2 border-b border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] flex flex-wrap items-center justify-between px-4 shrink-0 gap-x-3 gap-y-2">
+      <div className="flex items-center gap-3 min-w-0 flex-shrink">
         <div className="flex items-center gap-2 shrink-0">
           <img src="/logo-header.png" alt="DCF Visualizer" className="h-14 w-auto rounded-md" />
           <h1 className="text-2xl font-bold text-[var(--color-text-primary)] tracking-wide hidden sm:inline">visualizer</h1>
@@ -107,7 +107,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1.5 flex-wrap">
         <button onClick={actions.addGroup} className={ICON_BTN_BASE} style={ICON_BTN_STYLE} onMouseEnter={hoverIn('var(--color-text-primary)')} onMouseLeave={hoverOut} title="Add Group">
           <Plus size={14} />
         </button>

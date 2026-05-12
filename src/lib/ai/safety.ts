@@ -83,14 +83,31 @@ export function validatePolicySuggestion(suggestion: Record<string, unknown>): {
 }
 
 /**
- * Sanitize user input before sending to AI.
- * Removes control characters and normalizes whitespace.
+ * Sanitize user input before sending to AI. Defenses, in order:
+ *
+ * 1. **NFKC normalization** folds compatibility characters into their canonical
+ *    forms (e.g. the Latin small-ff-ligature `ﬀ` → `ff`, full-width Latin →
+ *    ASCII). Prevents attackers from disguising tokens like `ignore previous
+ *    instructions` using look-alike codepoints.
+ * 2. **Invisible / formatting characters stripped**: soft hyphen, zero-width
+ *    spaces/joiners/non-joiners, word joiner, BOM, bidi formatting
+ *    (LRE/RLE/PDF/LRO/RLO and the 2022 isolate marks), variation selectors,
+ *    and Unicode tag characters (recent stego prompt-injection vector
+ *    documented by Riley Goodside et al).
+ * 3. **ASCII control characters** stripped (except `\t`/`\n`/`\r`).
+ * 4. **Excessive blank lines** collapsed.
  */
 export function sanitizeInput(input: string): string {
   return input
+    .normalize('NFKC')
+    // The variation-selector range (U+FE00\u2013U+FE0F) is intentionally inside this
+    // character class \u2014 they are combining marks we are explicitly stripping.
+    // eslint-disable-next-line no-misleading-character-class
+    .replace(/[\u00AD\u200B-\u200D\u2060\uFEFF\u202A-\u202E\u2066-\u2069\uFE00-\uFE0F]/g, '')
+    .replace(/[\u{E0000}-\u{E007F}]/gu, '')
     // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]/g, '') // Remove control chars
-    .replace(/\n{3,}/g, '\n\n') // Collapse excessive newlines
+    .replace(/[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f]/g, '')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 

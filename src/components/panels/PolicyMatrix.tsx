@@ -10,9 +10,21 @@ interface PolicyMatrixProps {
   onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
 }
 
-function matchesFilter(g: SmartGroup, q: string): boolean {
+/**
+ * Match-or-not for a group against a free-text query.
+ *
+ * - Empty query → everything matches.
+ * - Query equals a group name (case-insensitive) → ONLY that group passes.
+ *   This is the "user picked from the combobox / typed an exact name" path —
+ *   they wanted that specific group, not every group whose name contains the
+ *   typed string. e.g. typing "EUC" matches the "EUC" group but not "kccd-euc".
+ * - Otherwise → substring match against name + criteria key/value.
+ */
+function matchesFilter(g: SmartGroup, q: string, allGroups: SmartGroup[]): boolean {
   if (!q) return true;
   const lower = q.toLowerCase();
+  const exact = allGroups.find((gg) => gg.name.toLowerCase() === lower);
+  if (exact) return g.id === exact.id;
   if (g.name.toLowerCase().includes(lower)) return true;
   return g.criteria.some((c) => c.key?.toLowerCase().includes(lower) || c.value?.toLowerCase().includes(lower));
 }
@@ -36,7 +48,7 @@ function FilterCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Filtered list. Empty input → show everything. Otherwise → name + criteria match.
-  const filtered = useMemo(() => groups.filter((g) => matchesFilter(g, value)), [groups, value]);
+  const filtered = useMemo(() => groups.filter((g) => matchesFilter(g, value, groups)), [groups, value]);
 
   // Close on outside click.
   useEffect(() => {
@@ -177,8 +189,8 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
     return { groups, matrix };
   }, [topology]);
 
-  const filteredRows = useMemo(() => groups.filter((g) => matchesFilter(g, sourceFilter)), [groups, sourceFilter]);
-  const filteredCols = useMemo(() => groups.filter((g) => matchesFilter(g, destFilter)), [groups, destFilter]);
+  const filteredRows = useMemo(() => groups.filter((g) => matchesFilter(g, sourceFilter, groups)), [groups, sourceFilter]);
+  const filteredCols = useMemo(() => groups.filter((g) => matchesFilter(g, destFilter, groups)), [groups, destFilter]);
   const anyFilterActive = sourceFilter !== '' || destFilter !== '';
   const isFiltered = filteredRows.length !== groups.length || filteredCols.length !== groups.length;
 
