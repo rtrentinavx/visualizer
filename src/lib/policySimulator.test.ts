@@ -436,3 +436,58 @@ describe('simulateTraffic — Threat / Geo overrides', () => {
     expect(r.matchedPolicy?.id).toBe('pol-block-cn');
   });
 });
+
+describe('simulateTraffic — CIDR / SmartGroup / WebGroup endpoints', () => {
+  function topo(): DcfPolicyModel {
+    const t = emptyTopology();
+    t.smartGroups.push(
+      { id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' },
+      { id: 'sg-app', name: 'App', color: '#10b981', criteria: [{ type: 'subnet', cidr: '10.0.1.0/24' }], matchType: 'any' },
+    );
+    t.webGroups.push({ id: 'wg-salesforce', name: 'Salesforce', fqdns: ['*.salesforce.com'] });
+    t.policies = [
+      { id: 'pol-web-to-app', name: 'web→app', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443', logging: true },
+      { id: 'pol-web-to-sfdc', name: 'web→sfdc', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', logging: true, webGroupIds: ['wg-salesforce'] },
+    ];
+    return t;
+  }
+
+  it('CIDR src resolves to every SmartGroup whose subnet overlaps', () => {
+    // 10.0.0.0/16 overlaps both sg-web (10.0.0.0/24) and sg-app (10.0.1.0/24).
+    const t = topo();
+    const r = simulateTraffic(t, {
+      srcCidr: '10.0.0.0/16', dstIp: '10.0.1.5', protocol: 'tcp', port: 443,
+    });
+    expect(r.srcGroups).toEqual(expect.arrayContaining(['sg-web', 'sg-app']));
+    expect(r.matchedPolicy?.id).toBe('pol-web-to-app'); // sg-web→sg-app still matches
+  });
+
+  it('direct srcGroupId pick bypasses IP resolution entirely', () => {
+    const t = topo();
+    // No srcIp; the engine still must pick the right policy on group identity.
+    const r = simulateTraffic(t, {
+      srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', port: 443,
+    });
+    expect(r.srcGroups).toEqual(['sg-web']);
+    expect(r.dstGroups).toEqual(['sg-app']);
+    expect(r.matchedPolicy?.id).toBe('pol-web-to-app');
+  });
+
+  it('direct dstWebGroupId matches a WebGroup-attached policy without typing an FQDN', () => {
+    const t = topo();
+    const r = simulateTraffic(t, {
+      srcGroupId: 'sg-web', dstWebGroupId: 'wg-salesforce', protocol: 'tcp', port: 443,
+    });
+    expect(r.matchedPolicy?.id).toBe('pol-web-to-sfdc');
+    expect(r.matchedWebGroupIds).toContain('wg-salesforce');
+  });
+
+  it('CIDR with no overlap falls back to implicit-deny', () => {
+    const t = topo();
+    // 172.16.0.0/24 overlaps no SmartGroup; src is sg-any only.
+    const r = simulateTraffic(t, {
+      srcCidr: '172.16.0.0/24', dstCidr: '172.16.0.0/24', protocol: 'tcp', port: 443,
+    });
+    expect(r.action).toBe('implicit-deny');
+  });
+});

@@ -1,16 +1,40 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown, ChevronRight, Network, Globe,
   ArrowRightLeft, CheckCircle2, XCircle, Activity, Plus, Trash2, Pencil, Upload, Download,
   AlertTriangle, X, Search, Save,
 } from 'lucide-react';
-import type { DcfPolicyModel, Protocol, TrafficFlow, PolicyDirection } from '../../types/dcf';
+import type { DcfPolicyModel, Protocol, TrafficFlow, PolicyDirection, SmartGroup, WebGroup } from '../../types/dcf';
 import { simulateTraffic } from '../../lib/policySimulator';
-import type { SimulationResult } from '../../lib/policySimulator';
-import { isValidIPv4 } from '../../lib/ipUtils';
+import type { SimulationRequest, SimulationResult } from '../../lib/policySimulator';
+import { isValidIPv4, isValidCidr } from '../../lib/ipUtils';
 import {
   downloadFlowsJSON, downloadFlowsCSV, importFlowsJSON, importFlowsCSV,
 } from '../../lib/importExport';
+
+// Endpoint: what the user typed/picked for Source or Destination. The simulator
+// resolves text → IP/CIDR, or uses a directly-picked group as-is.
+type Endpoint =
+  | { kind: 'text'; value: string }
+  | { kind: 'smartGroup'; id: string }
+  | { kind: 'webGroup'; id: string };
+
+function endpointReady(ep: Endpoint): boolean {
+  if (ep.kind === 'smartGroup' || ep.kind === 'webGroup') return true;
+  return isValidIPv4(ep.value) || isValidCidr(ep.value);
+}
+
+function endpointKindError(ep: Endpoint): boolean {
+  return ep.kind === 'text' && ep.value !== '' && !isValidIPv4(ep.value) && !isValidCidr(ep.value);
+}
+
+function endpointToRequest(ep: Endpoint, side: 'src' | 'dst'): Partial<SimulationRequest> {
+  if (ep.kind === 'smartGroup') return side === 'src' ? { srcGroupId: ep.id } : { dstGroupId: ep.id };
+  if (ep.kind === 'webGroup') return { dstWebGroupId: ep.id };
+  if (isValidIPv4(ep.value)) return side === 'src' ? { srcIp: ep.value } : { dstIp: ep.value };
+  if (isValidCidr(ep.value)) return side === 'src' ? { srcCidr: ep.value } : { dstCidr: ep.value };
+  return {};
+}
 
 interface TrafficSimulatorProps {
   topology: DcfPolicyModel;
@@ -60,9 +84,10 @@ export default function TrafficSimulator({
   onUpdateFlow,
   onDeleteFlow,
 }: TrafficSimulatorProps) {
-  // Simulator form
-  const [srcIp, setSrcIp] = useState('');
-  const [dstIp, setDstIp] = useState('');
+  // Simulator form. Source / destination are unified Endpoint values: free
+  // text (auto-detected as IP or CIDR) OR a direct SmartGroup / WebGroup pick.
+  const [srcEndpoint, setSrcEndpoint] = useState<Endpoint>({ kind: 'text', value: '' });
+  const [dstEndpoint, setDstEndpoint] = useState<Endpoint>({ kind: 'text', value: '' });
   const [protocol, setProtocol] = useState<Protocol>('tcp');
   const [port, setPort] = useState('443');
   const [dstFqdn, setDstFqdn] = useState('');
@@ -91,14 +116,14 @@ export default function TrafficSimulator({
 
   const smartGroupOptions = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
 
-  const canRun = isValidIPv4(srcIp) && isValidIPv4(dstIp) && port !== '';
+  const canRun = endpointReady(srcEndpoint) && endpointReady(dstEndpoint) && port !== '';
 
   const runSimulation = () => {
     if (!canRun) return;
     const portNum = parseInt(port, 10) || 0;
     const res = simulateTraffic(topology, {
-      srcIp,
-      dstIp,
+      ...endpointToRequest(srcEndpoint, 'src'),
+      ...endpointToRequest(dstEndpoint, 'dst'),
       protocol,
       port: portNum,
       dstFqdn: dstFqdn.trim() || undefined,
@@ -113,8 +138,17 @@ export default function TrafficSimulator({
 
   const saveResultAsFlow = () => {
     if (!result) return;
-    const srcGroupId = result.srcGroups[0] || 'sg-any';
-    const dstGroupId = result.dstGroups[0] || 'sg-any';
+    // Resolve a single src/dst SmartGroup id for the saved flow. Direct group
+    // picks bypass the IP-resolved list; WebGroup picks save against the
+    // internet pseudo-group; otherwise fall back to the first resolved match.
+    const srcGroupId = srcEndpoint.kind === 'smartGroup'
+      ? srcEndpoint.id
+      : (result.srcGroups[0] || 'sg-any');
+    const dstGroupId = dstEndpoint.kind === 'smartGroup'
+      ? dstEndpoint.id
+      : dstEndpoint.kind === 'webGroup'
+        ? 'sg-internet'
+        : (result.dstGroups[0] || 'sg-any');
     const allowed = result.action === 'allow' || result.action === 'learned';
     const flow: Omit<TrafficFlow, 'id'> = {
       srcGroupId,
@@ -235,36 +269,24 @@ export default function TrafficSimulator({
             style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)' }}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Source IP" error={!!srcIp && !isValidIPv4(srcIp)}>
-                <input
-                  type="text"
-                  value={srcIp}
-                  onChange={(e) => setSrcIp(e.target.value)}
-                  placeholder="10.0.1.5"
-                  className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                  style={{
-                    backgroundColor: 'var(--color-input-bg)',
-                    borderColor: srcIp && !isValidIPv4(srcIp) ? '#ef4444' : 'var(--color-input-border)',
-                    color: 'var(--color-text-primary)',
-                  }}
+              <Field label="Source" hint="Type an IP or CIDR, or pick a SmartGroup.">
+                <EndpointCombobox
+                  topology={topology}
+                  value={srcEndpoint}
+                  onChange={setSrcEndpoint}
+                  placeholder="10.0.1.5 or 10.0.0.0/16"
+                  allowWebGroup={false}
                 />
-                {srcIp && !isValidIPv4(srcIp) && <p className="text-[10px] text-red-400 mt-0.5">Invalid IPv4 address</p>}
               </Field>
 
-              <Field label="Destination IP" error={!!dstIp && !isValidIPv4(dstIp)}>
-                <input
-                  type="text"
-                  value={dstIp}
-                  onChange={(e) => setDstIp(e.target.value)}
-                  placeholder="10.0.2.10"
-                  className="w-full px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                  style={{
-                    backgroundColor: 'var(--color-input-bg)',
-                    borderColor: dstIp && !isValidIPv4(dstIp) ? '#ef4444' : 'var(--color-input-border)',
-                    color: 'var(--color-text-primary)',
-                  }}
+              <Field label="Destination" hint="Type an IP or CIDR, or pick a SmartGroup / WebGroup.">
+                <EndpointCombobox
+                  topology={topology}
+                  value={dstEndpoint}
+                  onChange={setDstEndpoint}
+                  placeholder="10.0.2.10 or 10.0.0.0/16"
+                  allowWebGroup={true}
                 />
-                {dstIp && !isValidIPv4(dstIp) && <p className="text-[10px] text-red-400 mt-0.5">Invalid IPv4 address</p>}
               </Field>
 
               <Field label="Protocol">
@@ -853,6 +875,199 @@ function FlowRow({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// =============================================================================
+// EndpointCombobox — Source / Destination input
+// =============================================================================
+//
+// Lets the user either type a value (IP or CIDR — auto-detected) OR pick a
+// SmartGroup / WebGroup from a dropdown. When a group is picked, the input
+// flips to "chip" mode showing the group name with an X to revert to text.
+// WebGroups are only offered when `allowWebGroup` is true (destination).
+
+function EndpointCombobox({
+  topology, value, onChange, placeholder, allowWebGroup,
+}: {
+  topology: DcfPolicyModel;
+  value: Endpoint;
+  onChange: (next: Endpoint) => void;
+  placeholder: string;
+  allowWebGroup: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset query when value flips into a chip; otherwise sync with text value.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external sync: keep the visible input in step with the controlled `value` prop without leaking text-mode state across renders when the parent flips kind.
+    if (value.kind === 'text') setQuery(value.value);
+    else setQuery('');
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    function onClickOut(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOut);
+    return () => document.removeEventListener('mousedown', onClickOut);
+  }, [isOpen]);
+
+  const smartGroups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
+  const webGroups = allowWebGroup ? topology.webGroups : [];
+
+  const q = query.trim().toLowerCase();
+  const matchedSmartGroups = q
+    ? smartGroups.filter((g) => g.name.toLowerCase().includes(q))
+    : smartGroups;
+  const matchedWebGroups = q
+    ? webGroups.filter((g) => g.name.toLowerCase().includes(q))
+    : webGroups;
+
+  const errored = endpointKindError(value);
+
+  const pickSmartGroup = (g: SmartGroup) => {
+    onChange({ kind: 'smartGroup', id: g.id });
+    setIsOpen(false);
+    inputRef.current?.blur();
+  };
+  const pickWebGroup = (g: WebGroup) => {
+    onChange({ kind: 'webGroup', id: g.id });
+    setIsOpen(false);
+    inputRef.current?.blur();
+  };
+  const clear = () => {
+    onChange({ kind: 'text', value: '' });
+    setQuery('');
+    inputRef.current?.focus();
+  };
+
+  // Chip mode: a SmartGroup or WebGroup is currently picked.
+  if (value.kind !== 'text') {
+    const isSmart = value.kind === 'smartGroup';
+    const smart = isSmart ? topology.smartGroups.find((g) => g.id === value.id) : undefined;
+    const web = !isSmart ? topology.webGroups.find((g) => g.id === value.id) : undefined;
+    const accent = isSmart ? 'var(--color-accent-blue)' : 'var(--color-accent-purple)';
+    return (
+      <div
+        className="flex items-center gap-2 px-2 py-1.5 rounded text-xs border"
+        style={{ backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)' }}
+      >
+        <span
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+          style={{ backgroundColor: `${accent}1f`, color: accent }}
+        >
+          {isSmart ? <Network size={10} /> : <Globe size={10} />}
+          {isSmart ? 'SmartGroup' : 'WebGroup'}
+        </span>
+        <span className="flex-1 truncate text-[var(--color-text-primary)]">{smart?.name || web?.name || value.id}</span>
+        <button
+          type="button"
+          onClick={clear}
+          className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+          title="Clear"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  // Text mode: free input + dropdown.
+  return (
+    <div ref={containerRef} className="relative">
+      <div
+        className="flex items-center gap-1.5 rounded border px-2 py-1.5"
+        style={{
+          backgroundColor: 'var(--color-input-bg)',
+          borderColor: errored ? '#ef4444' : 'var(--color-input-border)',
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => {
+            const v = e.target.value;
+            setQuery(v);
+            onChange({ kind: 'text', value: v });
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          placeholder={placeholder}
+          className="flex-1 text-xs bg-transparent outline-none font-mono"
+          style={{ color: 'var(--color-text-primary)' }}
+          aria-autocomplete="list"
+          aria-expanded={isOpen}
+          role="combobox"
+        />
+        <button
+          type="button"
+          onClick={() => { setIsOpen((v) => !v); inputRef.current?.focus(); }}
+          className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]"
+          title="Pick a group"
+        >
+          <ChevronDown size={11} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </button>
+      </div>
+      {errored && (
+        <p className="text-[10px] text-red-400 mt-0.5">Not a valid IPv4 address or CIDR</p>
+      )}
+
+      {isOpen && (
+        <div
+          className="absolute top-full mt-1 left-0 right-0 z-30 max-h-64 overflow-y-auto rounded border shadow-lg"
+          style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+          role="listbox"
+        >
+          <div className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] border-b border-[var(--color-border-subtle)]">SmartGroups</div>
+          {matchedSmartGroups.length === 0 ? (
+            <div className="px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] italic">No SmartGroups match</div>
+          ) : (
+            matchedSmartGroups.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => pickSmartGroup(g)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-[var(--color-surface-elevated)]"
+                role="option"
+              >
+                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: g.color }} />
+                <span className="flex-1 truncate text-[var(--color-text-primary)]">{g.name}</span>
+              </button>
+            ))
+          )}
+          {allowWebGroup && (
+            <>
+              <div className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] border-t border-b border-[var(--color-border-subtle)]">WebGroups</div>
+              {matchedWebGroups.length === 0 ? (
+                <div className="px-2 py-1.5 text-[10px] text-[var(--color-text-muted)] italic">No WebGroups match</div>
+              ) : (
+                matchedWebGroups.map((g) => (
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => pickWebGroup(g)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-[var(--color-surface-elevated)]"
+                    role="option"
+                  >
+                    <Globe size={10} className="text-[var(--color-accent-purple)] shrink-0" />
+                    <span className="flex-1 truncate text-[var(--color-text-primary)]">{g.name}</span>
+                    <span className="text-[9px] text-[var(--color-text-muted)] shrink-0">{g.fqdns.length} fqdns</span>
+                  </button>
+                ))
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

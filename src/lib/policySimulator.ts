@@ -1,9 +1,23 @@
 import type { DcfPolicyModel, DcfPolicy, Protocol } from '../types/dcf';
-import { ipInCidr, isValidIPv4 } from './ipUtils';
+import { ipInCidr, isValidIPv4, isValidCidr, cidrsOverlap } from './ipUtils';
 
 export interface SimulationRequest {
-  srcIp: string;
-  dstIp: string;
+  /**
+   * Source endpoint. Exactly one of srcIp / srcCidr / srcGroupId is expected;
+   * the engine resolves to one or more SmartGroup ids accordingly. Bare
+   * srcIp is kept for backward compatibility with existing callers and tests.
+   */
+  srcIp?: string;
+  srcCidr?: string;
+  srcGroupId?: string;
+  /**
+   * Destination endpoint. Same shape as source, plus an optional direct
+   * WebGroup pick (dstWebGroupId) that bypasses the FQDN glob step.
+   */
+  dstIp?: string;
+  dstCidr?: string;
+  dstGroupId?: string;
+  dstWebGroupId?: string;
   protocol: Protocol;
   port: number;
   /** Optional destination FQDN — enables WebGroup matching for SaaS/HTTP destinations. */
@@ -77,6 +91,27 @@ export function resolveIpToGroups(topology: DcfPolicyModel, ip: string): string[
 }
 
 /**
+ * Resolve a CIDR range to the SmartGroup(s) whose subnet criteria overlap with
+ * it. matchType=any returns groups where at least one criterion CIDR overlaps;
+ * matchType=all requires every criterion to overlap. VM-tag criteria are
+ * skipped (same constraint as IP resolution).
+ */
+export function resolveCidrToGroups(topology: DcfPolicyModel, cidr: string): string[] {
+  if (!isValidCidr(cidr)) return [];
+  const matched: string[] = [];
+  for (const group of topology.smartGroups) {
+    if (group.id === 'sg-any') continue;
+    if (group.id === 'sg-internet') continue;
+    const subnetCriteria = (group.criteria || []).filter((c) => c.type === 'subnet' && c.cidr);
+    if (subnetCriteria.length === 0) continue;
+    const overlaps = subnetCriteria.map((c) => cidrsOverlap(cidr, c.cidr!));
+    const groupMatches = group.matchType === 'all' ? overlaps.every(Boolean) : overlaps.some(Boolean);
+    if (groupMatches) matched.push(group.id);
+  }
+  return matched;
+}
+
+/**
  * Evaluate which policy would match for a hypothetical traffic flow between two IPs.
  * Policies are evaluated in priority order (ascending).
  */
@@ -96,19 +131,53 @@ function resolveFqdnToWebGroups(topology: DcfPolicyModel, fqdn: string | undefin
 }
 
 export function simulateTraffic(topology: DcfPolicyModel, request: SimulationRequest): SimulationResult {
-  const { srcIp, dstIp, protocol, port, dstFqdn, srcThreatGroupId, dstThreatGroupId, srcGeoGroupId, dstGeoGroupId } = request;
+  const {
+    srcIp, srcCidr, srcGroupId,
+    dstIp, dstCidr, dstGroupId, dstWebGroupId,
+    protocol, port, dstFqdn,
+    srcThreatGroupId, dstThreatGroupId, srcGeoGroupId, dstGeoGroupId,
+  } = request;
 
-  // Resolve IPs to groups
-  const srcGroups = resolveIpToGroups(topology, srcIp);
-  const dstGroups = resolveIpToGroups(topology, dstIp);
-  const matchedWebGroupIds = resolveFqdnToWebGroups(topology, dstFqdn);
+  // Resolve the source endpoint via whichever input was provided. Direct group
+  // pick wins, then CIDR, then IP. (The form ensures only one is set at a
+  // time, but this ordering also makes the function defensive.)
+  let srcGroups: string[] = [];
+  if (srcGroupId) {
+    srcGroups = [srcGroupId];
+  } else if (srcCidr) {
+    srcGroups = resolveCidrToGroups(topology, srcCidr);
+  } else if (srcIp) {
+    srcGroups = resolveIpToGroups(topology, srcIp);
+  }
 
-  // Always include sg-any as a fallback. If the user provided a dstFqdn,
-  // sg-internet is also a valid destination (Aviatrix L7 filtering targets
-  // the internet pseudo-group for WebGroup-attached policies).
+  // Destination: same dispatch order, but a direct WebGroup pick is also valid
+  // — it implies "destination is internet, and this WebGroup is what matched".
+  let dstGroups: string[] = [];
+  if (dstGroupId) {
+    dstGroups = [dstGroupId];
+  } else if (dstCidr) {
+    dstGroups = resolveCidrToGroups(topology, dstCidr);
+  } else if (dstIp) {
+    dstGroups = resolveIpToGroups(topology, dstIp);
+  } else if (dstWebGroupId) {
+    // Picking a WebGroup directly means the destination is reached via the
+    // internet pseudo-group; the engine fills sg-internet in further down.
+    dstGroups = [];
+  }
+
+  const fqdnWebGroups = resolveFqdnToWebGroups(topology, dstFqdn);
+  // Combine an explicit WebGroup pick with any FQDN-resolved ones, dedup.
+  const matchedWebGroupIds = dstWebGroupId
+    ? Array.from(new Set([dstWebGroupId, ...fqdnWebGroups]))
+    : fqdnWebGroups;
+
+  // Always include sg-any as a fallback. If the user provided a dstFqdn or
+  // picked a WebGroup, sg-internet is also a valid destination (Aviatrix L7
+  // filtering targets the internet pseudo-group for WebGroup-attached
+  // policies).
   const srcGroupIds = srcGroups.length > 0 ? [...srcGroups, 'sg-any'] : ['sg-any'];
   const dstGroupIds = dstGroups.length > 0 ? [...dstGroups, 'sg-any'] : ['sg-any'];
-  if (dstFqdn) {
+  if (dstFqdn || dstWebGroupId) {
     if (!dstGroupIds.includes('sg-internet')) dstGroupIds.push('sg-internet');
   }
 
@@ -134,11 +203,11 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
     if (p.dstExcludeGroupIds && p.dstExcludeGroupIds.some((eg) => dstGroupIds.includes(eg))) return false;
 
     // WebGroup match — only applies when the policy attaches at least one
-    // WebGroup. With a WebGroup attached, the policy is FQDN-scoped: it
-    // matches only if the simulated dstFqdn resolves to one of the attached
-    // WebGroups. Without a dstFqdn, the FQDN is unknown — skip the policy.
+    // WebGroup. The policy matches only if any of its attached WebGroups is
+    // in matchedWebGroupIds (resolved via dstFqdn glob OR a direct
+    // dstWebGroupId pick). Without either input, the FQDN is unknown — skip.
     if (p.webGroupIds && p.webGroupIds.length > 0) {
-      if (!dstFqdn) return false;
+      if (matchedWebGroupIds.length === 0) return false;
       const intersect = p.webGroupIds.some((id) => matchedWebGroupIds.includes(id));
       if (!intersect) return false;
     }
@@ -180,11 +249,14 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
   const srcGroupNames = srcGroups.map((id) => topology.smartGroups.find((g) => g.id === id)?.name || id).join(', ');
   const dstGroupNames = dstGroups.map((id) => topology.smartGroups.find((g) => g.id === id)?.name || id).join(', ');
 
-  let explanation = `Source IP ${srcIp} resolves to group(s): ${srcGroupNames || 'none (using sg-any)'}. `;
-  explanation += `Destination IP ${dstIp} resolves to group(s): ${dstGroupNames || 'none (using sg-any)'}. `;
-  if (dstFqdn) {
+  const srcLabel = describeEndpoint(topology, { ip: srcIp, cidr: srcCidr, groupId: srcGroupId });
+  const dstLabel = describeEndpoint(topology, { ip: dstIp, cidr: dstCidr, groupId: dstGroupId, webGroupId: dstWebGroupId });
+
+  let explanation = `Source ${srcLabel} resolves to group(s): ${srcGroupNames || 'none (using sg-any)'}. `;
+  explanation += `Destination ${dstLabel} resolves to group(s): ${dstGroupNames || (dstWebGroupId ? 'sg-internet (WebGroup pick)' : 'none (using sg-any)')}. `;
+  if (matchedWebGroupIds.length > 0 && (dstFqdn || dstWebGroupId)) {
     const wgNames = matchedWebGroupIds.map((id) => topology.webGroups.find((g) => g.id === id)?.name || id).join(', ');
-    explanation += `Destination FQDN "${dstFqdn}" resolves to WebGroup(s): ${wgNames || 'none'}. `;
+    explanation += `Destination matches WebGroup(s): ${wgNames}. `;
   }
   explanation += `Policy "${winner.name}" (priority ${winner.priority}) matches first and traffic is ${actionText}.`;
 
@@ -202,4 +274,21 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
     dstGroups,
     matchedWebGroupIds,
   };
+}
+
+function describeEndpoint(
+  topology: DcfPolicyModel,
+  ep: { ip?: string; cidr?: string; groupId?: string; webGroupId?: string },
+): string {
+  if (ep.groupId) {
+    const g = topology.smartGroups.find((sg) => sg.id === ep.groupId);
+    return `SmartGroup "${g?.name || ep.groupId}"`;
+  }
+  if (ep.webGroupId) {
+    const wg = topology.webGroups.find((w) => w.id === ep.webGroupId);
+    return `WebGroup "${wg?.name || ep.webGroupId}"`;
+  }
+  if (ep.cidr) return `CIDR ${ep.cidr}`;
+  if (ep.ip) return `IP ${ep.ip}`;
+  return '(unspecified)';
 }
