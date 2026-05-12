@@ -3,7 +3,7 @@
 ## Done
 
 ### Core Platform
-- [x] 4-tab layout: Matrix, Graph, Traffic, Simulator
+- [x] 4-tab layout: Matrix, Graph, Traffic (merged simulator + flow log), AI Settings
 - [x] Full editing for SmartGroups, WebGroups, ThreatGroups, GeoGroups, Policies
 - [x] Inspector Panel with auto-name generation
 - [x] Encrypted localStorage persistence (Web Crypto API)
@@ -42,8 +42,7 @@
 - [x] **Mergeable-policy detection** — info finding + auto-fix when 2+ policies differ only in ports; auto-fix unions ports into the lowest-priority policy
 
 ### Simulation
-- [x] **Traffic Flow** — Manual add/edit/delete/import/export (JSON/CSV)
-- [x] **Policy Simulator** — IP-based What-If testing with CIDR-to-SmartGroup resolution
+- [x] **Traffic Simulator (merged view)** — Top: IP-based What-If with CIDR-to-SmartGroup resolution + optional FQDN/Threat/Geo overrides. Bottom: saved-flows log with edit/delete, filter, JSON/CSV import-export. The result block has a "Save as flow" button that persists the simulated flow so it counts toward Policy Impact analysis.
 
 ### Presets & Templates
 - [x] WebGroup Preset Library — 6 curated categories with search/filter

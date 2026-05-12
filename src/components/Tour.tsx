@@ -31,8 +31,8 @@ function getSteps(aiProfileActive: boolean): TourStep[] {
     {
       id: 'views',
       target: 'view-tabs',
-      title: 'Four lenses',
-      body: 'Matrix shows policies as a grid of source→destination cells. Graph lays groups out as a force-directed network. Traffic logs concrete flows. Simulator answers "would this IP-to-IP traffic be allowed?" — all over the same model.',
+      title: 'Three lenses',
+      body: 'Matrix shows policies as a grid of source→destination cells. Graph lays groups out as a force-directed network. Traffic answers "would this IP-to-IP traffic be allowed?" and lets you save the result as a logged flow for impact analysis.',
     },
     {
       id: 'templates',

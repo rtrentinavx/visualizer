@@ -32,8 +32,8 @@ This is a single-page React 19 + Vite 8 + Tailwind 4 app that visualizes and edi
 
 ### Top-level layout
 
-- [src/App.tsx](src/App.tsx) (~1150 lines) — root container; owns topology state, view mode (`matrix` | `graph` | `traffic` | `simulator`), selected item, all modal flags. Edits flow up via callbacks.
-- [src/components/panels/](src/components/panels/) — one file per major view: `PolicyMatrix`, `PolicyGraph`, `TrafficFlowPanel`, `PolicySimulator`, `InspectorPanel`, `EvaluatorPanel`, `AIChatPanel`, `AISettingsPanel`, `ImportPanel`.
+- [src/App.tsx](src/App.tsx) (~1150 lines) — root container; owns topology state, view mode (`matrix` | `graph` | `trafficSimulator` | `aiSettings`), selected item, all modal flags. Edits flow up via callbacks.
+- [src/components/panels/](src/components/panels/) — one file per major view: `PolicyMatrix`, `PolicyGraph`, `TrafficSimulator` (merged simulator + flow log), `InspectorPanel`, `EvaluatorPanel`, `AIChatPanel`, `AISettingsPanel`, `ImportPanel`.
 - [src/components/modals/](src/components/modals/) — `RecommendationsModal`, `WebGroupPresetModal`, `BestPracticesModal`.
 - [src/lib/](src/lib/) — pure logic modules (no React): evaluator, scorer, simulator, importExport, terraformExport, cryptoStorage, upstashSync, achievements, ipUtils.
 - [src/lib/ai/](src/lib/ai/) — AI client, prompt builders, provider metadata, safety filters, schemas, settings storage.

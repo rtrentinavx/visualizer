@@ -16,8 +16,7 @@ import { hasAIDataConsent } from './lib/aiDataConsent';
 const AIDataConsentModal = lazyImport(() => import('./components/modals/AIDataConsentModal'));
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import InspectorPanel from './components/panels/InspectorPanel';
-import PolicySimulator from './components/panels/PolicySimulator';
-import TrafficFlowPanel from './components/panels/TrafficFlowPanel';
+import TrafficSimulator from './components/panels/TrafficSimulator';
 
 // Lazy-loaded: pull @xyflow/react, AI schemas, HCL parser, and content-heavy
 // modals out of the initial bundle. lazyImport wraps React.lazy with a
@@ -269,8 +268,6 @@ export default function App() {
                 onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
               />
             </Suspense>
-          ) : viewMode === 'simulator' ? (
-            <PolicySimulator topology={topology} />
           ) : viewMode === 'aiSettings' ? (
             <Suspense fallback={<PanelLoader />}>
               <AISettingsPanel
@@ -282,9 +279,9 @@ export default function App() {
               />
             </Suspense>
           ) : (
-            <TrafficFlowPanel
+            <TrafficSimulator
               topology={topology}
-              onCreateFlow={(flow) => dispatch({ type: 'addFlow', flow: { ...flow, id: `flow-${Date.now()}` } })}
+              onCreateFlow={(flow) => dispatch({ type: 'addFlow', flow: { ...flow, id: `flow-${Date.now()}-${Math.random().toString(36).slice(2, 6)}` } })}
               onUpdateFlow={(id, data) => dispatch({ type: 'updateFlow', id, data })}
               onDeleteFlow={(id) => dispatch({ type: 'deleteFlow', id })}
             />

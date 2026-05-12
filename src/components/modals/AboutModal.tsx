@@ -34,8 +34,8 @@ export default function AboutModal({ onClose, onReplayTour }: AboutModalProps) {
             <ul className="list-disc list-inside space-y-1 text-xs">
               <li><strong>Matrix</strong> — Grid view of SmartGroup → SmartGroup policies with sticky headers and priority-aware rendering</li>
               <li><strong>Graph</strong> — Circular node layout with draggable nodes, lock/unlock layout toggle, and Draw Policy mode</li>
-              <li><strong>Traffic</strong> — Manual traffic flow logging with add/edit/delete and JSON/CSV import-export</li>
-              <li><strong>Simulator</strong> — What-If traffic tester: enter source/destination IPs and the tool resolves them to SmartGroups via CIDR matching</li>
+              <li><strong>Traffic</strong> — What-If simulator (enter src/dst IPs, the tool resolves to SmartGroups via CIDR matching) plus the saved-flows log. Save any simulation result as a flow with one click; JSON/CSV import-export.</li>
+              <li><strong>AI</strong> — Configure AI providers and profiles for policy explanation, evaluator fixes, reachability, search, and auto-docs</li>
             </ul>
           </div>
           <div>

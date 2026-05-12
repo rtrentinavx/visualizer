@@ -16,8 +16,8 @@ Aviatrix DCF uses SmartGroups, WebGroups, ThreatGroups, and GeoGroups to define 
 |------|---------|
 | **Matrix** | Grid of Source → Destination SmartGroups. Click any cell to see or create policies. Diagonal cells are blanked (intra-group traffic). Sticky headers, compact 90px cells. |
 | **Graph** | Circular node layout with directed policy edges. Drag nodes to reposition. Lock/unlock layout toggle. "Draw Policy" mode to connect groups with a new policy. |
-| **Traffic** | Manual flow logging with add/edit/delete. Import/export JSON/CSV. See which policies allowed or denied historical flows. |
-| **Simulator** | What-If traffic tester. Type a source IP and destination IP — the tool resolves them to SmartGroups via CIDR matching, then evaluates all policies to tell you if the traffic is **Allowed** or **Denied**. |
+| **Traffic** | What-If simulator: enter src/dst IPs (optionally protocol, port, FQDN, Threat/Geo overrides) and the tool resolves them to SmartGroups via CIDR matching, evaluates all policies, and tells you **Allowed** or **Denied**. Click **Save as flow** on the result to persist it to the logged-flows list below — those flows feed Policy Impact analysis. Manual add and JSON/CSV import-export sit under the same panel. |
+| **AI** | Configure AI providers and profiles for policy explanation, evaluator fixes, reachability, search, and auto-docs. |
 
 ### Policy Editing
 

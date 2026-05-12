@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import {
-  LayoutGrid, Activity, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
+  LayoutGrid, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
   RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route,
 } from 'lucide-react';
@@ -8,7 +8,7 @@ import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
 import { getAllAchievements } from '../lib/achievements';
 
-export type ViewMode = 'matrix' | 'graph' | 'traffic' | 'simulator' | 'aiSettings';
+export type ViewMode = 'matrix' | 'graph' | 'trafficSimulator' | 'aiSettings';
 
 export interface AppHeaderActions {
   openEvaluator: () => void;
@@ -205,13 +205,9 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
             <GitGraph size={14} />
             <span className="hidden sm:inline">Graph</span>
           </button>
-          <button onClick={() => onViewChange('traffic')} className={tabClass(viewMode === 'traffic')} aria-current={viewMode === 'traffic' ? 'page' : undefined}>
-            <Activity size={14} />
-            <span className="hidden sm:inline">Traffic</span>
-          </button>
-          <button onClick={() => onViewChange('simulator')} className={tabClass(viewMode === 'simulator')} aria-current={viewMode === 'simulator' ? 'page' : undefined}>
+          <button onClick={() => onViewChange('trafficSimulator')} className={tabClass(viewMode === 'trafficSimulator')} aria-current={viewMode === 'trafficSimulator' ? 'page' : undefined}>
             <FlaskConical size={14} />
-            <span className="hidden sm:inline">Simulator</span>
+            <span className="hidden sm:inline">Traffic</span>
           </button>
           <button
             onClick={() => onViewChange('aiSettings')}
