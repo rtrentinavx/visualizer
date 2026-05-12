@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
-import { X, Upload, FileCode, FileJson, FileArchive, AlertTriangle, CheckCircle } from 'lucide-react';
+import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle } from 'lucide-react';
 import { unzipSync, strFromU8 } from 'fflate';
-import { importTopologyJSON, importTerraformHCL } from '../../lib/importExport';
+import { importTerraformHCL } from '../../lib/importExport';
 import type { DcfPolicyModel } from '../../types/dcf';
 
 interface ImportPanelProps {
@@ -9,7 +9,7 @@ interface ImportPanelProps {
   onClose: () => void;
 }
 
-type ImportTab = 'json' | 'terraform' | 'zip';
+type ImportTab = 'terraform' | 'zip';
 
 interface ZipResult {
   fileCount: number;
@@ -43,7 +43,7 @@ function extractZip(buffer: Uint8Array): ZipResult {
 }
 
 export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
-  const [activeTab, setActiveTab] = useState<ImportTab>('json');
+  const [activeTab, setActiveTab] = useState<ImportTab>('terraform');
   const [input, setInput] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -74,11 +74,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
       return;
     }
     try {
-      if (activeTab === 'json') {
-        const topology = importTopologyJSON(input.trim());
-        setPreview(topology);
-        setSuccess(`Valid JSON topology: ${topology.smartGroups.length} groups, ${topology.policies.length} policies.`);
-      } else if (activeTab === 'terraform') {
+      if (activeTab === 'terraform') {
         const topology = importTerraformHCL(input.trim());
         setPreview(topology);
         setSuccess(`Parsed Terraform HCL: ${topology.smartGroups.length - 1} groups imported, ${topology.policies.length} policies.`);
@@ -145,7 +141,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
             <Upload size={18} className="text-[var(--color-accent-blue)]" />
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Import Topology</h2>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">JSON paste · Terraform paste · Terraform zip upload</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Terraform paste · Terraform zip upload</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
@@ -154,17 +150,6 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
         </div>
 
         <div className="flex border-b border-[var(--color-border-subtle)]">
-          <button
-            onClick={() => switchTab('json')}
-            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
-              activeTab === 'json'
-                ? 'border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
-                : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
-            }`}
-          >
-            <FileJson size={14} />
-            JSON
-          </button>
           <button
             onClick={() => switchTab('terraform')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
@@ -190,11 +175,6 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {activeTab === 'json' && (
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Paste a JSON export from this tool or any valid DCF topology JSON.
-            </p>
-          )}
           {activeTab === 'terraform' && (
             <p className="text-xs text-[var(--color-text-muted)]">
               Paste Terraform <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.tf</code> content.
@@ -214,7 +194,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={activeTab === 'json' ? '{\n  "smartGroups": [...],\n  "policies": [...]\n}' : 'resource "aviatrix_smart_group" "web" {\n  ...\n}'}
+              placeholder='resource "aviatrix_smart_group" "web" {\n  ...\n}'
               className="w-full h-48 px-3 py-2 rounded text-xs border outline-none font-mono resize-none"
               style={{
                 backgroundColor: 'var(--color-input-bg)',

@@ -44,7 +44,6 @@ function PanelLoader() {
 }
 
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
-import { downloadTopologyJSON } from './lib/importExport';
 import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
@@ -222,7 +221,6 @@ export default function App() {
     openTemplates: () => modals.open('policyTemplates'),
     openReorderPolicies: () => modals.open('reorderPolicies'),
     openRecommendations: () => modals.open('recommendations'),
-    exportJSON: () => downloadTopologyJSON(topology),
     openTerraform: () => modals.open('terraformExport'),
     openAISettings: () => modals.open('aiSettings'),
     openAIChat: gateAI(() => modals.open('aiChat')),

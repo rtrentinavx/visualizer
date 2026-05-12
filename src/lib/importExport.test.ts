@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  exportTopologyJSON,
-  importTopologyJSON,
   exportFlowsCSV,
   importFlowsCSV,
   exportFlowsJSON,
@@ -10,32 +8,6 @@ import {
 } from './importExport';
 import { generateTerraform } from './terraformExport';
 import { demoTopology } from '../data/demoTopology';
-
-describe('JSON round-trip', () => {
-  it('exportTopologyJSON then importTopologyJSON preserves the demo topology', () => {
-    const json = exportTopologyJSON(demoTopology);
-    const restored = importTopologyJSON(json);
-    expect(restored).toEqual(demoTopology);
-  });
-
-  it('importTopologyJSON throws on a payload missing smartGroups', () => {
-    expect(() => importTopologyJSON(JSON.stringify({ policies: [] }))).toThrow(/smartGroups/);
-  });
-
-  it('importTopologyJSON throws on a payload missing policies', () => {
-    expect(() => importTopologyJSON(JSON.stringify({ smartGroups: [] }))).toThrow(/policies/);
-  });
-
-  it('importTopologyJSON fills in defaults for optional collections', () => {
-    const minimal = importTopologyJSON(
-      JSON.stringify({ smartGroups: [], policies: [] }),
-    );
-    expect(minimal.webGroups).toEqual([]);
-    expect(minimal.threatGroups).toEqual([]);
-    expect(minimal.geoGroups).toEqual([]);
-    expect(minimal.flows).toEqual([]);
-  });
-});
 
 describe('Flows JSON round-trip', () => {
   it('exportFlowsJSON → importFlowsJSON yields equivalent flows', () => {

@@ -1,42 +1,9 @@
 import type { DcfPolicyModel, SmartGroup, DcfPolicy, SmartGroupCriteria } from '../types/dcf';
 
-// ---------- JSON Export / Import ----------
-
-export function exportTopologyJSON(topology: DcfPolicyModel): string {
-  return JSON.stringify(topology, null, 2);
-}
-
-export function downloadTopologyJSON(topology: DcfPolicyModel): void {
-  const content = exportTopologyJSON(topology);
-  const blob = new Blob([content], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'dcf-topology.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-export function importTopologyJSON(json: string): DcfPolicyModel {
-  const parsed = JSON.parse(json) as DcfPolicyModel;
-  // Validate basic structure
-  if (!parsed.smartGroups || !Array.isArray(parsed.smartGroups)) {
-    throw new Error('Invalid topology: missing smartGroups array');
-  }
-  if (!parsed.policies || !Array.isArray(parsed.policies)) {
-    throw new Error('Invalid topology: missing policies array');
-  }
-  return {
-    smartGroups: parsed.smartGroups,
-    webGroups: parsed.webGroups || [],
-    threatGroups: parsed.threatGroups || [],
-    geoGroups: parsed.geoGroups || [],
-    policies: parsed.policies,
-    flows: parsed.flows || [],
-  };
-}
+// JSON topology save/import was removed — Terraform HCL (paste + zip upload)
+// is the only structured-config import/export path now. Cloud sync (Upstash)
+// still serializes the topology as JSON internally, but that's not a user-
+// facing import/export surface.
 
 // ---------- Terraform HCL Import (lightweight parser) ----------
 

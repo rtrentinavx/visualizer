@@ -21,7 +21,6 @@ export interface AppHeaderActions {
   openTemplates: () => void;
   openReorderPolicies: () => void;
   openRecommendations: () => void;
-  exportJSON: () => void;
   openTerraform: () => void;
   openAISettings: () => void;
   openAIChat: () => void;
@@ -249,7 +248,6 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <IconButton icon={Upload} label="Import topology" onClick={actions.openImport} />
           <IconButton icon={CloudUpload} overrideIcon={saveIcon} label={saveLabel} onClick={actions.saveCloud} disabled={syncBusy} accent={saveAccent} />
           <IconButton icon={CloudDownload} overrideIcon={loadIcon} label={cloudSyncStatus === 'loading' ? 'Loading from cloud…' : 'Load from cloud'} onClick={actions.loadCloud} disabled={syncBusy} />
-          <IconButton icon={FileCode} label="Export topology as JSON" onClick={actions.exportJSON} />
           <IconButton icon={FileCode} label="Export as Terraform" onClick={actions.openTerraform} />
         </ToolbarGroup>
 

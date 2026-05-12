@@ -46,8 +46,8 @@ export default function AboutModal({ onClose, onReplayTour }: AboutModalProps) {
               <li><strong>Evaluate</strong> — 21 automated checks across Security, Compliance, Performance, Naming, and Hygiene. Compliance score (0–100), category filters, and framework badges (Aviatrix BP, CIS, NIST ZT)</li>
               <li><strong>Fix it for me</strong> — One-click auto-fix for common issues: enable logging, correct TLS settings, fix WebGroup destinations, disable shadowed policies, deduplicate names/priorities</li>
               <li><strong>AI Assist</strong> — Policy explanation, evaluator fix suggestions, and free-form chat via OpenAI, Anthropic, Google, Ollama, LM Studio, or AWS Bedrock</li>
-              <li><strong>Export</strong> — Terraform (Aviatrix provider), JSON topology, CSV flows</li>
-              <li><strong>Import</strong> — JSON round-trip or Terraform HCL (aviatrix_smart_group + aviatrix_dcf_policy_list)</li>
+              <li><strong>Export</strong> — Terraform (Aviatrix provider), CSV flows</li>
+              <li><strong>Import</strong> — Terraform HCL paste or project zip upload (aviatrix_smart_group + aviatrix_dcf_policy_list)</li>
             </ul>
           </div>
           <div>
