@@ -7,7 +7,6 @@ export interface AIProfile {
   model: string;
   apiKey: string;
   apiBaseUrl?: string;
-  apiSecret?: string;
   temperature: number;
 }
 

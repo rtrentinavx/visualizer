@@ -27,7 +27,6 @@ export const config = {
 interface ProxyRequest {
   provider: string;
   apiKey: string;
-  apiSecret?: string;
   apiBaseUrl?: string;
   model: string;
   messages: ChatMessage[];
@@ -46,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(413).json({ error: 'Request body too large. Max 1MB.' });
   }
 
-  const { provider, apiKey, apiSecret, apiBaseUrl, model, messages, temperature, stream } = req.body as ProxyRequest;
+  const { provider, apiKey, apiBaseUrl, model, messages, temperature, stream } = req.body as ProxyRequest;
 
   // Validate message content length to prevent token overflow attacks
   const totalContentLength = messages.reduce((sum, m) => sum + (m.content?.length || 0), 0);
@@ -79,10 +78,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (needsKey && !apiKey) {
     return res.status(400).json({ error: 'Missing required field: apiKey' });
   }
-  if (provider === 'bedrock' && !apiSecret) {
-    return res.status(400).json({ error: 'Missing required field: apiSecret for Bedrock' });
-  }
-
   try {
     switch (provider) {
       case 'openai':
@@ -96,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       case 'lmstudio':
         return await proxyLMStudio(res, apiBaseUrl as string, apiKey, model, messages, temperature, stream);
       case 'bedrock':
-        return await proxyBedrock(res, apiKey, apiSecret!, apiBaseUrl, model, messages, temperature, stream);
+        return await proxyBedrock(res, apiKey, apiBaseUrl, model, messages, temperature, stream);
       case 'custom':
         return await proxyCustom(res, apiBaseUrl as string, apiKey, model, messages, temperature, stream);
       default:

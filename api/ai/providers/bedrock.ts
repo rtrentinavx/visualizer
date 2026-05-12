@@ -1,22 +1,32 @@
 import type { VercelResponse } from '@vercel/node';
-import { BedrockRuntimeClient, ConverseStreamCommand, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import type { ChatMessage } from '../types';
-import { PROVIDER_FETCH_TIMEOUT_MS } from '../_timeout';
+import { fetchWithTimeout } from '../_timeout';
 
+/**
+ * Bedrock now authenticates with a long-term API key (Bearer token) instead of
+ * IAM access-key + secret SigV4 signing. The endpoint is region-scoped:
+ *   POST https://bedrock-runtime.{region}.amazonaws.com/model/{modelId}/converse
+ *
+ * Region is passed via the profile's apiBaseUrl field (reused as a region
+ * slot for Bedrock; defaults to us-east-1 if omitted).
+ *
+ * Streaming note: Bedrock's native streaming uses AWS event streams (binary
+ * application/vnd.amazon.eventstream frames), which would need a dedicated
+ * parser. For v1 we issue a non-streaming Converse call and replay it as a
+ * single SSE chunk so the client's parser keeps working. Full response still
+ * arrives correctly; just not word-by-word.
+ */
 export async function proxyBedrock(
   res: VercelResponse,
-  accessKeyId: string,
-  secretAccessKey: string,
+  apiKey: string,
   region: string | undefined,
   modelId: string,
   messages: ChatMessage[],
   temperature: number,
-  stream: boolean
+  stream: boolean,
 ) {
-  const client = new BedrockRuntimeClient({
-    region: region || 'us-east-1',
-    credentials: { accessKeyId, secretAccessKey },
-  });
+  const r = (region || 'us-east-1').trim();
+  const url = `https://bedrock-runtime.${r}.amazonaws.com/model/${encodeURIComponent(modelId)}/converse`;
 
   const systemMsg = messages.find((m) => m.role === 'system');
   const chatMessages = messages
@@ -26,40 +36,45 @@ export async function proxyBedrock(
       content: [{ text: m.content }],
     }));
 
-  if (!stream) {
-    const command = new ConverseCommand({
-      modelId,
-      messages: chatMessages,
-      system: systemMsg ? [{ text: systemMsg.content }] : undefined,
-      inferenceConfig: { temperature },
-    });
-    const response = await client.send(command, { abortSignal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS) });
-    const text = response.output?.message?.content?.[0]?.text || '';
-    return res.json({ content: text });
-  }
-
-  const command = new ConverseStreamCommand({
-    modelId,
+  const body = {
     messages: chatMessages,
     system: systemMsg ? [{ text: systemMsg.content }] : undefined,
     inferenceConfig: { temperature },
+  };
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
 
-  const response = await client.send(command, { abortSignal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS) });
+  if (!response.ok) {
+    const error = await response.text();
+    return res.status(response.status).send(error);
+  }
+
+  const data = await response.json() as {
+    output?: { message?: { content?: Array<{ text?: string }> } };
+    usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  };
+  const text = data.output?.message?.content?.[0]?.text || '';
+  const usage = data.usage ? {
+    promptTokens: data.usage.inputTokens,
+    completionTokens: data.usage.outputTokens,
+    totalTokens: data.usage.totalTokens,
+  } : undefined;
+
+  if (!stream) {
+    return res.json({ content: text, usage });
+  }
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-
-  for await (const chunk of response.stream) {
-    if (chunk.contentBlockDelta) {
-      const text = chunk.contentBlockDelta.delta?.text || '';
-      if (text) {
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] }) }\n\n`);
-      }
-    }
-  }
-
+  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
   res.write('data: [DONE]\n\n');
   res.end();
 }

@@ -170,7 +170,6 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
   const [localSettings, setLocalSettings] = useState<AISettings>({ ...settings });
   const [editingProfile, setEditingProfile] = useState<AIProfile | null>(null);
   const [showKey, setShowKey] = useState(false);
-  const [showSecret, setShowSecret] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Cache fetched models by (provider, baseUrl). When the user switches either,
@@ -193,7 +192,6 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
   const fetchError = modelCache?.key === profileKey ? modelCache.error : null;
 
   const needsKey = editingProfile && editingProfile.provider !== 'ollama' && editingProfile.provider !== 'lmstudio';
-  const needsSecret = editingProfile && editingProfile.provider === 'bedrock';
   const needsBaseUrl = !!editingProfile && (
     editingProfile.provider === 'ollama' ||
     editingProfile.provider === 'lmstudio' ||
@@ -213,13 +211,11 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
       temperature: config.defaultTemperature,
     });
     setShowKey(false);
-    setShowSecret(false);
   };
 
   const startEditProfile = (profile: AIProfile) => {
     setEditingProfile({ ...profile });
     setShowKey(false);
-    setShowSecret(false);
     setConfirmDelete(null);
   };
 
@@ -231,7 +227,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
   /** Commit the editing profile to the parent in one step. No two-stage "save profile then save settings" anymore. */
   const saveProfile = () => {
     if (!editingProfile) return;
-    if (!editingProfile.name.trim() || (needsKey && !editingProfile.apiKey.trim()) || (needsSecret && !(editingProfile.apiSecret || '').trim())) return;
+    if (!editingProfile.name.trim() || (needsKey && !editingProfile.apiKey.trim())) return;
 
     setLocalSettings((prev) => {
       const exists = prev.profiles.find((p) => p.id === editingProfile.id);
@@ -321,7 +317,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
     return editingProfile?.model ? [editingProfile.model] : [];
   })();
 
-  const canSaveEditing = !!editingProfile && editingProfile.name.trim() && (!needsKey || editingProfile.apiKey.trim()) && (!needsSecret || (editingProfile.apiSecret || '').trim());
+  const canSaveEditing = !!editingProfile && editingProfile.name.trim() && (!needsKey || editingProfile.apiKey.trim());
 
   // ===========================================================================
 
@@ -428,7 +424,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
                   : 'Your provider key. Encrypted at rest in this browser; forwarded through the proxy, never logged.'}
               />
 
-              <Field label={editingProfile.provider === 'bedrock' ? 'AWS Access Key ID' : 'API key'}>
+              <Field label="API key">
                 <div className="flex gap-2">
                   <input
                     type={showKey ? 'text' : 'password'}
@@ -436,7 +432,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
                     onChange={(e) => updateEditingField('apiKey', e.target.value)}
                     placeholder={
                       editingProfile.provider === 'ollama' || editingProfile.provider === 'lmstudio' ? 'Optional for local models'
-                      : editingProfile.provider === 'bedrock' ? 'AKIA…'
+                      : editingProfile.provider === 'bedrock' ? 'Bedrock API key (Bearer token)'
                       : editingProfile.provider === 'anthropic' ? 'sk-ant-…'
                       : 'sk-…'
                     }
@@ -448,23 +444,6 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
                   </button>
                 </div>
               </Field>
-
-              {needsSecret && (
-                <Field label="AWS Secret Access Key">
-                  <div className="flex gap-2">
-                    <input
-                      type={showSecret ? 'text' : 'password'}
-                      value={editingProfile.apiSecret || ''}
-                      onChange={(e) => updateEditingField('apiSecret', e.target.value)}
-                      className="flex-1 px-2 py-1.5 rounded text-xs border outline-none font-mono"
-                      style={inputStyle}
-                    />
-                    <button type="button" onClick={() => setShowSecret((v) => !v)} className="px-2 py-1.5 rounded text-[10px] border flex items-center gap-1" style={{ ...inputStyle, color: 'var(--color-text-muted)' }} aria-label={showSecret ? 'Hide secret' : 'Show secret'}>
-                      {showSecret ? <EyeOff size={12} /> : <Eye size={12} />}
-                    </button>
-                  </div>
-                </Field>
-              )}
 
               {needsBaseUrl && (
                 <Field
