@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   FlaskConical, ShieldCheck, ShieldX, ShieldAlert, Ban, ChevronDown, ChevronRight, Network, Globe,
   ArrowRightLeft, CheckCircle2, XCircle, Activity, Plus, Trash2, Pencil, Upload, Download,
-  AlertTriangle, X, Search, Save,
+  AlertTriangle, X, Search,
 } from 'lucide-react';
 import type { DcfPolicyModel, Protocol, TrafficFlow, PolicyDirection, SmartGroup, WebGroup } from '../../types/dcf';
 import { simulateTraffic } from '../../lib/policySimulator';
@@ -133,37 +133,52 @@ export default function TrafficSimulator({
       dstGeoGroupId: dstGeoGroupId || undefined,
     });
     setResult(res);
-    setJustSavedFlowId(null);
+    persistResultAsFlow(res, portNum);
   };
 
-  const saveResultAsFlow = () => {
-    if (!result) return;
-    // Resolve a single src/dst SmartGroup id for the saved flow. Direct group
-    // picks bypass the IP-resolved list; WebGroup picks save against the
-    // internet pseudo-group; otherwise fall back to the first resolved match.
+  /**
+   * Auto-save the simulation result to topology.flows. Dedup rule: if a flow
+   * with the same src/dst/protocol/port AND same outcome already exists, bump
+   * its timestamp instead of adding a duplicate row. If the outcome flipped
+   * (e.g. user edited a policy and re-ran the same test), append a new row so
+   * the change is visible in the log.
+   */
+  const persistResultAsFlow = (res: SimulationResult, portNum: number) => {
     const srcGroupId = srcEndpoint.kind === 'smartGroup'
       ? srcEndpoint.id
-      : (result.srcGroups[0] || 'sg-any');
+      : (res.srcGroups[0] || 'sg-any');
     const dstGroupId = dstEndpoint.kind === 'smartGroup'
       ? dstEndpoint.id
       : dstEndpoint.kind === 'webGroup'
         ? 'sg-internet'
-        : (result.dstGroups[0] || 'sg-any');
-    const allowed = result.action === 'allow' || result.action === 'learned';
-    const flow: Omit<TrafficFlow, 'id'> = {
-      srcGroupId,
-      dstGroupId,
-      protocol,
-      port: parseInt(port, 10) || 0,
-      bytes: 0,
-      packets: 0,
-      allowed,
-      direction: 'any',
-      timestamp: new Date().toISOString(),
-    };
-    onCreateFlow(flow);
-    // Light-up the "Saved" confirmation. We don't know the assigned id here
-    // (App generates it in the dispatch); instead just flash a transient state.
+        : (res.dstGroups[0] || 'sg-any');
+    const allowed = res.action === 'allow' || res.action === 'learned';
+    const timestamp = new Date().toISOString();
+
+    const existing = topology.flows.find((f) =>
+      f.srcGroupId === srcGroupId &&
+      f.dstGroupId === dstGroupId &&
+      f.protocol === protocol &&
+      f.port === portNum &&
+      f.allowed === allowed
+    );
+
+    if (existing) {
+      onUpdateFlow(existing.id, { timestamp });
+    } else {
+      onCreateFlow({
+        srcGroupId,
+        dstGroupId,
+        protocol,
+        port: portNum,
+        bytes: 0,
+        packets: 0,
+        allowed,
+        direction: 'any',
+        timestamp,
+      });
+    }
+
     setJustSavedFlowId('saved');
     setTimeout(() => setJustSavedFlowId(null), 1500);
   };
@@ -255,7 +270,7 @@ export default function TrafficSimulator({
           <FlaskConical size={18} className="text-[var(--color-accent-blue)]" />
           <div>
             <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Traffic Simulator</h2>
-            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Test a hypothetical flow between two IPs, then save the result as a logged flow for impact analysis.</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-0.5">Test a hypothetical flow — results are auto-saved to the flow log for impact analysis.</p>
           </div>
         </div>
       </div>
@@ -442,16 +457,15 @@ export default function TrafficSimulator({
                     {actionConfig[result.action].label}
                   </p>
                 </div>
-                <button
-                  onClick={saveResultAsFlow}
-                  disabled={justSavedFlowId !== null}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] font-medium border transition-colors hover:bg-[var(--color-surface-elevated)] disabled:opacity-60"
-                  style={{ backgroundColor: 'var(--color-surface)', borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-secondary)' }}
-                  title="Save this simulated flow to the logged flows list so it counts in Policy Impact analysis."
-                >
-                  {justSavedFlowId ? <CheckCircle2 size={12} /> : <Save size={12} />}
-                  {justSavedFlowId ? 'Saved' : 'Save as flow'}
-                </button>
+                {justSavedFlowId && (
+                  <span
+                    className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium"
+                    style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}
+                    title="Auto-saved to the flow log below."
+                  >
+                    <CheckCircle2 size={11} /> Saved to flows
+                  </span>
+                )}
               </div>
 
               <div className="text-xs text-[var(--color-text-secondary)] leading-relaxed">
@@ -752,7 +766,7 @@ export default function TrafficSimulator({
                   </div>
                   <p className="text-xs font-medium text-[var(--color-text-secondary)]">No flows yet</p>
                   <p className="text-[11px] text-[var(--color-text-muted)] mt-1 max-w-xs">
-                    Run a simulation above and click <strong>Save as flow</strong>, or use <strong>Add manually</strong> / <strong>Import</strong>.
+                    Run a simulation above — results are saved here automatically. Or use <strong>Add manually</strong> / <strong>Import</strong>.
                   </p>
                 </div>
               ) : (
