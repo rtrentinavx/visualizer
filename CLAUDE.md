@@ -5,14 +5,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev      # Vite dev server
-npm run build    # tsc -b && vite build  — type errors break the build
-npm run lint     # eslint .
-npm run preview  # preview production build
-vercel --prod    # deploy
+npm run dev          # Vite dev server
+npm run build        # tsc -b && vite build  — type errors break the build
+npm run lint         # eslint .
+npm run preview      # preview production build
+npm run test         # vitest (logic / integration tier, watch mode)
+npm run test:ci      # vitest run (single-pass)
+npm run test:e2e     # build + Playwright (UI flow tier, Chromium against vite preview)
+npm run test:e2e:ui  # Playwright headed UI explorer
+vercel --prod        # deploy
 ```
 
-There is **no test suite**. The only correctness gates are `tsc` (run via `npm run build`) and `eslint`.
+## Test tiers
+
+Two parallel tiers, each catching different classes of bugs:
+
+- **Vitest** (`tests in src/**/*.test.ts`) — logic / integration tier. Tests pure functions, reducers, parsers, the evaluator and simulator engines. Fast (sub-second), no browser, runs as `test:ci` in CI. Use this for anything that doesn't need rendered DOM.
+- **Playwright** ([tests/e2e/](tests/e2e/)) — UI flow tier. Chromium only, runs against `vite preview` of the BUILT bundle so it tests what Vercel actually ships. Network is stubbed at `/api/*` via [tests/e2e/fixtures.ts](tests/e2e/fixtures.ts); localStorage is real (we want to exercise the encrypted-storage round-trip). Welcome modals are pre-dismissed by the same fixture.
+
+**Workflow rule:** new UI-affecting changes ship with at least one Playwright happy-path test. The CLAUDE.md guidance "start the dev server and use the feature in a browser before reporting the task complete" is replaced by "write the Playwright test." If a change is logic-only, Vitest is enough.
+
+CI runs both tiers on every PR via [.github/workflows/e2e.yml](.github/workflows/e2e.yml). On failure, the Playwright HTML report is uploaded as an artifact (`playwright-report/`, 7-day retention).
 
 Known harmless build warning: `TS2307: Cannot find module '@vercel/node'` in `api/ai/proxy.ts`. The Vercel build succeeds without those types.
 
