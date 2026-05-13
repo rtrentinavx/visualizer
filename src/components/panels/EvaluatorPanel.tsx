@@ -15,6 +15,8 @@ interface EvaluatorPanelProps {
   onSelectPolicy: (policyId: string) => void;
   onSelectGroup: (groupId: string) => void;
   onApplyFix: (finding: Finding, suggestion?: string) => void;
+  /** Iterate through every fixable finding and apply each auto-fix in one shot. */
+  onFixAll: () => void;
 }
 
 const severityConfig = {
@@ -53,7 +55,7 @@ function getScoreGrade(score: number): string {
   return 'F';
 }
 
-export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix }: EvaluatorPanelProps) {
+export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix, onFixAll }: EvaluatorPanelProps) {
   const { findings, score, summary, categories } = report;
   const [activeCategory, setActiveCategory] = useState<FindingCategory | 'all'>('all');
 
@@ -113,18 +115,31 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-subtle)]">
-          <div className="flex items-center gap-3">
-            <ShieldAlert size={18} className="text-[var(--color-accent-amber)]" />
-            <div>
+          <div className="flex items-center gap-3 min-w-0">
+            <ShieldAlert size={18} className="text-[var(--color-accent-amber)] shrink-0" />
+            <div className="min-w-0">
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Policy Evaluator</h2>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5 truncate">
                 {summary.total === 0 ? 'All checks passed' : `${summary.errors} errors · ${summary.warnings} warnings · ${summary.infos} info · ${summary.fixable} fixable`}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {summary.fixable > 0 && (
+              <button
+                onClick={onFixAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
+                style={{ backgroundColor: 'var(--color-accent-purple)' }}
+                title={`Apply every auto-fix in one shot (${summary.fixable} fix${summary.fixable === 1 ? '' : 'es'}). Each finding's individual fix still works.`}
+              >
+                <Wand2 size={13} />
+                Fix all ({summary.fixable})
+              </button>
+            )}
+            <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Score Dashboard */}

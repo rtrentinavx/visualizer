@@ -381,6 +381,30 @@ export default function App() {
               setSelectedItem({ type: 'smartGroup', id: finding.affectedGroupIds[0] });
             }
           }}
+          onFixAll={() => {
+            // Convergence loop: re-evaluate after each pass so newly-fixable
+            // findings produced by an earlier fix get caught too. Capped at 5
+            // iterations to guarantee we don't loop forever if two fixes
+            // keep regenerating each other.
+            let next = topology;
+            let report = evaluatorReport;
+            for (let i = 0; i < 5; i++) {
+              if (!report) break;
+              const fixables = report.findings.filter((f) => f.fixable);
+              if (fixables.length === 0) break;
+              let changed = false;
+              for (const finding of fixables) {
+                const result = applyAutoFix(next, finding);
+                if (result) { next = result; changed = true; }
+              }
+              if (!changed) break;
+              report = evaluateTopology(next);
+            }
+            if (next !== topology) {
+              dispatch({ type: 'replace', topology: next });
+              setEvaluatorReport(report);
+            }
+          }}
         />
         </Suspense>
       )}
