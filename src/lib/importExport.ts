@@ -1,4 +1,4 @@
-import type { DcfPolicyModel, SmartGroup, DcfPolicy, SmartGroupCriteria } from '../types/dcf';
+import type { DcfPolicyModel, SmartGroup, WebGroup, DcfPolicy, SmartGroupCriteria } from '../types/dcf';
 
 // JSON topology save/import was removed — Terraform HCL (paste + zip upload)
 // is the only structured-config import/export path now. Cloud sync (Upstash)
@@ -243,6 +243,80 @@ function randomColor(): string {
   return colors[Math.floor(Math.random() * colors.length)] ?? '#3b82f6';
 }
 
+/**
+ * Convert a single `match_expressions { ... }` block into zero or more
+ * SmartGroupCriteria entries. Handles the shapes the Aviatrix provider emits:
+ *
+ *   - { cidr = "..." }                          -> subnet
+ *   - { type = "subnet" cidr = "..." }          -> subnet (our export shape)
+ *   - { type = "vm" key = "tag:env" val = "..." } -> vm (our export shape)
+ *   - { type = "vm" tags = { k = "v", ... } }   -> one vm criterion per pair
+ *   - { type = "vpc" name = "kccd-euc" }        -> vm-typed with key="vpc", value=name
+ *   - Other resource-type matchers (account, region, k8s_*, etc.) without
+ *     a clean key/value mapping are encoded as vm criteria with key="<type>"
+ *     and value="<best-effort string>". Unknown shapes are skipped, NOT
+ *     pushed as empty criteria — empty criteria mask the bug.
+ */
+function extractSmartGroupCriteria(me: HclBlock): SmartGroupCriteria[] {
+  const out: SmartGroupCriteria[] = [];
+  const type = getString(me, 'type');
+  const cidr = getString(me, 'cidr');
+  const tags = me.attributes['tags'];
+
+  // Subnet: a CIDR is present, regardless of whether `type` was declared.
+  if (cidr) {
+    out.push({ type: 'subnet', cidr });
+    // A match_expressions block typically has either a cidr OR a vm-shaped
+    // discriminator, not both. If we already saw a cidr, we're done with this
+    // block.
+    return out;
+  }
+
+  // Tags map: `tags = { k = "v", k2 = "v2" }` produces one vm criterion per pair.
+  if (tags && typeof tags === 'object' && !Array.isArray(tags)) {
+    for (const [k, v] of Object.entries(tags as Record<string, unknown>)) {
+      if (typeof v === 'string') {
+        out.push({ type: 'vm', key: k, operator: 'equals', value: v });
+      }
+    }
+    if (out.length > 0) return out;
+  }
+
+  // Single key/val (our own export shape): `key = "tag:env" val = "prod"`.
+  const key = getString(me, 'key');
+  const val = getString(me, 'val') ?? getString(me, 'value');
+  if (key || val !== undefined) {
+    out.push({
+      type: 'vm',
+      key: key ? (key.startsWith('tag:') ? key.slice(4) : key) : undefined,
+      operator: val !== undefined ? 'equals' : undefined,
+      value: val,
+    });
+    return out;
+  }
+
+  // Resource-type matchers: `{ type = "vpc" name = "kccd-euc" }` and similar.
+  // We don't have native fields for vpc/account/region/k8s_*; encode the
+  // discriminator as a synthetic key+value so the criterion is at least
+  // visible and editable in the inspector.
+  if (type) {
+    const synthValue =
+      getString(me, 'name') ??
+      getString(me, 'account_name') ??
+      getString(me, 'region') ??
+      getString(me, 'res_id') ??
+      getString(me, 'fqdn');
+    if (synthValue !== undefined) {
+      out.push({ type: 'vm', key: type, operator: 'equals', value: synthValue });
+      return out;
+    }
+  }
+
+  // Unknown shape — skip rather than push an empty criterion. Empty criteria
+  // get the SmartGroup imported with no resolvable membership and mask the bug.
+  return out;
+}
+
 export function importTerraformHCL(hcl: string): DcfPolicyModel {
   const root = parseHcl(hcl);
   const resources = findBlocks(root, 'resource');
@@ -267,24 +341,7 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     for (const sel of selectors) {
       const matchExps = findBlocks(sel.blocks, 'match_expressions');
       for (const me of matchExps) {
-        const type = getString(me, 'type') || 'vm';
-        const criteriaItem: SmartGroupCriteria = { type: type as 'vm' | 'subnet' };
-        if (type === 'vm') {
-          const key = getString(me, 'key');
-          if (key) {
-            // Strip "tag:" prefix if present
-            criteriaItem.key = key.startsWith('tag:') ? key.slice(4) : key;
-          }
-          const val = getString(me, 'val') || getString(me, 'value');
-          if (val !== undefined) {
-            criteriaItem.value = val;
-            criteriaItem.operator = 'equals';
-          }
-        } else if (type === 'subnet') {
-          const cidr = getString(me, 'cidr');
-          if (cidr) criteriaItem.cidr = cidr;
-        }
-        criteria.push(criteriaItem);
+        criteria.push(...extractSmartGroupCriteria(me));
       }
     }
 
@@ -295,6 +352,54 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       criteria,
       matchType: selectors.length > 1 ? 'any' : 'all',
     });
+  }
+
+  // Second pass: Web Groups (aviatrix_web_group). Each resource has a name and
+  // one or more `selector { match_expressions { snifilter|urlfilter|fqdn = "..." } }`
+  // blocks. We flatten every match_expressions value into the WebGroup's
+  // `fqdns` array — SNI and URL patterns share the same glob shape downstream.
+  const webGroups: WebGroup[] = [];
+  const webGroupTfNameToId = new Map<string, string>();
+  for (const res of resources) {
+    if (res.labels[0] !== 'aviatrix_web_group') continue;
+    const tfName = res.labels[1] || '';
+    const name = getString(res, 'name') || tfName;
+    const id = `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    webGroupTfNameToId.set(tfName, id);
+
+    const fqdns: string[] = [];
+    const selectors = findBlocks(res.blocks, 'selector');
+    for (const sel of selectors) {
+      const matchExps = findBlocks(sel.blocks, 'match_expressions');
+      for (const me of matchExps) {
+        // snifilter is the canonical L7 SNI match; urlfilter is the URL-pattern
+        // match. Both feed our single `fqdns` list. `fqdn` is a possible alias.
+        const sni = getString(me, 'snifilter');
+        const url = getString(me, 'urlfilter');
+        const fqdn = getString(me, 'fqdn');
+        if (sni) fqdns.push(sni);
+        if (url) fqdns.push(url);
+        if (fqdn) fqdns.push(fqdn);
+      }
+    }
+
+    webGroups.push({ id, name, fqdns });
+  }
+
+  function resolveWebGroupRef(ref: string): string | null {
+    // Direct name match against any imported WebGroup
+    const byName = webGroups.find((g) => g.name === ref);
+    if (byName) return byName.id;
+    // Terraform reference: aviatrix_web_group.<tfName>.{name,id,uuid}
+    const tfMatch = ref.match(/aviatrix_web_group\.([a-zA-Z0-9_]+)\.(?:name|id|uuid)/);
+    if (tfMatch && tfMatch[1]) {
+      const wid = webGroupTfNameToId.get(tfMatch[1]);
+      if (wid) return wid;
+    }
+    // Controller-emitted UUID with no matching local resource — can't resolve
+    // without .tfstate. Returning null lets the caller silently skip the
+    // attachment rather than fail the whole import.
+    return null;
   }
 
   // Helper to resolve group references
@@ -357,6 +462,16 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
         if (resolved) dstExcludeIds.push(resolved);
       }
 
+      // WebGroups attached to this policy — try Terraform-ref + name match.
+      // UUID-only references from controller-emitted Terraform can't resolve
+      // here (we have no .tfstate); those entries are silently skipped.
+      const webGroupIds: string[] = [];
+      const webGroupRefs = getStringArray(pb, 'web_groups');
+      for (const ref of webGroupRefs) {
+        const resolved = resolveWebGroupRef(ref);
+        if (resolved) webGroupIds.push(resolved);
+      }
+
       policies.push({
         id: `pol-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         name,
@@ -365,6 +480,7 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
         dstGroupId: dstId,
         srcExcludeGroupIds: srcExcludeIds.length > 0 ? srcExcludeIds : undefined,
         dstExcludeGroupIds: dstExcludeIds.length > 0 ? dstExcludeIds : undefined,
+        webGroupIds: webGroupIds.length > 0 ? webGroupIds : undefined,
         action,
         protocol,
         ports,
@@ -376,7 +492,7 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
 
   return {
     smartGroups,
-    webGroups: [],
+    webGroups,
     threatGroups: [],
     geoGroups: [],
     policies,
