@@ -1,6 +1,6 @@
 import type { VercelResponse } from '@vercel/node';
-import type { ChatMessage } from '../types';
-import { fetchWithTimeout } from '../_timeout';
+import type { ChatMessage } from '../types.js';
+import { fetchWithTimeout } from '../_timeout.js';
 
 export async function proxyOpenAI(
   res: VercelResponse,

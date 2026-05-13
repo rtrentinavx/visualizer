@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchWithTimeout, isTimeoutError } from './_timeout';
+import { fetchWithTimeout, isTimeoutError } from './_timeout.js';
 
 // Some providers' model-list endpoints are slow; give the function room to
 // complete instead of hitting the default 10s timeout and returning

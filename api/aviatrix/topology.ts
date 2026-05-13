@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchWithTimeout, isTimeoutError } from '../ai/_timeout';
+import { fetchWithTimeout, isTimeoutError } from '../ai/_timeout.js';
 
 /**
  * MCP client proxy for live topology fetch from a customer's Aviatrix

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchWithTimeout, isTimeoutError } from '../ai/_timeout';
+import { fetchWithTimeout, isTimeoutError } from '../ai/_timeout.js';
 
 /**
  * OAuth 2.0 token-exchange proxy for the Aviatrix Live Connector.

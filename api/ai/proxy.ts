@@ -1,14 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Redis } from '@upstash/redis';
-import type { ChatMessage } from './types';
-import { proxyOpenAI } from './providers/openai';
-import { proxyAnthropic } from './providers/anthropic';
-import { proxyGoogle } from './providers/google';
-import { proxyOllama } from './providers/ollama';
-import { proxyLMStudio } from './providers/lmstudio';
-import { proxyBedrock } from './providers/bedrock';
-import { proxyCustom } from './providers/custom';
-import { isTimeoutError, PROVIDER_FETCH_TIMEOUT_MS } from './_timeout';
+import type { ChatMessage } from './types.js';
+import { proxyOpenAI } from './providers/openai.js';
+import { proxyAnthropic } from './providers/anthropic.js';
+import { proxyGoogle } from './providers/google.js';
+import { proxyOllama } from './providers/ollama.js';
+import { proxyLMStudio } from './providers/lmstudio.js';
+import { proxyBedrock } from './providers/bedrock.js';
+import { proxyCustom } from './providers/custom.js';
+import { isTimeoutError, PROVIDER_FETCH_TIMEOUT_MS } from './_timeout.js';
 
 // Initialize Redis lazily and defensively. If UPSTASH_REDIS_REST_URL or
 // UPSTASH_REDIS_REST_TOKEN are missing/malformed, `Redis.fromEnv()` THROWS at

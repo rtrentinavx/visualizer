@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchWithTimeout, isTimeoutError } from './_timeout';
+import { fetchWithTimeout, isTimeoutError } from './_timeout.js';
 
 // Same per-invocation timeout posture as the other AI endpoints — see proxy.ts.
 export const config = {
