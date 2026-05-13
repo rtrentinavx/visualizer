@@ -189,15 +189,25 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {summary.fixable > 0 && (
+            {/* Fix all button: visible whenever the evaluator has run (i.e. there's
+                anything to evaluate). When fixable === 0 it stays in the header as a
+                disabled "all clear" indicator rather than disappearing, so users get
+                visual confirmation that auto-fixes were applied and the remainder
+                needs manual / AI review. */}
+            {summary.total > 0 && (
               <button
                 onClick={onFixAll}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
-                style={{ backgroundColor: 'var(--color-accent-purple)' }}
-                title={`Apply every auto-fix in one shot (${summary.fixable} fix${summary.fixable === 1 ? '' : 'es'}). Each finding's individual fix still works.`}
+                disabled={summary.fixable === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors disabled:cursor-default"
+                style={summary.fixable > 0
+                  ? { backgroundColor: 'var(--color-accent-purple)', color: '#fff' }
+                  : { backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}
+                title={summary.fixable > 0
+                  ? `Apply every auto-fix in one shot (${summary.fixable} fix${summary.fixable === 1 ? '' : 'es'}). Each finding's individual fix still works.`
+                  : `All auto-fixable findings have been applied. Remaining findings need manual review or per-finding AI Fix — "Overly Permissive Policy" needs you to choose the right SmartGroups, "Unused Group" needs you to decide whether to remove or attach, etc.`}
               >
                 <Wand2 size={13} />
-                Fix all ({summary.fixable})
+                {summary.fixable > 0 ? `Fix all (${summary.fixable})` : 'All auto-fixes applied'}
               </button>
             )}
             <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
