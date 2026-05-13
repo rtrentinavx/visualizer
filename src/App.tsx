@@ -43,7 +43,7 @@ function PanelLoader() {
 }
 
 import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
-import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
+import { evaluateTopology, applyAutoFix, applyWebGroupSplit, type EvaluationReport } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
 import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant } from './lib/aviatrix/storage';
@@ -404,6 +404,13 @@ export default function App() {
               dispatch({ type: 'replace', topology: next });
               setEvaluatorReport(report);
             }
+          }}
+          onApplySplit={(webGroupId, splits) => {
+            if (!splits || splits.length === 0) return;
+            const result = applyWebGroupSplit(topology, webGroupId, splits);
+            if (!result) return;
+            dispatch({ type: 'replace', topology: result.topology });
+            setEvaluatorReport(evaluateTopology(result.topology));
           }}
         />
         </Suspense>

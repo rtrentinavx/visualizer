@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { DcfPolicy, DcfPolicyModel } from '../types/dcf';
-import { evaluateTopology, applyAutoFix, findL4ShadowingInOrder } from './policyEvaluator';
+import { evaluateTopology, applyAutoFix, findL4ShadowingInOrder, applyWebGroupSplit } from './policyEvaluator';
 
 // ---------- Helpers ----------
 
@@ -796,5 +796,89 @@ describe('findL4DenyShadowsL7Allow', () => {
     // But if the reorder modal proposes [L4Deny, L7Allow] → shadowed.
     const proposed = findL4ShadowingInOrder([l4Deny, l7Allow]);
     expect(proposed.get('p-l7')).toBe('p-l4');
+  });
+});
+
+// ---------- AI-suggested WebGroup split ----------
+
+describe('applyWebGroupSplit', () => {
+  function topoWithWideWG(): DcfPolicyModel {
+    const t = emptyTopology();
+    t.webGroups.push({
+      id: 'wg-old',
+      name: 'Mixed Allowlist',
+      fqdns: ['*.salesforce.com', '*.slack.com', '*.github.com', '*.windowsupdate.com', '*.ubuntu.com'],
+    });
+    t.policies = [
+      policy({ id: 'pol-attaches', name: 'Web Egress', priority: 100, webGroupIds: ['wg-old'] }),
+    ];
+    return t;
+  }
+
+  it('creates new WebGroups, rewrites policy references, removes the original', () => {
+    const t = topoWithWideWG();
+    const result = applyWebGroupSplit(t, 'wg-old', [
+      { name: 'SaaS Apps', fqdns: ['*.salesforce.com', '*.slack.com'] },
+      { name: 'Dev Tools', fqdns: ['*.github.com'] },
+      { name: 'OS Updates', fqdns: ['*.windowsupdate.com', '*.ubuntu.com'] },
+    ]);
+    expect(result).not.toBeNull();
+    const r = result!;
+    // Original gone.
+    expect(r.topology.webGroups.find((g) => g.id === 'wg-old')).toBeUndefined();
+    // Three new groups present.
+    const newGroups = r.topology.webGroups.filter((g) => ['SaaS Apps', 'Dev Tools', 'OS Updates'].includes(g.name));
+    expect(newGroups).toHaveLength(3);
+    // Policy re-points to ALL three new group ids.
+    const updatedPolicy = r.topology.policies.find((p) => p.id === 'pol-attaches')!;
+    expect(updatedPolicy.webGroupIds).toHaveLength(3);
+    const newIds = new Set(newGroups.map((g) => g.id));
+    for (const id of updatedPolicy.webGroupIds!) expect(newIds.has(id)).toBe(true);
+    // Summary numbers match.
+    expect(r.summary.created).toBe(3);
+    expect(r.summary.policiesUpdated).toBe(1);
+    expect(r.summary.droppedFqdns).toBe(0);
+  });
+
+  it('drops invented (non-original) fqdns from proposed splits — anti-hallucination guard', () => {
+    const t = topoWithWideWG();
+    const result = applyWebGroupSplit(t, 'wg-old', [
+      { name: 'Real', fqdns: ['*.salesforce.com', '*.fake-domain-the-ai-invented.com'] },
+      { name: 'Other', fqdns: ['*.slack.com', '*.another-invented.io'] },
+    ]);
+    expect(result).not.toBeNull();
+    const r = result!;
+    // Two invented fqdns dropped.
+    expect(r.summary.droppedFqdns).toBe(2);
+    const real = r.topology.webGroups.find((g) => g.name === 'Real')!;
+    const other = r.topology.webGroups.find((g) => g.name === 'Other')!;
+    expect(real.fqdns).toEqual(['*.salesforce.com']);
+    expect(other.fqdns).toEqual(['*.slack.com']);
+  });
+
+  it('drops splits whose fqdns are all invented (resulting empty)', () => {
+    const t = topoWithWideWG();
+    const result = applyWebGroupSplit(t, 'wg-old', [
+      { name: 'AllReal', fqdns: ['*.salesforce.com'] },
+      { name: 'AllFake', fqdns: ['*.invented-1.com', '*.invented-2.com'] },
+    ]);
+    expect(result).not.toBeNull();
+    const newWGs = result!.topology.webGroups.filter((g) => g.name === 'AllReal' || g.name === 'AllFake');
+    expect(newWGs).toHaveLength(1);
+    expect(newWGs[0]!.name).toBe('AllReal');
+  });
+
+  it('returns null when the source WebGroup id does not exist', () => {
+    const t = topoWithWideWG();
+    expect(applyWebGroupSplit(t, 'wg-does-not-exist', [
+      { name: 'X', fqdns: ['*.salesforce.com'] },
+    ])).toBeNull();
+  });
+
+  it('returns null when every proposed split is empty after validation', () => {
+    const t = topoWithWideWG();
+    expect(applyWebGroupSplit(t, 'wg-old', [
+      { name: 'AllInvented', fqdns: ['*.totally-fake.com'] },
+    ])).toBeNull();
   });
 });

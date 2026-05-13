@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
-import { ShieldAlert, AlertTriangle, Info, X, ArrowRight, Wand2, Loader2, Wrench, Check, XCircle, Trophy } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Info, X, ArrowRight, Wand2, Loader2, Wrench, Check, XCircle, Trophy, Scissors } from 'lucide-react';
 import type { Finding, EvaluationReport, FindingCategory, Framework } from '../../lib/policyEvaluator';
 import type { AIProfile, AIMessage } from '../../lib/ai/types';
 import { streamChat } from '../../lib/ai/client';
-import { SYSTEM_PROMPT_AUTO_FIX, buildAutoFixPrompt, PROMPT_VERSIONS } from '../../lib/ai/prompts';
+import { SYSTEM_PROMPT_AUTO_FIX, buildAutoFixPrompt, PROMPT_VERSIONS, SYSTEM_PROMPT_SPLIT_WEBGROUP, buildSplitWebGroupPrompt } from '../../lib/ai/prompts';
 import type { DcfPolicyModel } from '../../types/dcf';
-import { EvaluatorFixSchema, safeParseAIOutput } from '../../lib/ai/schemas';
+import { EvaluatorFixSchema, WebGroupSplitSuggestionSchema, safeParseAIOutput, type WebGroupSplitSuggestion } from '../../lib/ai/schemas';
 
 interface EvaluatorPanelProps {
   topology: DcfPolicyModel;
@@ -17,6 +17,15 @@ interface EvaluatorPanelProps {
   onApplyFix: (finding: Finding, suggestion?: string) => void;
   /** Iterate through every fixable finding and apply each auto-fix in one shot. */
   onFixAll: () => void;
+  /** Materialize an AI-suggested WebGroup split. Called from the wide-webgroup AI suggestion flow. */
+  onApplySplit: (webGroupId: string, splits: WebGroupSplitSuggestion['proposedSplits']) => void;
+}
+
+interface SplitState {
+  loading: boolean;
+  error?: string;
+  /** Parsed AI suggestion once streaming completes successfully. */
+  suggestion?: WebGroupSplitSuggestion;
 }
 
 const severityConfig = {
@@ -55,12 +64,15 @@ function getScoreGrade(score: number): string {
   return 'F';
 }
 
-export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix, onFixAll }: EvaluatorPanelProps) {
+export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix, onFixAll, onApplySplit }: EvaluatorPanelProps) {
   const { findings, score, summary, categories } = report;
   const [activeCategory, setActiveCategory] = useState<FindingCategory | 'all'>('all');
 
   const [fixingId, setFixingId] = useState<string | null>(null);
   const [fixResult, setFixResult] = useState<Record<string, { text: string; loading: boolean }>>({});
+
+  /** Per-finding state for the wide-webgroup AI split suggestion flow. */
+  const [splitState, setSplitState] = useState<Record<string, SplitState>>({});
 
   const filteredFindings = useMemo(() => {
     if (activeCategory === 'all') return findings;
@@ -98,6 +110,58 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
 
   const dismissFix = (findingId: string) => {
     setFixResult((prev) => {
+      const next = { ...prev };
+      delete next[findingId];
+      return next;
+    });
+  };
+
+  /**
+   * Stream an AI suggestion for splitting a wide WebGroup. Extracts the
+   * affected group id from the finding's affectedGroupIds[0], grabs the
+   * group's fqdns + referencing policies, calls the LLM, validates the
+   * response against WebGroupSplitSuggestionSchema. The "Apply" button on
+   * the rendered suggestion routes back to App.tsx via onApplySplit.
+   */
+  const handleSuggestSplit = async (finding: Finding) => {
+    if (!aiProfile) return;
+    const groupId = finding.affectedGroupIds?.[0];
+    if (!groupId) return;
+    const wg = topology.webGroups.find((g) => g.id === groupId);
+    if (!wg) return;
+
+    setSplitState((prev) => ({ ...prev, [finding.id]: { loading: true } }));
+
+    const referencingPolicyNames = topology.policies
+      .filter((p) => p.webGroupIds?.includes(groupId))
+      .map((p) => p.name);
+
+    const systemMsg: AIMessage = { role: 'system', content: SYSTEM_PROMPT_SPLIT_WEBGROUP };
+    const userMsg: AIMessage = {
+      role: 'user',
+      content: buildSplitWebGroupPrompt({ webGroupName: wg.name, fqdns: wg.fqdns, referencingPolicyNames }),
+    };
+
+    let text = '';
+    try {
+      for await (const chunk of streamChat(aiProfile, [systemMsg, userMsg], PROMPT_VERSIONS.splitWebGroup)) {
+        if (chunk.done) break;
+        text += chunk.content;
+      }
+      const validated = safeParseAIOutput(WebGroupSplitSuggestionSchema, text);
+      if (!validated.success) {
+        setSplitState((prev) => ({ ...prev, [finding.id]: { loading: false, error: `AI response invalid: ${validated.error}` } }));
+        return;
+      }
+      setSplitState((prev) => ({ ...prev, [finding.id]: { loading: false, suggestion: validated.data } }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to get AI suggestion';
+      setSplitState((prev) => ({ ...prev, [finding.id]: { loading: false, error: msg } }));
+    }
+  };
+
+  const dismissSplit = (findingId: string) => {
+    setSplitState((prev) => {
       const next = { ...prev };
       delete next[findingId];
       return next;
@@ -339,7 +403,7 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
                           Fix it for me
                         </button>
                       )}
-                      {aiProfile && !fix && (
+                      {aiProfile && !fix && !finding.id.startsWith('wide-webgroup-') && (
                         <button
                           onClick={() => handleAIFix(finding)}
                           disabled={isFixing}
@@ -354,7 +418,36 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
                           {isFixing ? 'Thinking...' : 'AI Fix'}
                         </button>
                       )}
+                      {aiProfile && finding.id.startsWith('wide-webgroup-') && !splitState[finding.id]?.suggestion && (
+                        <button
+                          onClick={() => handleSuggestSplit(finding)}
+                          disabled={splitState[finding.id]?.loading === true}
+                          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded border transition-colors disabled:opacity-50"
+                          style={{
+                            backgroundColor: 'var(--color-accent-purple)/10',
+                            borderColor: 'var(--color-accent-purple)/30',
+                            color: 'var(--color-accent-purple)',
+                          }}
+                        >
+                          {splitState[finding.id]?.loading ? <Loader2 size={10} className="animate-spin" /> : <Scissors size={10} />}
+                          {splitState[finding.id]?.loading ? 'Analyzing…' : 'AI Suggest split'}
+                        </button>
+                      )}
                     </div>
+
+                    {/* Split-suggestion result card (only for wide-webgroup findings) */}
+                    {finding.id.startsWith('wide-webgroup-') && splitState[finding.id] && (
+                      <SplitSuggestionCard
+                        state={splitState[finding.id]!}
+                        onApply={(splits) => {
+                          const groupId = finding.affectedGroupIds?.[0];
+                          if (!groupId) return;
+                          onApplySplit(groupId, splits);
+                          dismissSplit(finding.id);
+                        }}
+                        onDismiss={() => dismissSplit(finding.id)}
+                      />
+                    )}
                   </div>
                 </div>
               );
@@ -362,6 +455,91 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline preview of the AI's WebGroup split suggestion. Three states:
+ * - loading: spinner (the parent's button already shows this; we just don't
+ *   render the card until either suggestion or error lands)
+ * - error: red banner with the error message + Dismiss
+ * - suggestion: list of proposed subgroups with their FQDN counts + an Apply
+ *   button. shouldSplit=false from the AI surfaces as an "AI says keep as-is"
+ *   message rather than a misleading "no splits" state.
+ */
+function SplitSuggestionCard({
+  state,
+  onApply,
+  onDismiss,
+}: {
+  state: SplitState;
+  onApply: (splits: WebGroupSplitSuggestion['proposedSplits']) => void;
+  onDismiss: () => void;
+}) {
+  if (state.loading) return null;
+
+  if (state.error) {
+    return (
+      <div className="mt-2 p-3 rounded border bg-red-500/10 border-red-500/30 text-[11px] text-red-300 flex items-start gap-2">
+        <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+        <div className="flex-1">{state.error}</div>
+        <button onClick={onDismiss} aria-label="Dismiss" className="p-0.5 hover:text-red-200">
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  const s = state.suggestion;
+  if (!s) return null;
+
+  if (!s.shouldSplit || !s.proposedSplits || s.proposedSplits.length === 0) {
+    return (
+      <div className="mt-2 p-3 rounded border bg-[var(--color-surface-elevated)] border-[var(--color-border-subtle)] text-[11px] text-[var(--color-text-secondary)] flex items-start gap-2">
+        <Check size={12} className="shrink-0 mt-0.5 text-emerald-500" />
+        <div className="flex-1">
+          <strong>AI says keep as-is.</strong> {s.reason}
+        </div>
+        <button onClick={onDismiss} aria-label="Dismiss" className="p-0.5 hover:text-[var(--color-text-primary)]">
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 p-3 rounded border bg-[var(--color-accent-purple)]/5 border-[var(--color-accent-purple)]/30 space-y-2">
+      <div className="flex items-start gap-2">
+        <Scissors size={12} className="shrink-0 mt-0.5 text-[var(--color-accent-purple)]" />
+        <div className="flex-1 text-[11px] text-[var(--color-text-secondary)]">
+          <strong>Proposed split into {s.proposedSplits.length} subgroups.</strong> {s.reason}
+        </div>
+        <button onClick={onDismiss} aria-label="Dismiss" className="p-0.5 hover:text-[var(--color-text-primary)]">
+          <X size={11} />
+        </button>
+      </div>
+      <ul className="space-y-1 pl-4">
+        {s.proposedSplits.map((sp, i) => (
+          <li key={i} className="text-[11px] text-[var(--color-text-secondary)] flex items-center gap-2">
+            <span className="font-medium text-[var(--color-text-primary)]">{sp.name}</span>
+            <span className="text-[var(--color-text-muted)]">— {sp.fqdns.length} FQDN{sp.fqdns.length === 1 ? '' : 's'}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={() => onApply(s.proposedSplits)}
+          className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded font-medium text-white"
+          style={{ backgroundColor: 'var(--color-accent-purple)' }}
+        >
+          <Check size={11} />
+          Apply split
+        </button>
+      </div>
+      <p className="text-[10px] text-[var(--color-text-muted)] pl-1">
+        Apply creates the new WebGroups and re-points every policy that referenced the original to attach all new subgroups (same allow/deny behavior preserved). You can then tweak per-subgroup actions afterwards.
+      </p>
     </div>
   );
 }
