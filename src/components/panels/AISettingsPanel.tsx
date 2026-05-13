@@ -323,12 +323,12 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
   // ===========================================================================
 
   return (
-    <div className="flex flex-col h-full overflow-y-auto">
-      <header className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3">
+    <div className="flex flex-col h-full overflow-hidden">
+      <header className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3 shrink-0">
         <div className="flex items-center gap-3">
           <Bot size={20} className="text-[var(--color-accent-blue)]" />
           <div>
-            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">AI Settings</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Settings</h2>
             <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
               {localSettings.profiles.length} profile{localSettings.profiles.length !== 1 ? 's' : ''}
               {activeProfile ? ` · Active: ${activeProfile.name}` : ' · No active profile'}
@@ -341,7 +341,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
         </div>
       </header>
 
-      <div className="flex-1 p-4 max-w-3xl mx-auto w-full space-y-4">
+      <div className="flex-1 p-4 max-w-5xl mx-auto w-full space-y-4 min-h-0 overflow-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Consent banner — only shown until the user acknowledges. */}
         {!localSettings.consentGiven && (
           <div className="p-3 rounded-lg border bg-amber-500/10 border-amber-500/30 flex gap-3">
@@ -363,7 +363,10 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
           </div>
         )}
 
-        {/* ============ Edit form OR profile list ============ */}
+        {/* Two-column on wide screens: AI profiles on the left, Aviatrix on the right.
+            When editing a profile, the form takes the AI column; the Aviatrix column stays
+            mounted on the right so users can still configure it. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {editingProfile ? (
           <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-5">
             <div className="flex items-center justify-between">
@@ -597,7 +600,8 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
           </div>
         )}
 
-        <AviatrixConnectionSection />
+          <AviatrixConnectionSection />
+        </div>
       </div>
     </div>
   );

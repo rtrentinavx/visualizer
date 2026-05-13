@@ -122,7 +122,7 @@ export default function AviatrixConnectionSection() {
   if (!loaded) return null;
 
   return (
-    <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-3 mt-4">
+    <section className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-3">
       <header className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Plug size={14} className="text-[var(--color-accent-purple)]" />

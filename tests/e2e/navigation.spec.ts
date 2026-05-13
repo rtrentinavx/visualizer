@@ -21,12 +21,12 @@ test.describe('view navigation', () => {
     await expect(page.getByRole('heading', { name: /policy matrix/i })).toBeVisible();
   });
 
-  test('corner AI button opens the AI Settings view', async ({ page }) => {
+  test('corner Settings button opens the Settings view', async ({ page }) => {
     await page.goto('/');
-    // The corner cluster pinned at the far right: Bot icon = AI configuration.
-    await page.getByRole('button', { name: 'AI configuration' }).click();
-    await expect(page.getByRole('heading', { name: /^AI Settings$/i })).toBeVisible({ timeout: 5000 });
-    // Fresh visit (no profiles seeded) shows the empty profile list.
+    // The corner cluster pinned at the far right: Bot icon = Settings.
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByRole('heading', { name: /^Settings$/i })).toBeVisible({ timeout: 5000 });
+    // Fresh visit (no profiles seeded) shows the empty AI profile list.
     await expect(page.getByText(/no ai profiles yet/i)).toBeVisible();
   });
 });

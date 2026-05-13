@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   LayoutGrid, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
@@ -56,14 +57,32 @@ const ACCENT_COLORS = {
 } as const;
 type Accent = keyof typeof ACCENT_COLORS;
 
-/** Delayed hover tooltip — replaces the browser's native `title=` for a styled, in-app label. */
+/**
+ * Delayed hover tooltip. Rendered via a portal to document.body so it escapes
+ * any ancestor `overflow: hidden/auto/scroll` clipping context — important
+ * here because the right-side toolbar uses `overflow-x-auto`, which the CSS
+ * spec coerces into `overflow-y: auto` too, and that was hiding the tooltips
+ * that appeared below the buttons.
+ */
 function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
   const [visible, setVisible] = useState(false);
+  const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLSpanElement>(null);
+
+  const recompute = () => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ left: r.left + r.width / 2, top: r.bottom + 6 });
+  };
 
   const show = () => {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setVisible(true), 350);
+    timer.current = setTimeout(() => {
+      recompute();
+      setVisible(true);
+    }, 350);
   };
   const hide = () => {
     if (timer.current) clearTimeout(timer.current);
@@ -71,8 +90,22 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
     setVisible(false);
   };
 
+  // If the page scrolls while a tooltip is visible, drop it (cheapest way to
+  // avoid stale positioning).
+  useEffect(() => {
+    if (!visible) return;
+    const onMove = () => hide();
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [visible]);
+
   return (
     <span
+      ref={wrapperRef}
       className="relative inline-flex"
       onMouseEnter={show}
       onMouseLeave={hide}
@@ -80,17 +113,20 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
       onBlur={hide}
     >
       {children}
-      {visible && (
+      {visible && coords && typeof document !== 'undefined' && createPortal(
         <span
           role="tooltip"
-          className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap pointer-events-none z-50 shadow-lg"
+          className="fixed -translate-x-1/2 px-2 py-1 rounded text-[10px] font-medium whitespace-nowrap pointer-events-none z-[9999] shadow-lg"
           style={{
+            left: coords.left,
+            top: coords.top,
             backgroundColor: 'var(--color-text-primary)',
             color: 'var(--color-surface-raised)',
           }}
         >
           {label}
-        </span>
+        </span>,
+        document.body,
       )}
     </span>
   );
@@ -282,7 +318,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
         <ToolbarGroup>
           <IconButton
             icon={Bot}
-            label="AI configuration"
+            label="Settings"
             onClick={() => onViewChange('aiSettings')}
             active={viewMode === 'aiSettings'}
             accent="purple"
