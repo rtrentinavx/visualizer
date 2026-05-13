@@ -146,6 +146,15 @@ export default function AviatrixConnectionSection() {
         <code className="px-1 rounded bg-[var(--color-surface-elevated)]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
         {' '}
         as an allowed redirect URI.
+        {' '}
+        <a
+          href="https://github.com/rtrentinavx/visualizer/blob/main/AVIATRIX_LIVE_SETUP.md"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-[var(--color-accent-blue)] hover:underline"
+        >
+          Setup guide →
+        </a>
       </p>
 
       {error && (
