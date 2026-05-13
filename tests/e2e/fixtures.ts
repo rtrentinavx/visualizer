@@ -1,6 +1,21 @@
 import { test as base, type Page } from '@playwright/test';
 
 /**
+ * Pre-populate localStorage flags so the welcome modals (recommendations,
+ * onboarding tour) don't intercept the first interaction. Tests that
+ * *want* to exercise the welcome flow can construct a page without this
+ * (use the base `test` from '@playwright/test' directly).
+ *
+ * Keys mirror the actual storage keys used in `src/lib/*Dismissal.ts`.
+ */
+async function dismissWelcomeFlows(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    localStorage.setItem('dcf-recommendations-dismissed', 'true');
+    localStorage.setItem('dcf-tour-auto-shown', 'true');
+  });
+}
+
+/**
  * Custom Playwright fixture that pre-stubs every `/api/*` route so tests run
  * against the `vite preview` server (which doesn't include the Vercel
  * serverless functions). Without this, any feature that hits the proxy would
@@ -76,6 +91,7 @@ export async function installApiStubs(page: Page): Promise<void> {
  */
 export const test = base.extend({
   page: async ({ page }, use) => {
+    await dismissWelcomeFlows(page);
     await installApiStubs(page);
     await use(page);
   },
