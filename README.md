@@ -104,7 +104,7 @@ Rate-limited serverless proxy via `/api/ai/proxy`.
 
 | Format | In | Out |
 |--------|-----|-----|
-| **Terraform HCL** | ✅ `aviatrix_smart_group`, `aviatrix_dcf_policy_list` resources (paste or upload a project zip) | ✅ Generated `.tf` file download |
+| **Terraform HCL** | ✅ `aviatrix_smart_group`, `aviatrix_dcf_policy_list` resources (paste or upload a project zip) | ✅ Two styles: **Module** (`terraform-aviatrix-modules/dcf-framework/aviatrix`, recommended) or **Raw resources** (legacy) — pick from the export modal |
 | **CSV** | ✅ Traffic flows | ✅ Traffic flows |
 
 ---

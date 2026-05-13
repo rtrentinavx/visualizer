@@ -59,7 +59,7 @@
 - [x] **Auto-documentation** — FileText button in header generates a Markdown summary of the topology with copy/download (see AI Enhancements).
 
 ### Import / Export
-- [x] Terraform HCL export (`aviatrix_smart_group`, `aviatrix_dcf_policy_list`)
+- [x] Terraform HCL export — two styles: **Module** (`terraform-aviatrix-modules/dcf-framework/aviatrix`, default) emits a single `module "dcf"` block + raw `aviatrix_threat_group` / `aviatrix_geo_group` for entities the module doesn't cover; **Raw resources** (legacy) keeps emitting `aviatrix_smart_group` / `aviatrix_distributed_firewalling_policy_list` directly. Toggle in the export modal.
 - [x] CSV traffic flow import/export
 - [x] Import from Terraform HCL
 - [x] Import from a Terraform project zip — drag-drop or pick a `.zip`, we extract every `.tf` file (skipping `.terraform/` vendored content) locally in the browser via fflate, then pull only Aviatrix DCF resources. Non-DCF resources are silently ignored.

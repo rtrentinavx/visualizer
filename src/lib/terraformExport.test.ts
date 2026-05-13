@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateTerraform } from './terraformExport';
+import { generateTerraform, generateTerraformModule } from './terraformExport';
 import { demoTopology } from '../data/demoTopology';
 
 // Expected HCL output for the demo topology. Built by tracing the generator
@@ -304,5 +304,82 @@ describe('generateTerraform', () => {
     const hcl = generateTerraform(demoTopology);
     expect(hcl).not.toContain('resource "aviatrix_smart_group" "internet" {');
     expect(hcl).not.toContain('resource "aviatrix_smart_group" "any" {');
+  });
+});
+
+describe('generateTerraformModule', () => {
+  const out = generateTerraformModule(demoTopology);
+
+  it('emits a single module call against terraform-aviatrix-modules/dcf-framework/aviatrix', () => {
+    expect(out).toContain('module "dcf" {');
+    expect(out).toContain('source  = "terraform-aviatrix-modules/dcf-framework/aviatrix"');
+    expect(out).toContain('version = "~> 1.0"');
+  });
+
+  it('emits smart_groups as a map keyed by sanitized name (not by id)', () => {
+    expect(out).toContain('smart_groups = {');
+    // demo includes "Web Tier" — sanitized = "web-tier"
+    expect(out).toContain('web-tier = {');
+    expect(out).toContain('name = "Web Tier"');
+    // sg-any and sg-internet are skipped
+    expect(out).not.toContain('any = {');
+    expect(out).not.toContain('internet = {');
+  });
+
+  it('emits web_groups with snifilter selectors', () => {
+    expect(out).toContain('web_groups = {');
+    // demo includes "SaaS Allowlist" with *.salesforce.com
+    expect(out).toContain('{ snifilter = "*.salesforce.com" },');
+  });
+
+  it('emits a single default ruleset with all policies as rules', () => {
+    expect(out).toContain('rulesets = {');
+    expect(out).toContain('default = {');
+    expect(out).toContain('action   = "PERMIT"');
+    expect(out).toContain('action   = "DENY"');
+  });
+
+  it('references smart_groups in rules by map key, not by id', () => {
+    // Web -> App allow rule uses sanitized names, not sg-web / sg-app
+    expect(out).toContain('src_smart_groups = ["web-tier"]');
+    expect(out).toContain('dst_smart_groups = ["app-tier"]');
+    expect(out).not.toContain('"sg-web"');
+    expect(out).not.toContain('"sg-app"');
+  });
+
+  it('uses "any" / "internet" sentinels for the special SmartGroup IDs', () => {
+    // demo's pol-4 is bastion → any
+    expect(out).toContain('dst_smart_groups = ["any"]');
+    // demo's pol-5 is monitoring → internet
+    expect(out).toContain('dst_smart_groups = ["internet"]');
+  });
+
+  it('maps decrypt=true to DECRYPT_REQUIRED', () => {
+    // demo's pol-8 has decrypt: true
+    expect(out).toContain('decrypt_policy = "DECRYPT_REQUIRED"');
+  });
+
+  it('emits port_ranges as a list of {lo, hi?} objects parsed from the comma-separated ports field', () => {
+    // demo's pol-1 has ports: '8080,8443'
+    expect(out).toContain('{ lo = 8080 },');
+    expect(out).toContain('{ lo = 8443 },');
+  });
+
+  it('emits ThreatGroups and GeoGroups as raw resources alongside the module call', () => {
+    expect(out).toContain('resource "aviatrix_threat_group"');
+    expect(out).toContain('resource "aviatrix_geo_group"');
+  });
+
+  it('is deterministic — calling twice with the same input yields the same output', () => {
+    expect(generateTerraformModule(demoTopology)).toBe(generateTerraformModule(demoTopology));
+  });
+
+  it('surfaces a warning header when any policy has enforcement disabled', () => {
+    const topoWithDisabled = {
+      ...demoTopology,
+      policies: demoTopology.policies.map((p, i) => i === 0 ? { ...p, enforcement: false } : p),
+    };
+    const out2 = generateTerraformModule(topoWithDisabled);
+    expect(out2).toMatch(/# WARNING:.*enforcement disabled/i);
   });
 });
