@@ -19,4 +19,16 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // Playwright e2e suite — non-React node code. The React-hooks plugin
+  // false-positives on Playwright's `use` fixture parameter (it looks like a
+  // hook name to the rule). Disable React-specific rules here.
+  {
+    files: ['tests/e2e/**/*.ts'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+      'react-hooks/react-compiler': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
 ])
