@@ -46,6 +46,8 @@ import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { evaluateTopology, applyAutoFix, type EvaluationReport } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
+import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant } from './lib/aviatrix/storage';
+import { consumeOAuthHandoff } from './lib/aviatrix/oauth';
 import { useTheme } from './lib/useTheme';
 import { useTopology } from './lib/useTopology';
 import { useModalState } from './lib/useModalState';
@@ -83,6 +85,30 @@ export default function App() {
     loadAISettings().then((saved) => {
       if (saved) setAISettings(saved);
     }).catch(() => {});
+  }, []);
+
+  // Aviatrix OAuth handoff: when the callback page writes a token blob to
+  // localStorage and bounces back here, pick it up, apply the grant to the
+  // matching connection (encrypted), mark it active, and clear the handoff.
+  // Runs once on mount; the handoff key is single-use.
+  useEffect(() => {
+    const handoff = consumeOAuthHandoff();
+    if (!handoff) return;
+    (async () => {
+      const settings = (await loadAviatrixSettings()) ?? { activeConnectionId: null, connections: [] };
+      const idx = settings.connections.findIndex((c) => c.id === handoff.connectionId);
+      if (idx < 0) return; // connection was deleted between Connect click and callback
+      const updated = applyTokenGrant(settings.connections[idx]!, {
+        accessToken: handoff.accessToken,
+        refreshToken: handoff.refreshToken,
+        expiresIn: handoff.expiresIn,
+      });
+      const next = {
+        activeConnectionId: handoff.connectionId,
+        connections: settings.connections.map((c, i) => (i === idx ? updated : c)),
+      };
+      await saveAviatrixSettings(next);
+    })().catch(() => {});
   }, []);
 
   // Offer recommendations on fresh load (no existing topology + not previously dismissed)
