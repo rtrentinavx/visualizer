@@ -209,15 +209,6 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
             <FlaskConical size={14} />
             <span className="hidden sm:inline">Traffic</span>
           </button>
-          <button
-            onClick={() => onViewChange('aiSettings')}
-            className={tabClass(viewMode === 'aiSettings')}
-            aria-current={viewMode === 'aiSettings' ? 'page' : undefined}
-            data-tour="ai-settings-btn"
-          >
-            <Bot size={14} />
-            <span className="hidden sm:inline">AI</span>
-          </button>
         </div>
 
         {score.totalPolicies > 0 && (
@@ -278,16 +269,30 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           </>
         )}
 
-        {/* Group 5 — Settings / Help */}
+        {/* Group 5 — Help / Info */}
         <ToolbarGroup>
+          <IconButton icon={Medal} label={`Achievements (${unlocked} unlocked)`} onClick={actions.openAchievements} badge={unlocked > 0 ? unlocked : undefined} />
+          <IconButton icon={BookOpen} label="Best practices reference" onClick={actions.openBestPractices} accent="blue" />
+          <IconButton icon={HelpCircle} label="About & take the tour" onClick={actions.openAbout} dataTour="about-btn" />
+        </ToolbarGroup>
+
+        <GroupDivider />
+
+        {/* Corner cluster — settings: AI configuration + theme. Visually anchored at the far right. */}
+        <ToolbarGroup>
+          <IconButton
+            icon={Bot}
+            label="AI configuration"
+            onClick={() => onViewChange('aiSettings')}
+            active={viewMode === 'aiSettings'}
+            accent="purple"
+            dataTour="ai-settings-btn"
+          />
           <IconButton
             icon={theme === 'dark' ? Sun : Moon}
             label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             onClick={onToggleTheme}
           />
-          <IconButton icon={Medal} label={`Achievements (${unlocked} unlocked)`} onClick={actions.openAchievements} badge={unlocked > 0 ? unlocked : undefined} />
-          <IconButton icon={BookOpen} label="Best practices reference" onClick={actions.openBestPractices} accent="blue" />
-          <IconButton icon={HelpCircle} label="About & take the tour" onClick={actions.openAbout} dataTour="about-btn" />
         </ToolbarGroup>
       </div>
     </div>
