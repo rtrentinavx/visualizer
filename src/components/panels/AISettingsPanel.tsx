@@ -6,6 +6,7 @@ import type { AIProfile, AISettings, AIProvider } from '../../lib/ai/types';
 import { providerConfigs, getProviderConfig } from '../../lib/ai/providers';
 import { fetchModels, type ModelInfo } from '../../lib/ai/client';
 import { getResidency } from '../../lib/ai/residency';
+import AviatrixConnectionSection from './AviatrixConnectionSection';
 
 interface AISettingsPanelProps {
   settings: AISettings;
@@ -595,6 +596,8 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
             )}
           </div>
         )}
+
+        <AviatrixConnectionSection />
       </div>
     </div>
   );
