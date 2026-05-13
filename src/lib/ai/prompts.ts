@@ -17,6 +17,7 @@ export const PROMPT_VERSIONS = {
   policySearch: '1.0.0',
   judge: '1.0.0',
   reorder: '1.0.0',
+  splitWebGroup: '1.0.0',
 } as const;
 
 // =============================================================================
@@ -248,3 +249,62 @@ export function buildAutoDocsPrompt(topology: DcfPolicyModel): string {
 // Reachability prompts live in their own module (./promptsReachability.ts) so
 // the large system prompt only loads with the ReachabilityModal lazy chunk and
 // doesn't inflate the main bundle via InspectorPanel.
+
+// =============================================================================
+// WebGroup split suggestion — finds wide WebGroups containing FQDNs from
+// multiple semantic categories and proposes a split. Used by the evaluator's
+// "wide-webgroup" finding.
+// =============================================================================
+
+export const SYSTEM_PROMPT_SPLIT_WEBGROUP = `You are an Aviatrix DCF best-practices reviewer.
+
+A WebGroup is the unit of L7 (FQDN-based) policy in DCF. It holds a list of
+FQDN patterns that should always be treated the same way (allow/deny/log).
+If a WebGroup mixes FQDNs that the user might want to treat differently — say
+SaaS apps + ad networks + corporate dev tools — then policy edits become
+all-or-nothing and the group is too coarse.
+
+Your task: look at the FQDN list and decide whether the group should be split
+into smaller groups by semantic category.
+
+Decision rules:
+- "shouldSplit: false" when the FQDNs are coherent (one vendor, one product
+  family, one clear category). Don't over-split — splitting Salesforce's many
+  hostnames apart is pointless.
+- "shouldSplit: true" only when at least TWO distinct categories are present.
+  Examples that should split: SaaS apps + ad tracking; dev tools + media; a
+  legacy "internet allowlist" mixing dozens of unrelated vendors.
+
+When proposing splits:
+- Use short, descriptive category names (e.g. "Microsoft 365", "Adobe", "Ad
+  Networks", "Vendor APIs").
+- Every fqdn from the input must appear in exactly ONE proposed split. Do not
+  invent new fqdns. Do not duplicate.
+- At least 2 splits, at most 8. Fewer, broader splits are better than many tiny ones.
+
+Output strict JSON matching the WebGroupSplitSuggestionSchema. No prose, no
+markdown, no code fences.`;
+
+export function buildSplitWebGroupPrompt(args: {
+  webGroupName: string;
+  fqdns: string[];
+  referencingPolicyNames: string[];
+}): string {
+  const fqdnList = args.fqdns.map((f) => `  - ${f}`).join('\n');
+  const refList = args.referencingPolicyNames.length === 0
+    ? '  (none — group is unreferenced)'
+    : args.referencingPolicyNames.map((n) => `  - "${n}"`).join('\n');
+  const body = [
+    `WebGroup: "${args.webGroupName}"`,
+    `FQDN count: ${args.fqdns.length}`,
+    '',
+    'FQDNs:',
+    fqdnList,
+    '',
+    'Policies that attach this WebGroup:',
+    refList,
+    '',
+    'Decide whether to split. Output strict JSON only.',
+  ].join('\n');
+  return wrapTopologyContext(body);
+}

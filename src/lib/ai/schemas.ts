@@ -100,6 +100,23 @@ export const PolicyOrderSuggestionSchema = z.object({
 
 export type PolicyOrderSuggestion = z.infer<typeof PolicyOrderSuggestionSchema>;
 
+/**
+ * AI suggestion for splitting an overly-broad WebGroup into smaller groups by
+ * semantic category. The engine validates that every fqdn from the original
+ * group appears in exactly one proposed split (no losses, no duplicates) and
+ * that no new fqdns were invented.
+ */
+export const WebGroupSplitSuggestionSchema = z.object({
+  shouldSplit: z.boolean().describe('false = the group is fine as-is; do not surface a split proposal.'),
+  reason: z.string().min(1).describe('One-line rationale for the verdict.'),
+  proposedSplits: z.array(z.object({
+    name: z.string().min(1).describe('Display name for the new subgroup. Should reflect the intent / category (e.g. "Microsoft 365", "Dev Tools").'),
+    fqdns: z.array(z.string().min(1)).min(1).describe('Fqdn patterns from the original group that belong in this subgroup. Every value must come from the original list verbatim.'),
+  })).optional().describe('Required when shouldSplit is true. Two or more entries.'),
+});
+
+export type WebGroupSplitSuggestion = z.infer<typeof WebGroupSplitSuggestionSchema>;
+
 export type PolicySuggestion = z.infer<typeof PolicySuggestionSchema>;
 export type PolicySuggestionArray = z.infer<typeof PolicySuggestionArraySchema>;
 export type PolicyExplanation = z.infer<typeof PolicyExplanationSchema>;

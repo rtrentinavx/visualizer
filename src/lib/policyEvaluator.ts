@@ -34,7 +34,13 @@ export interface EvaluationReport {
 
 function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
   const findings: Finding[] = [];
-  const sorted = [...policies].sort((a, b) => a.priority - b.priority);
+  // A disabled policy is by definition not evaluated by the engine, so it
+  // can neither shadow nor be shadowed. Skipping them here is what makes
+  // the shadow-fix → apply → re-evaluate loop converge: after the fix
+  // disables a shadowed policy, the next evaluation no longer flags it.
+  const sorted = [...policies]
+    .filter((p) => p.enforcement !== false)
+    .sort((a, b) => a.priority - b.priority);
 
   for (let i = 0; i < sorted.length; i++) {
     for (let j = i + 1; j < sorted.length; j++) {
@@ -405,6 +411,36 @@ function findHighPriorityBroadRules(policies: DcfPolicy[]): Finding[] {
     }));
 }
 
+/**
+ * Heuristic trigger for the "split this WebGroup" recommendation. We don't
+ * actually decide whether the group should be split here — that's a semantic
+ * judgement the LLM is much better at. We just surface WebGroups that look
+ * wide enough to be worth a second look.
+ *
+ * Threshold: 10 fqdns. Picked empirically — the bundled WebGroup presets
+ * (SaaS Essentials, Dev Tools, etc.) all have 6-9 fqdns and SHOULDN'T fire;
+ * a real customer's "internet allowlist" grouping unrelated vendors typically
+ * has 15-50+ and SHOULD fire.
+ */
+const WIDE_WEBGROUP_THRESHOLD = 10;
+
+function findWideWebGroups(topology: DcfPolicyModel): Finding[] {
+  return topology.webGroups
+    .filter((g) => g.fqdns.length > WIDE_WEBGROUP_THRESHOLD)
+    .map((g) => ({
+      id: `wide-webgroup-${g.id}`,
+      severity: 'info',
+      category: 'hygiene',
+      frameworks: ['Best Practice'],
+      title: 'Wide WebGroup — Consider Splitting',
+      description: `WebGroup "${g.name}" contains ${g.fqdns.length} FQDN patterns. Wide groups make policy edits all-or-nothing — if you ever need to allow some of these FQDNs and deny others, you'd have to refactor every policy that references this group. Use the AI Suggest split button to see if the FQDNs fall into distinct semantic categories.`,
+      affectedGroupIds: [g.id],
+      // Not auto-fixable in the deterministic sense — the user has to invoke
+      // the AI suggest flow, review the proposed splits, and apply manually.
+      fixable: false,
+    } as Finding));
+}
+
 function findUnusedWebGroups(topology: DcfPolicyModel): Finding[] {
   const used = new Set<string>();
   topology.policies.forEach((p) => p.webGroupIds?.forEach((id) => used.add(id)));
@@ -713,6 +749,7 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   findings.push(...findPoliciesWithoutEnforcement(topology.policies));
   findings.push(...findHighPriorityBroadRules(topology.policies));
   findings.push(...findUnusedWebGroups(topology));
+  findings.push(...findWideWebGroups(topology));
   findings.push(...findUnusedThreatGroups(topology));
   findings.push(...findUnusedGeoGroups(topology));
   findings.push(...findAllowInternetWithoutInspection(topology.policies));
@@ -787,6 +824,13 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
     if (policyIndex === -1) return null;
 
     if (finding.id.startsWith('shadow-')) {
+      // Idempotency guard: if the target policy is already disabled (e.g. the
+      // user already clicked Fix on this finding, or the Fix-all convergence
+      // loop is on a later pass) the fix is a no-op. Returning null tells the
+      // caller "nothing changed" so the loop can converge instead of looping
+      // forever applying the same idempotent write.
+      const target = next.policies.find((p) => p.id === policyId);
+      if (!target || target.enforcement === false) return null;
       next.policies = next.policies.map((p) =>
         p.id === policyId ? { ...p, enforcement: false } : p
       );
@@ -873,4 +917,86 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
   }
 
   return null;
+}
+
+/**
+ * Apply an AI-suggested WebGroup split to the topology. Creates one new
+ * WebGroup per proposed split, removes the original, and rewrites every
+ * policy that referenced the original to attach ALL the new subgroups
+ * (preserving the original allow/deny behavior — subsequent per-subgroup
+ * differentiation is a user task).
+ *
+ * Returns { topology, summary } where summary describes what changed for
+ * the UI's confirmation banner. Returns null if the original WebGroup is
+ * missing (it may have been deleted between AI suggest and apply).
+ *
+ * Validation guard: every proposed fqdn must come from the original group's
+ * fqdns array — we don't trust the LLM to invent or rename patterns. Splits
+ * containing zero kept fqdns are dropped.
+ */
+export function applyWebGroupSplit(
+  topology: DcfPolicyModel,
+  originalWebGroupId: string,
+  proposedSplits: Array<{ name: string; fqdns: string[] }>,
+): { topology: DcfPolicyModel; summary: { created: number; policiesUpdated: number; droppedFqdns: number } } | null {
+  const original = topology.webGroups.find((g) => g.id === originalWebGroupId);
+  if (!original) return null;
+
+  const originalSet = new Set(original.fqdns);
+  let droppedFqdns = 0;
+
+  const newGroups = proposedSplits
+    .map((s, idx) => {
+      const keptFqdns = s.fqdns.filter((f) => {
+        const ok = originalSet.has(f);
+        if (!ok) droppedFqdns++;
+        return ok;
+      });
+      if (keptFqdns.length === 0) return null;
+      return {
+        id: `wg-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        name: s.name,
+        fqdns: keptFqdns,
+      };
+    })
+    .filter((g): g is NonNullable<typeof g> => g !== null);
+
+  if (newGroups.length === 0) return null;
+
+  const newIds = newGroups.map((g) => g.id);
+
+  // Rewrite policies: replace originalWebGroupId with the full list of new ids.
+  // Preserves order: any other web group ids that were attached stay where they
+  // were, but the original gets expanded inline into the new subgroups.
+  let policiesUpdated = 0;
+  const nextPolicies = topology.policies.map((p) => {
+    if (!p.webGroupIds || !p.webGroupIds.includes(originalWebGroupId)) return p;
+    policiesUpdated++;
+    const replaced: string[] = [];
+    for (const id of p.webGroupIds) {
+      if (id === originalWebGroupId) replaced.push(...newIds);
+      else replaced.push(id);
+    }
+    // Dedup in case the original was referenced multiple times (shouldn't be).
+    return { ...p, webGroupIds: Array.from(new Set(replaced)) };
+  });
+
+  // Remove the original; append the new groups in the same array.
+  const nextWebGroups = [
+    ...topology.webGroups.filter((g) => g.id !== originalWebGroupId),
+    ...newGroups,
+  ];
+
+  return {
+    topology: {
+      ...topology,
+      webGroups: nextWebGroups,
+      policies: nextPolicies,
+    },
+    summary: {
+      created: newGroups.length,
+      policiesUpdated,
+      droppedFqdns,
+    },
+  };
 }
