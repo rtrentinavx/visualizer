@@ -172,6 +172,15 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent, nodeId: string) => {
+    // CRITICAL: in connect mode we must NOT start a drag and must NOT call
+    // e.preventDefault(). Browsers treat preventDefault on a mousedown as a
+    // signal to suppress the subsequent synthetic click event on SVG elements
+    // — which would mean handleNodeClick never fires, so the user's first
+    // node click after entering Draw Policy mode silently does nothing.
+    // (This was the long-standing "first click does nothing" bug.) Returning
+    // here keeps both behaviors clean: in connect mode mousedown is a no-op,
+    // the click flows through normally, and handleNodeClick picks the source.
+    if (connectMode) return;
     if (layoutLocked) return;
     e.stopPropagation();
     e.preventDefault();
@@ -180,7 +189,7 @@ export default function PolicyGraph({ topology, onSelectNode, onSelectPolicy, on
     if (!node) return;
     setDraggingNode(nodeId);
     setDragOffset({ x: pt.x - node.x, y: pt.y - node.y });
-  }, [layoutLocked, getSVGPoint, nodeMap]);
+  }, [connectMode, layoutLocked, getSVGPoint, nodeMap]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!draggingNode || layoutLocked) return;
