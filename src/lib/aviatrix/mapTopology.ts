@@ -238,6 +238,7 @@ function collectNestedMatchExprs(o: Record<string, unknown>): unknown[] {
 }
 
 const INTERNET = { id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' as const };
+const ANY = { id: 'sg-any', name: 'Any', color: '#9ca3af', criteria: [], matchType: 'any' as const };
 
 /**
  * Top-level mapping: takes the proxy's `raw` payload (already destructured
@@ -279,8 +280,13 @@ export function mapTopology(raw: RawAviatrixTopology): {
     if (mapped) policies.push(mapped); else droppedCounts.policies++;
   });
 
-  // Always ensure the sg-internet pseudo-group exists. The evaluator and
-  // simulator both reference it by id.
+  // Always ensure both pseudo-groups exist. The evaluator, simulator, and
+  // graph view all reference these by id; without sg-any in particular, every
+  // policy that falls back to sg-any (e.g. unresolved UUID references) renders
+  // as a dangling edge in the Graph view and gets silently skipped.
+  if (!smartGroups.some((g) => g.id === 'sg-any')) {
+    smartGroups.unshift(ANY);
+  }
   if (!smartGroups.some((g) => g.id === 'sg-internet')) {
     smartGroups.unshift(INTERNET);
   }

@@ -321,7 +321,14 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
   const root = parseHcl(hcl);
   const resources = findBlocks(root, 'resource');
 
+  // Always seed the two special pseudo-groups. Policy references that don't
+  // resolve to an imported group fall back to 'sg-any', and many evaluator /
+  // simulator / graph paths assume both ids exist in topology.smartGroups.
+  // Without them, the Graph view drops every edge that lands on these ids
+  // (nodeMap.get returns undefined → the edge is silently skipped).
   const smartGroups: SmartGroup[] = [
+    { id: 'sg-any', name: 'Any', color: '#9ca3af', criteria: [], matchType: 'any' },
+    { id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' },
   ];
   const policies: DcfPolicy[] = [];
 

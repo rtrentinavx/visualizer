@@ -106,8 +106,8 @@ describe('mapTopology', () => {
     };
     const { topology, droppedCounts } = mapTopology(raw);
     expect(droppedCounts.smartGroups).toBe(3);
-    // One valid entry + the auto-inserted sg-internet = 2.
-    expect(topology.smartGroups).toHaveLength(2);
+    // One valid entry + the auto-inserted sg-any + sg-internet pseudo-groups = 3.
+    expect(topology.smartGroups).toHaveLength(3);
   });
 
   it('maps decrypt_policy=DECRYPT_REQUIRED to decrypt=true', () => {

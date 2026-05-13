@@ -31,6 +31,17 @@ The Controller will issue a **Client ID**. Note it down along with:
 
 Hand those four values to the user (Client ID, MCP base URL, authorize endpoint, token endpoint) — plus the scope string if non-default.
 
+### Network — allow the Visualizer's egress IP
+
+The Vercel function that proxies MCP + OAuth traffic egresses from **`3.134.16.45`** (port `443`). Both the **Controller** and the **CoPilot** must accept inbound HTTPS from that IP for the connection to work:
+
+- **CoPilot security group / firewall**: allow `3.134.16.45/32` → `:443`.
+- **Controller security group / firewall**: same.
+
+If you get a generic "Failed to connect to CoPilot" error in the Visualizer, this is almost certainly the cause — verify the security group rules first before chasing OAuth misconfiguration.
+
+> **Note:** Vercel egress IPs can rotate. If `3.134.16.45` stops working, contact your Aviatrix solutions team for the current value.
+
 ---
 
 ## Per-user connection setup
@@ -99,7 +110,9 @@ Anything the Visualizer doesn't currently model is dropped silently. The fetch r
 
 **"State mismatch — possible CSRF"** — Same fix as above. Click Connect again.
 
-**"Token endpoint did not respond within the timeout"** — Your Controller's token endpoint is slow or unreachable from Vercel's egress. Check that the endpoint is publicly reachable and not behind an IP allowlist that excludes Vercel.
+**"Token endpoint did not respond within the timeout"** — Your Controller's token endpoint is slow or unreachable from Vercel's egress. Check that the endpoint is publicly reachable and that your security groups allow inbound HTTPS from `3.134.16.45` (see the "Network" section above).
+
+**"Failed to connect to CoPilot"** — The Visualizer's Vercel proxy can't reach your CoPilot. Verify your CoPilot **and** Controller security groups allow inbound from `3.134.16.45` on port `443`. This is the single most common cause of a connection failure.
 
 **Status badge says "Expired"** — Your access token has timed out. Click **Connect** again to refresh. (Automatic token refresh is on the roadmap for the next release.)
 

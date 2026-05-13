@@ -52,7 +52,13 @@ describe('Terraform HCL import (from exported HCL)', () => {
       .filter((g) => g.id !== 'sg-any' && g.id !== 'sg-internet')
       .map((g) => g.name)
       .sort();
-    const importedNames = imported.smartGroups.map((g) => g.name).sort();
+    // The importer seeds sg-any + sg-internet pseudo-groups for downstream
+    // consumers (graph, evaluator, simulator); we filter them out here for
+    // an apples-to-apples comparison against the source set.
+    const importedNames = imported.smartGroups
+      .filter((g) => g.id !== 'sg-any' && g.id !== 'sg-internet')
+      .map((g) => g.name)
+      .sort();
     expect(importedNames).toEqual(expectedNames);
   });
 
@@ -120,8 +126,10 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
       }
     `;
     const topo = importTerraformHCL(hcl);
-    expect(topo.smartGroups).toHaveLength(1);
-    const sg = topo.smartGroups[0]!;
+    // The importer seeds sg-any + sg-internet pseudo-groups; the one real
+    // imported group is "on-prem". Find it by name.
+    const sg = topo.smartGroups.find((g) => g.name === 'on-prem')!;
+    expect(sg).toBeDefined();
     expect(sg.criteria).toEqual([
       { type: 'subnet', cidr: '10.0.0.0/8' },
       { type: 'subnet', cidr: '192.168.0.0/16' },
@@ -141,7 +149,9 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
       }
     `;
     const topo = importTerraformHCL(hcl);
-    expect(topo.smartGroups[0]!.criteria).toEqual([
+    const sg = topo.smartGroups.find((g) => g.name === 'EUC')!;
+    expect(sg).toBeDefined();
+    expect(sg.criteria).toEqual([
       { type: 'vm', key: 'vpc', operator: 'equals', value: 'kccd-euc' },
     ]);
   });
@@ -159,7 +169,9 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
       }
     `;
     const topo = importTerraformHCL(hcl);
-    const c = topo.smartGroups[0]!.criteria;
+    const sg = topo.smartGroups.find((g) => g.name === 'Tagged')!;
+    expect(sg).toBeDefined();
+    const c = sg.criteria;
     // Order is object-key-iteration order; we just check membership.
     expect(c).toHaveLength(2);
     expect(c).toContainEqual({ type: 'vm', key: 'Env', operator: 'equals', value: 'prod' });

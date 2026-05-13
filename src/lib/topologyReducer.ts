@@ -14,7 +14,10 @@ export type TopologyAction =
   | { type: 'clearAll' };
 
 const EMPTY_TOPOLOGY: DcfPolicyModel = {
-  smartGroups: [{ id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' }],
+  smartGroups: [
+    { id: 'sg-any', name: 'Any', color: '#9ca3af', criteria: [], matchType: 'any' },
+    { id: 'sg-internet', name: 'Internet', color: '#ef4444', criteria: [], matchType: 'any' },
+  ],
   webGroups: [],
   threatGroups: [],
   geoGroups: [],

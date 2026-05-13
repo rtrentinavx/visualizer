@@ -145,7 +145,11 @@ export default function AviatrixConnectionSection() {
         {' '}
         <code className="px-1 rounded bg-[var(--color-surface-elevated)]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
         {' '}
-        as an allowed redirect URI.
+        as an allowed redirect URI, AND your CoPilot + Controller security groups must allow inbound HTTPS from
+        {' '}
+        <code className="px-1 rounded bg-[var(--color-surface-elevated)]">3.134.16.45</code>
+        {' '}
+        on port 443 (the Visualizer's Vercel egress).
         {' '}
         <a
           href="https://github.com/rtrentinavx/visualizer/blob/main/AVIATRIX_LIVE_SETUP.md"
