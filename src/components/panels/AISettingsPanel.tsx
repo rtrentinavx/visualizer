@@ -365,10 +365,11 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
 
         {/* Two-column on wide screens: AI profiles on the left, Aviatrix on the right.
             When editing a profile, the form takes the AI column; the Aviatrix column stays
-            mounted on the right so users can still configure it. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            mounted on the right so users can still configure it. Both cards use h-full so
+            they stretch to match the tallest sibling — equal-height cards on every viewport. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
         {editingProfile ? (
-          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-5">
+          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-5 h-full">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-primary)]">
                 {localSettings.profiles.find((p) => p.id === editingProfile.id) ? 'Edit profile' : 'New profile'}
@@ -522,7 +523,7 @@ export default function AISettingsPanel({ settings, onSave }: AISettingsPanelPro
           </div>
         ) : (
           // ============ Profile list ============
-          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-3">
+          <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 space-y-3 h-full">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Profiles</h3>
               <button onClick={startNewProfile} className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white" style={{ backgroundColor: 'var(--color-aviatrix)' }}>
