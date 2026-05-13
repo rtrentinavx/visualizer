@@ -226,19 +226,16 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
       </div>
 
       <div className="flex items-center gap-x-2 flex-wrap">
-        {/* Group 1 — Edit topology */}
+        {/* Compose — content authoring */}
         <ToolbarGroup>
           <IconButton icon={Plus} label="Add SmartGroup" onClick={actions.addGroup} />
           <IconButton icon={LayoutTemplate} label="Policy templates" onClick={actions.openTemplates} accent="purple" dataTour="templates-btn" />
           <IconButton icon={ListOrdered} label="Reorder policies" onClick={actions.openReorderPolicies} accent="blue" dataTour="reorder-btn" />
-          <IconButton icon={Lightbulb} label="WebGroup recommendations" onClick={actions.openRecommendations} accent="amber" />
-          <IconButton icon={RotateCcw} label="Reset to starter topology" onClick={actions.resetDemo} accent="blue" />
-          <IconButton icon={X} label="Clear all" onClick={actions.clearAll} accent="red" />
         </ToolbarGroup>
 
         <GroupDivider />
 
-        {/* Group 2 — Data I/O */}
+        {/* Data I/O — move topology in / out */}
         <ToolbarGroup>
           <IconButton icon={Upload} label="Import topology" onClick={actions.openImport} />
           <IconButton icon={CloudUpload} overrideIcon={saveIcon} label={saveLabel} onClick={actions.saveCloud} disabled={syncBusy} accent={saveAccent} />
@@ -248,29 +245,24 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         <GroupDivider />
 
-        {/* Group 3 — Analyze */}
+        {/* Analyze — evaluator + AI-driven analysis tools (collapses when no AI profile is active) */}
         <ToolbarGroup>
           <IconButton icon={ShieldAlert} label="Policy evaluator (23 best-practice checks)" onClick={actions.openEvaluator} dataTour="evaluator-btn" />
-        </ToolbarGroup>
-
-        <GroupDivider />
-
-        {/* Group 4 — AI tools (the gear lives in the top tab strip; these are the active-profile actions) */}
-        {aiProfileActive && (
-          <>
-            <ToolbarGroup>
+          {aiProfileActive && (
+            <>
               <IconButton icon={Sparkles} label="Ask AI (free-form chat)" onClick={actions.openAIChat} accent="purple" />
               <IconButton icon={Route} label="AI reachability — natural-language What-If" onClick={actions.openReachability} accent="purple" />
               <IconButton icon={FlaskConical} label="AI policy search" onClick={actions.openPolicySearch} accent="blue" />
               <IconButton icon={FileText} label="Auto-generate Markdown documentation" onClick={actions.openAutoDocs} accent="blue" />
-            </ToolbarGroup>
+            </>
+          )}
+        </ToolbarGroup>
 
-            <GroupDivider />
-          </>
-        )}
+        <GroupDivider />
 
-        {/* Group 5 — Help / Info */}
+        {/* Help — info, learning, gamification */}
         <ToolbarGroup>
+          <IconButton icon={Lightbulb} label="WebGroup recommendations" onClick={actions.openRecommendations} accent="amber" />
           <IconButton icon={Medal} label={`Achievements (${unlocked} unlocked)`} onClick={actions.openAchievements} badge={unlocked > 0 ? unlocked : undefined} />
           <IconButton icon={BookOpen} label="Best practices reference" onClick={actions.openBestPractices} accent="blue" />
           <IconButton icon={HelpCircle} label="About & take the tour" onClick={actions.openAbout} dataTour="about-btn" />
@@ -278,7 +270,15 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         <GroupDivider />
 
-        {/* Corner cluster — settings: AI configuration + theme. Visually anchored at the far right. */}
+        {/* Danger — destructive actions, isolated to reduce misclicks */}
+        <ToolbarGroup>
+          <IconButton icon={RotateCcw} label="Reset to starter topology" onClick={actions.resetDemo} accent="blue" />
+          <IconButton icon={X} label="Clear all" onClick={actions.clearAll} accent="red" />
+        </ToolbarGroup>
+
+        <GroupDivider />
+
+        {/* Corner — Settings: AI configuration + theme. Pinned to the far right. */}
         <ToolbarGroup>
           <IconButton
             icon={Bot}
