@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   LayoutGrid, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, Plus, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
-  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route,
+  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route, History, Wand2,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
@@ -29,6 +29,8 @@ export interface AppHeaderActions {
   openPolicySearch: () => void;
   openAchievements: () => void;
   openBestPractices: () => void;
+  openHistory: () => void;
+  openAutopilot: () => void;
   openAbout: () => void;
 }
 
@@ -276,6 +278,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <IconButton icon={Upload} label="Import topology" onClick={actions.openImport} />
           <IconButton icon={CloudUpload} overrideIcon={saveIcon} label={saveLabel} onClick={actions.saveCloud} disabled={syncBusy} accent={saveAccent} />
           <IconButton icon={CloudDownload} overrideIcon={loadIcon} label={cloudSyncStatus === 'loading' ? 'Loading from cloud…' : 'Load from cloud'} onClick={actions.loadCloud} disabled={syncBusy} />
+          <IconButton icon={History} label="Version history — view + restore prior snapshots" onClick={actions.openHistory} dataTour="history-btn" />
           <IconButton icon={FileCode} label="Export as Terraform" onClick={actions.openTerraform} />
         </ToolbarGroup>
 
@@ -283,6 +286,7 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
 
         {/* Analyze — evaluator + AI-driven analysis tools (collapses when no AI profile is active) */}
         <ToolbarGroup>
+          <IconButton icon={Wand2} label="Autopilot — one-click topology optimization" onClick={actions.openAutopilot} accent="purple" dataTour="autopilot-btn" />
           <IconButton icon={ShieldAlert} label="Policy evaluator (23 best-practice checks)" onClick={actions.openEvaluator} dataTour="evaluator-btn" />
           {aiProfileActive && (
             <>

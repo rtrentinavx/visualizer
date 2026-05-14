@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle, Plug, Loader2 } from 'lucide-react';
 import { unzipSync, strFromU8 } from 'fflate';
-import { importTerraformHCL } from '../../lib/importExport';
+import { importTerraformHCLWithReport } from '../../lib/importExport';
 import type { DcfPolicyModel } from '../../types/dcf';
 import { loadAviatrixSettings, getActiveConnection, getConnectionStatus } from '../../lib/aviatrix/storage';
 import type { AviatrixConnection } from '../../lib/aviatrix/types';
@@ -18,6 +18,7 @@ interface ZipResult {
   fileCount: number;
   fileNames: string[];
   topology: DcfPolicyModel;
+  unresolvedRefs: string[];
 }
 
 const TF_EXTENSIONS = /\.(tf|tf\.json)$/i;
@@ -41,8 +42,8 @@ function extractZip(buffer: Uint8Array): ZipResult {
   const hcl = tfNames
     .map((name) => `# === ${name} ===\n${strFromU8(entries[name]!)}`)
     .join('\n\n');
-  const topology = importTerraformHCL(hcl);
-  return { fileCount: tfNames.length, fileNames: tfNames, topology };
+  const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
+  return { fileCount: tfNames.length, fileNames: tfNames, topology, unresolvedRefs };
 }
 
 export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
@@ -60,6 +61,10 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
   const [liveConnection, setLiveConnection] = useState<AviatrixConnection | null>(null);
   const [isFetchingLive, setIsFetchingLive] = useState(false);
   const [liveWarnings, setLiveWarnings] = useState<string[]>([]);
+  // Refs in policies that couldn't be matched back to an imported group. The
+  // most common cause of "Unused SmartGroup" false-positives is the import
+  // dropping references silently; surfacing them here makes the cause obvious.
+  const [unresolvedRefs, setUnresolvedRefs] = useState<string[]>([]);
 
   useEffect(() => {
     loadAviatrixSettings()
@@ -73,6 +78,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
     setPreview(null);
     setZipResult(null);
     setZipFileName(null);
+    setUnresolvedRefs([]);
   };
 
   const switchTab = (tab: ImportTab) => {
@@ -88,8 +94,9 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
     }
     try {
       if (activeTab === 'terraform') {
-        const topology = importTerraformHCL(input.trim());
+        const { topology, unresolvedRefs: refs } = importTerraformHCLWithReport(input.trim());
         setPreview(topology);
+        setUnresolvedRefs(refs);
         setSuccess(`Parsed Terraform HCL: ${topology.smartGroups.length - 1} groups imported, ${topology.policies.length} policies.`);
       }
     } catch (err) {
@@ -109,6 +116,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
       const result = extractZip(buffer);
       setZipResult(result);
       setPreview(result.topology);
+      setUnresolvedRefs(result.unresolvedRefs);
       const nonInternetGroups = result.topology.smartGroups.length - 1;
       setSuccess(
         `Extracted ${result.fileCount} .tf file${result.fileCount === 1 ? '' : 's'} → ` +
@@ -384,6 +392,29 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
                 <div className="text-[var(--color-text-muted)]">Threat Groups</div>
                 <div className="text-[var(--color-text-primary)] font-medium">{preview.threatGroups.length}</div>
               </div>
+            </div>
+          )}
+
+          {unresolvedRefs.length > 0 && (
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 text-xs">
+                  <p className="font-medium text-amber-300">
+                    {unresolvedRefs.length} unresolved reference{unresolvedRefs.length === 1 ? '' : 's'}
+                  </p>
+                  <p className="text-[10px] text-amber-200/80 mt-0.5">
+                    These policy refs (bare UUIDs from controller-emitted Terraform) couldn't be matched to any imported group and fell back to <code className="font-mono">sg-any</code>. The evaluator will flag those groups as "Unused SmartGroup" — that's why. Use Aviatrix Live (MCP) for a full-fidelity import.
+                  </p>
+                </div>
+              </div>
+              <details className="text-[10px] text-amber-200/80 pl-6">
+                <summary className="cursor-pointer">Show unresolved refs</summary>
+                <ul className="mt-1 space-y-0.5 list-disc pl-4 font-mono break-all">
+                  {unresolvedRefs.slice(0, 20).map((r, i) => <li key={i}>{r}</li>)}
+                  {unresolvedRefs.length > 20 && <li>… and {unresolvedRefs.length - 20} more</li>}
+                </ul>
+              </details>
             </div>
           )}
         </div>

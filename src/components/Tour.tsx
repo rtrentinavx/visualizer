@@ -47,6 +47,12 @@ function getSteps(aiProfileActive: boolean): TourStep[] {
       body: 'The Evaluator runs every policy against Aviatrix Best Practices, CIS, and NIST Zero Trust. Each finding shows which framework flagged it; ten common issues have one-click auto-fixes.',
     },
     {
+      id: 'autopilot',
+      target: 'autopilot-btn',
+      title: 'Autopilot — one-click optimization',
+      body: 'Bundles every auto-fix, priority renumber, duplicate prune, and name cleanup into a single review-and-apply flow. Toggle suggestions on/off; the live diff updates as you do. With an AI profile you also get semantic suggestions like WebGroup splits.',
+    },
+    {
       id: 'ai',
       target: 'ai-settings-btn',
       title: aiProfileActive ? 'AI assist is on' : 'Connect an AI provider',
@@ -59,6 +65,12 @@ function getSteps(aiProfileActive: boolean): TourStep[] {
       target: 'reorder-btn',
       title: 'Reorder by drag',
       body: 'Open the policy reorder modal to drag rules into priority order. Priorities renumber to a uniform 10-step ladder so there\'s always room for inserts.',
+    },
+    {
+      id: 'history',
+      target: 'history-btn',
+      title: 'Undo across sessions',
+      body: 'Every edit is captured as an automatic snapshot (debounced, dedup\'d). Open Version History to compare any save against its predecessor, label milestones, and restore a prior state. Up to 20 snapshots are kept; manual ones survive longer than autos.',
     },
     {
       id: 'help',

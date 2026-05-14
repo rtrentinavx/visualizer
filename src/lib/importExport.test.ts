@@ -5,6 +5,7 @@ import {
   exportFlowsJSON,
   importFlowsJSON,
   importTerraformHCL,
+  importTerraformHCLWithReport,
 } from './importExport';
 import { generateTerraform } from './terraformExport';
 import { demoTopology } from '../data/demoTopology';
@@ -225,5 +226,87 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
     // UUID didn't match -> attribute is absent, but the policy still imports.
     expect(topo.policies).toHaveLength(1);
     expect(topo.policies[0]!.webGroupIds).toBeUndefined();
+  });
+
+  describe('bare-UUID resolution + unresolved-ref reporting (regression: "SmartGroups in use marked unused")', () => {
+    it('resolves bare-UUID src/dst refs when the SmartGroup block declares a matching `uuid`', () => {
+      // Controller-emitted shape: each resource has a computed `uuid` attribute
+      // and the policy references it as a bare string (no `aviatrix_smart_group.foo.uuid`).
+      const hcl = `
+        resource "aviatrix_smart_group" "web" {
+          name = "Web"
+          uuid = "abc-123-def-456"
+        }
+        resource "aviatrix_smart_group" "app" {
+          name = "App"
+          uuid = "xyz-789-uvw-012"
+        }
+        resource "aviatrix_distributed_firewalling_policy_list" "rules" {
+          policies {
+            name             = "web-to-app"
+            action           = "PERMIT"
+            src_smart_groups = ["abc-123-def-456"]
+            dst_smart_groups = ["xyz-789-uvw-012"]
+            priority         = 100
+            protocol         = "TCP"
+          }
+        }
+      `;
+      const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
+      const web = topology.smartGroups.find((g) => g.name === 'Web')!;
+      const app = topology.smartGroups.find((g) => g.name === 'App')!;
+      expect(topology.policies[0]!.srcGroupId).toBe(web.id);
+      expect(topology.policies[0]!.dstGroupId).toBe(app.id);
+      expect(unresolvedRefs).toEqual([]);
+    });
+
+    it('records unresolved refs when bare UUIDs do not match any block uuid (no `.tfstate` fallback)', () => {
+      const hcl = `
+        resource "aviatrix_smart_group" "web" { name = "Web" }
+        resource "aviatrix_distributed_firewalling_policy_list" "rules" {
+          policies {
+            name             = "p1"
+            action           = "PERMIT"
+            src_smart_groups = ["unknown-uuid-1"]
+            dst_smart_groups = ["unknown-uuid-2"]
+            priority         = 100
+            protocol         = "TCP"
+          }
+        }
+      `;
+      const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
+      expect(topology.policies[0]!.srcGroupId).toBe('sg-any');
+      expect(topology.policies[0]!.dstGroupId).toBe('sg-any');
+      // Deduped by Set — same uuid would only appear once even if used in many policies.
+      expect(unresolvedRefs).toEqual(expect.arrayContaining(['unknown-uuid-1', 'unknown-uuid-2']));
+      expect(unresolvedRefs).toHaveLength(2);
+    });
+
+    it('also resolves bare-UUID web_groups refs when the WebGroup block declares a matching uuid', () => {
+      const hcl = `
+        resource "aviatrix_smart_group" "src" { name = "Src" }
+        resource "aviatrix_smart_group" "dst" { name = "Dst" }
+        resource "aviatrix_web_group" "sfdc" {
+          name = "Salesforce"
+          uuid = "wg-uuid-9999"
+          selector { match_expressions { snifilter = "*.salesforce.com" } }
+        }
+        resource "aviatrix_distributed_firewalling_policy_list" "rules" {
+          policies {
+            name             = "egress"
+            action           = "PERMIT"
+            src_smart_groups = ["Src"]
+            dst_smart_groups = ["Dst"]
+            web_groups       = ["wg-uuid-9999"]
+            priority         = 100
+            protocol         = "TCP"
+          }
+        }
+      `;
+      const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
+      const wg = topology.webGroups.find((g) => g.name === 'Salesforce')!;
+      expect(topology.policies[0]!.webGroupIds).toEqual([wg.id]);
+      expect(unresolvedRefs).toEqual([]);
+    });
   });
 });

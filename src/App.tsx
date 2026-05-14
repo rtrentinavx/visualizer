@@ -33,6 +33,8 @@ const PolicySearchModal = lazyImport(() => import('./components/modals/PolicySea
 const PolicyTemplatesModal = lazyImport(() => import('./components/modals/PolicyTemplatesModal'));
 const PolicyReorderModal = lazyImport(() => import('./components/modals/PolicyReorderModal'));
 const EvaluatorPanel = lazyImport(() => import('./components/panels/EvaluatorPanel'));
+const HistoryModal = lazyImport(() => import('./components/modals/HistoryModal'));
+const AutopilotModal = lazyImport(() => import('./components/modals/AutopilotModal'));
 
 function PanelLoader() {
   return (
@@ -253,6 +255,8 @@ export default function App() {
     openPolicySearch: gateAI(() => modals.open('policySearch')),
     openAchievements: () => modals.open('achievements'),
     openBestPractices: () => modals.open('bestPractices'),
+    openHistory: () => modals.open('history'),
+    openAutopilot: () => modals.open('autopilot'),
     openAbout: () => modals.open('about'),
   };
 
@@ -337,6 +341,35 @@ export default function App() {
       {modals.isOpen('bestPractices') && (
         <Suspense fallback={null}>
           <BestPracticesModal onClose={modals.close} />
+        </Suspense>
+      )}
+
+      {modals.isOpen('history') && (
+        <Suspense fallback={null}>
+          <HistoryModal
+            currentTopology={topology}
+            onRestore={(restored) => {
+              dispatch({ type: 'replace', topology: restored });
+              setSelectedItem(null);
+              setSelectedCell(null);
+            }}
+            onClose={modals.close}
+          />
+        </Suspense>
+      )}
+
+      {modals.isOpen('autopilot') && (
+        <Suspense fallback={null}>
+          <AutopilotModal
+            topology={topology}
+            aiProfile={hasAIDataConsent() ? activeAIProfile ?? null : null}
+            onApply={(next) => {
+              dispatch({ type: 'replace', topology: next });
+              setSelectedItem(null);
+              setSelectedCell(null);
+            }}
+            onClose={modals.close}
+          />
         </Suspense>
       )}
 

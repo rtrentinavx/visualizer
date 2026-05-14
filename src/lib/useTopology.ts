@@ -3,6 +3,7 @@ import type { DcfPolicyModel } from '../types/dcf';
 import { decryptTopology, saveTopologyStorage } from './cryptoStorage';
 import { demoTopology } from '../data/demoTopology';
 import { topologyReducer, type TopologyAction } from './topologyReducer';
+import { appendSnapshot } from './historyStorage';
 
 export interface UseTopologyResult {
   topology: DcfPolicyModel;
@@ -42,11 +43,15 @@ export function useTopology(): UseTopologyResult {
     return () => { cancelled = true; };
   }, []);
 
-  // Debounced autosave after ready
+  // Debounced autosave + snapshot append. Same 500ms debounce; both run on
+  // every settled topology change. appendSnapshot is internally dedup'd against
+  // the most-recent auto snapshot, so a non-functional save doesn't bloat the
+  // history ring.
   useEffect(() => {
     if (!isReady) return;
     const timer = setTimeout(() => {
       saveTopologyStorage(topology).catch(() => {});
+      appendSnapshot(topology, 'auto').catch(() => {});
     }, 500);
     return () => clearTimeout(timer);
   }, [topology, isReady]);

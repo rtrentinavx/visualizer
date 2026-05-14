@@ -317,9 +317,27 @@ function extractSmartGroupCriteria(me: HclBlock): SmartGroupCriteria[] {
   return out;
 }
 
+/**
+ * Result envelope for {@link importTerraformHCLWithReport}. Keeps the topology
+ * the legacy {@link importTerraformHCL} returns, plus a list of policy refs
+ * that couldn't be resolved to a parsed SmartGroup/WebGroup — these end up as
+ * `sg-any` in the policy and are the most common cause of "Unused SmartGroup"
+ * false-positives after import. The UI surfaces these as a one-time banner so
+ * the user knows the evaluator isn't lying.
+ */
+export interface ImportReport {
+  topology: DcfPolicyModel;
+  unresolvedRefs: string[];
+}
+
 export function importTerraformHCL(hcl: string): DcfPolicyModel {
+  return importTerraformHCLWithReport(hcl).topology;
+}
+
+export function importTerraformHCLWithReport(hcl: string): ImportReport {
   const root = parseHcl(hcl);
   const resources = findBlocks(root, 'resource');
+  const unresolvedRefs: string[] = [];
 
   // Always seed the two special pseudo-groups. Policy references that don't
   // resolve to an imported group fall back to 'sg-any', and many evaluator /
@@ -334,6 +352,12 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
 
   // Map from Terraform resource name to generated group ID
   const nameToId = new Map<string, string>();
+  // Map from Aviatrix-provided UUID (when the HCL block exposes one — common
+  // in controller-emitted Terraform after `terraform import`) to our group id.
+  // This lets bare-UUID refs in `src_smart_groups = ["abc-123-..."]` resolve
+  // back to the SmartGroup that owns the UUID, instead of silently falling
+  // back to sg-any.
+  const uuidToId = new Map<string, string>();
 
   // First pass: Smart Groups
   for (const res of resources) {
@@ -342,6 +366,8 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     const name = getString(res, 'name') || tfName;
     const id = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     nameToId.set(tfName, id);
+    const sgUuid = getString(res, 'uuid');
+    if (sgUuid) uuidToId.set(sgUuid, id);
 
     const criteria: SmartGroupCriteria[] = [];
     const selectors = findBlocks(res.blocks, 'selector');
@@ -367,12 +393,15 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
   // `fqdns` array — SNI and URL patterns share the same glob shape downstream.
   const webGroups: WebGroup[] = [];
   const webGroupTfNameToId = new Map<string, string>();
+  const webGroupUuidToId = new Map<string, string>();
   for (const res of resources) {
     if (res.labels[0] !== 'aviatrix_web_group') continue;
     const tfName = res.labels[1] || '';
     const name = getString(res, 'name') || tfName;
     const id = `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     webGroupTfNameToId.set(tfName, id);
+    const wgUuid = getString(res, 'uuid');
+    if (wgUuid) webGroupUuidToId.set(wgUuid, id);
 
     const fqdns: string[] = [];
     const selectors = findBlocks(res.blocks, 'selector');
@@ -397,6 +426,10 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     // Direct name match against any imported WebGroup
     const byName = webGroups.find((g) => g.name === ref);
     if (byName) return byName.id;
+    // Bare UUID match — when the WebGroup block exposed a `uuid` attribute
+    // (the controller-emitted shape) we recorded it in the first pass.
+    const byUuid = webGroupUuidToId.get(ref);
+    if (byUuid) return byUuid;
     // Terraform reference: aviatrix_web_group.<tfName>.{name,id,uuid}
     const tfMatch = ref.match(/aviatrix_web_group\.([a-zA-Z0-9_]+)\.(?:name|id|uuid)/);
     if (tfMatch && tfMatch[1]) {
@@ -414,8 +447,14 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
     // Direct name match
     const byName = smartGroups.find((g) => g.name === ref);
     if (byName) return byName.id;
-    // Terraform reference: aviatrix_smart_group.<name>.name
-    const match = ref.match(/aviatrix_smart_group\.([a-zA-Z0-9_]+)\.(?:name|id)/);
+    // Bare UUID match — when the SmartGroup block exposed a `uuid` attribute
+    // we recorded it in the first pass. This is the controller-emitted shape
+    // (`src_smart_groups = ["abc-123-..."]`) and was the most common cause of
+    // "Unused SmartGroup" false positives after import.
+    const byUuid = uuidToId.get(ref);
+    if (byUuid) return byUuid;
+    // Terraform reference: aviatrix_smart_group.<name>.{name,id,uuid}
+    const match = ref.match(/aviatrix_smart_group\.([a-zA-Z0-9_]+)\.(?:name|id|uuid)/);
     if (match && match[1]) {
       const id = nameToId.get(match[1]);
       if (id) return id;
@@ -452,8 +491,12 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       // Source / Destination
       const srcRefs = getStringArray(pb, 'src_smart_groups');
       const dstRefs = getStringArray(pb, 'dst_smart_groups');
-      const srcId = srcRefs[0] ? (resolveGroupRef(srcRefs[0]) || 'sg-any') : 'sg-any';
-      const dstId = dstRefs[0] ? (resolveGroupRef(dstRefs[0]) || 'sg-any') : 'sg-any';
+      const srcResolved = srcRefs[0] ? resolveGroupRef(srcRefs[0]) : null;
+      const dstResolved = dstRefs[0] ? resolveGroupRef(dstRefs[0]) : null;
+      if (srcRefs[0] && !srcResolved) unresolvedRefs.push(srcRefs[0]);
+      if (dstRefs[0] && !dstResolved) unresolvedRefs.push(dstRefs[0]);
+      const srcId = srcResolved || 'sg-any';
+      const dstId = dstResolved || 'sg-any';
 
       // Excludes
       const srcExcludeIds: string[] = [];
@@ -463,20 +506,23 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
       for (const ref of srcExcludeRefs) {
         const resolved = resolveGroupRef(ref);
         if (resolved) srcExcludeIds.push(resolved);
+        else unresolvedRefs.push(ref);
       }
       for (const ref of dstExcludeRefs) {
         const resolved = resolveGroupRef(ref);
         if (resolved) dstExcludeIds.push(resolved);
+        else unresolvedRefs.push(ref);
       }
 
-      // WebGroups attached to this policy — try Terraform-ref + name match.
-      // UUID-only references from controller-emitted Terraform can't resolve
-      // here (we have no .tfstate); those entries are silently skipped.
+      // WebGroups attached to this policy — try Terraform-ref + name + uuid
+      // match. Refs that don't resolve to any imported WebGroup get reported
+      // as unresolved instead of silently dropped.
       const webGroupIds: string[] = [];
       const webGroupRefs = getStringArray(pb, 'web_groups');
       for (const ref of webGroupRefs) {
         const resolved = resolveWebGroupRef(ref);
         if (resolved) webGroupIds.push(resolved);
+        else unresolvedRefs.push(ref);
       }
 
       policies.push({
@@ -498,12 +544,17 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
   }
 
   return {
-    smartGroups,
-    webGroups,
-    threatGroups: [],
-    geoGroups: [],
-    policies,
-    flows: [],
+    topology: {
+      smartGroups,
+      webGroups,
+      threatGroups: [],
+      geoGroups: [],
+      policies,
+      flows: [],
+    },
+    // Dedup — controller HCL often has the same UUID appearing in multiple
+    // policies; one banner is enough.
+    unresolvedRefs: Array.from(new Set(unresolvedRefs)),
   };
 }
 

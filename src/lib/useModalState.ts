@@ -14,6 +14,8 @@ export type ModalName =
   | 'import'
   | 'achievements'
   | 'recommendations'
+  | 'history'
+  | 'autopilot'
   | 'tour';
 
 export interface UseModalState {
