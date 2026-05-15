@@ -124,31 +124,17 @@ const V25_PATHS: Record<EntityKey, string> = {
  * and uses the first that doesn't return "Valid action required". This handles
  * variation across Controller versions without hard-coding a single name.
  */
+// SmartGroups are internally called "App Domains" in some controller versions.
+// Keep the candidate list short — each call costs a round-trip.  We use a
+// 6-second per-call timeout during scanning (see the entity loop below) so
+// that probing all candidates for all entities finishes well within Vercel's
+// 60-second function limit.
 const V1_ACTIONS: Record<EntityKey, string[]> = {
-  // SmartGroups are internally "App Domains" in some controller versions.
-  smartGroups:  [
-    'list_smart_group_info', 'list_smart_groups', 'get_smart_group',
-    'list_app_domain', 'list_app_domain_list', 'list_app_domain_filter',
-    'list_micro_segmentation_group', 'list_micro_seg_group',
-    'get_smart_group_list', 'list_smart_group',
-  ],
-  webGroups:    ['list_fqdn_filter_tags', 'get_fqdn_filter_tag', 'list_web_groups'],
-  threatGroups: [
-    'list_threat_iq_lists', 'get_threat_iq_list', 'list_threat_groups',
-    'list_threat_iq_group', 'list_threatiq_group', 'list_threat_iq_filter',
-    'get_threat_iq_groups', 'list_threat_group',
-  ],
-  geoGroups:    [
-    'list_geo_groups', 'get_geo_group', 'list_geo_fqdn_filter_tags',
-    'list_geo_group', 'list_geo_filter', 'list_geo_filter_tags',
-    'get_geo_groups', 'list_geo_group_info',
-  ],
-  policies:     [
-    'list_distributed_firewalling_policy', 'get_dcf_policy', 'list_dcf_policy',
-    'list_distributed_firewalling_policy_list', 'get_distributed_firewalling_policy',
-    'list_distributed_fw_policy', 'list_dcf_policies', 'get_dcf_policies',
-    'list_distributed_firewalling_policies',
-  ],
+  smartGroups:  ['list_app_domain', 'list_smart_group', 'list_smart_groups', 'list_smart_group_info', 'get_smart_group'],
+  webGroups:    ['list_fqdn_filter_tags', 'get_fqdn_filter_tag'],
+  threatGroups: ['list_threat_iq_lists', 'list_threat_iq_group', 'list_threat_groups', 'get_threat_iq_list'],
+  geoGroups:    ['list_geo_groups', 'list_geo_group', 'list_geo_fqdn_filter_tags', 'get_geo_group'],
+  policies:     ['list_distributed_firewalling_policy', 'list_dcf_policy', 'get_dcf_policy', 'list_distributed_firewalling_policy_list'],
 };
 
 interface DirectApiRequest {
@@ -228,7 +214,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const skippedReasons: string[] = [];
       for (const action of candidates) {
         try {
-          const data = await callV1(base, cid, action);
+          // Use a short timeout for action-scanning so probing all candidates
+          // for all entities stays well within Vercel's 60-second limit.
+          const data = await callV1(base, cid, action, 6_000);
           raw[key] = toArray(data);
           succeeded = true;
           break;
@@ -336,13 +324,13 @@ async function loginV1(base: string, username: string, password: string): Promis
   return cid;
 }
 
-async function callV1(base: string, cid: string, action: string): Promise<unknown> {
+async function callV1(base: string, cid: string, action: string, timeoutMs = 22_000): Promise<unknown> {
   const params = new URLSearchParams({ action, CID: cid });
   const r = await controllerFetch(`${base}/v1/api`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
-  });
+  }, timeoutMs);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
