@@ -1,20 +1,72 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { Agent, fetch as undiciFetch } from 'undici';
+import https from 'https';
+import http from 'http';
 import { isTimeoutError } from '../ai/_timeout.js';
 
 /**
  * Aviatrix controllers commonly expose self-signed TLS certificates (accessed
- * by IP or internal hostname). Node's built-in fetch rejects these by default.
- * We use an undici Agent with rejectUnauthorized: false so the proxy can reach
- * the controller over HTTPS. The connection is still encrypted — we only skip
- * certificate chain validation, which is acceptable for a private controller
- * addressed directly by the customer.
+ * by IP or internal hostname). We use Node's https module directly with
+ * rejectUnauthorized: false so the proxy can reach the controller. The
+ * connection remains TLS-encrypted — we only skip certificate chain validation.
  */
-const controllerAgent = new Agent({ connect: { rejectUnauthorized: false } });
+interface SimpleResponse {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+  json(): Promise<unknown>;
+}
 
-async function controllerFetch(url: string, init: RequestInit, timeoutMs = 22_000): Promise<Response> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return undiciFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), dispatcher: controllerAgent } as any) as unknown as Response;
+function controllerFetch(url: string, init: RequestInit, timeoutMs = 22_000): Promise<SimpleResponse> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const isSecure = u.protocol === 'https:';
+    const mod = isSecure ? https : http;
+    const body = typeof init.body === 'string' ? init.body : undefined;
+    const port = u.port ? parseInt(u.port, 10) : (isSecure ? 443 : 80);
+
+    const req = mod.request(
+      {
+        hostname: u.hostname,
+        port,
+        path: u.pathname + (u.search || ''),
+        method: (init.method ?? 'GET').toUpperCase(),
+        headers: init.headers as Record<string, string>,
+        rejectUnauthorized: false,
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const text = Buffer.concat(chunks).toString('utf-8');
+          const status = res.statusCode ?? 0;
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            text: async () => text,
+            json: async () => JSON.parse(text) as unknown,
+          });
+        });
+        res.on('error', reject);
+      },
+    );
+
+    req.on('error', (err: NodeJS.ErrnoException) => {
+      // Surface the system error code so users can diagnose firewall/port issues.
+      const code = err.code ?? '';
+      if (code === 'ECONNREFUSED') reject(new Error(`Connection refused — check the Controller URL and port (${u.host})`));
+      else if (code === 'ETIMEDOUT' || code === 'ESOCKETTIMEDOUT') reject(new Error(`Connection timed out — is ${u.host} reachable from the internet and port ${port} open?`));
+      else if (code === 'ENOTFOUND') reject(new Error(`Host not found: ${u.hostname}`));
+      else reject(new Error(err.message || 'Network error'));
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error(`Request timed out after ${timeoutMs}ms`));
+    });
+
+    if (body) req.write(body);
+    req.end();
+  });
 }
 
 /**
