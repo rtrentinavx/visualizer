@@ -69,5 +69,8 @@ export interface AviatrixSettings {
   connections: AviatrixConnection[];
 }
 
-/** Connection status derived from the token/credential state — used by UI badges. */
-export type AviatrixConnectionStatus = 'disconnected' | 'connected' | 'expired';
+/**
+ * Connection status derived from the token/credential state — used by UI badges.
+ * 'configured' is API-only: credentials are saved but no successful Test has been run yet.
+ */
+export type AviatrixConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'expired';

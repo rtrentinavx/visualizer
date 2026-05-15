@@ -82,8 +82,9 @@ export function getActiveConnection(settings: AviatrixSettings): AviatrixConnect
 export function getConnectionStatus(c: AviatrixConnection | null, now: number = Date.now()): AviatrixConnectionStatus {
   if (!c) return 'disconnected';
   if (c.connectionType === 'api') {
-    // Direct API connections have no token — credentials are the auth material.
-    return c.username && c.password ? 'connected' : 'disconnected';
+    if (!c.username || !c.password) return 'disconnected';
+    // 'connected' only after a successful Test (connectedAt is set by handleTestApi on success).
+    return c.connectedAt ? 'connected' : 'configured';
   }
   // MCP — token-based.
   if (!c.accessToken) return 'disconnected';

@@ -263,11 +263,29 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {activeTab === 'terraform' && (
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Paste Terraform <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.tf</code> content.
-              Supports <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">aviatrix_smart_group</code> and
-              <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">aviatrix_distributed_firewalling_policy_list</code> resources.
-            </p>
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Paste Terraform <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.tf</code> content.
+                Supports <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">aviatrix_smart_group</code> and{' '}
+                <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">aviatrix_distributed_firewalling_policy_list</code> resources.
+              </p>
+              <details className="rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface)]">
+                <summary className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] select-none">
+                  Seeing "Unused SmartGroup" warnings? Ask Aviatrix Support to run this
+                </summary>
+                <div className="px-3 pb-3 space-y-1.5">
+                  <p className="text-[10px] text-[var(--color-text-muted)]">
+                    Controller-emitted Terraform uses bare UUIDs for group references instead of names.
+                    Ask support to provide the output of:
+                  </p>
+                  <pre className="text-[10px] font-mono p-2 rounded bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] overflow-x-auto select-all whitespace-pre-wrap break-all">{`cat /etc/localgateway/smgrp_resolver_smgrp_info | jq -r '.appDomainCfg | "\\(.name)||\\(.uuid)"' | column -t -s'||' | grep system`}</pre>
+                  <p className="text-[10px] text-[var(--color-text-muted)]">
+                    This maps each SmartGroup name to its UUID so the importer can resolve references correctly.
+                    Alternatively, use <strong>Aviatrix Live</strong> (REST API or MCP) for a full-fidelity import with no UUID ambiguity.
+                  </p>
+                </div>
+              </details>
+            </div>
           )}
           {activeTab === 'zip' && (
             <p className="text-xs text-[var(--color-text-muted)]">
@@ -318,7 +336,12 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
               )}
               <button
                 onClick={handleFetchLive}
-                disabled={isFetchingLive || !liveConnection || getConnectionStatus(liveConnection) !== 'connected'}
+                disabled={isFetchingLive || !liveConnection || (() => {
+                  const s = getConnectionStatus(liveConnection);
+                  // API: allow fetch when configured or connected (credentials present).
+                  // MCP: require a valid OAuth token ('connected').
+                  return isApiConnection(liveConnection) ? s === 'disconnected' : s !== 'connected';
+                })()}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-white disabled:opacity-50"
                 style={{ backgroundColor: 'var(--color-accent-purple)' }}
               >

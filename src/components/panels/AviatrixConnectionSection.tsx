@@ -20,12 +20,17 @@ export default function AviatrixConnectionSection() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null);
+  const [egressIp, setEgressIp] = useState<string | null>(null);
 
   useEffect(() => {
     loadAviatrixSettings()
       .then((s) => { if (s) setSettings(s); })
       .catch(() => {})
       .finally(() => setLoaded(true));
+    fetch('/api/egress-ip')
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d && typeof (d as { ip?: string }).ip === 'string') setEgressIp((d as { ip: string }).ip); })
+      .catch(() => {});
   }, []);
 
   const active = getActiveConnection(settings);
@@ -69,12 +74,17 @@ export default function AviatrixConnectionSection() {
         return;
       }
     }
-    const exists = settings.connections.some((c) => c.id === editing.id);
+    // Reset connectedAt for API connections on save — credentials may have changed,
+    // so any prior successful test is no longer evidence of a working connection.
+    const toSave: AviatrixConnection = isApiConnection(editing)
+      ? { ...editing, connectedAt: undefined }
+      : editing;
+    const exists = settings.connections.some((c) => c.id === toSave.id);
     const next: AviatrixSettings = {
-      activeConnectionId: settings.activeConnectionId ?? editing.id,
+      activeConnectionId: settings.activeConnectionId ?? toSave.id,
       connections: exists
-        ? settings.connections.map((c) => (c.id === editing.id ? editing : c))
-        : [...settings.connections, editing],
+        ? settings.connections.map((c) => (c.id === toSave.id ? toSave : c))
+        : [...settings.connections, toSave],
     };
     await persist(next);
     setEditing(null);
@@ -117,6 +127,7 @@ export default function AviatrixConnectionSection() {
       });
       const data = await r.json() as { apiVersion?: string; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+      // Test passed — mark connectedAt so status transitions to 'connected'.
       const updated: AviatrixConnectionAPI = { ...c, connectedAt: Date.now() };
       await persist({
         ...settings,
@@ -125,6 +136,12 @@ export default function AviatrixConnectionSection() {
       });
       setTestResult({ id: c.id, ok: true, msg: `Connected via ${data.apiVersion ?? 'API'}` });
     } catch (e) {
+      // Test failed — clear connectedAt so status reverts to 'configured'.
+      const reset: AviatrixConnectionAPI = { ...c, connectedAt: undefined };
+      await persist({
+        ...settings,
+        connections: settings.connections.map((cc) => (cc.id === c.id ? reset : cc)),
+      });
       setTestResult({ id: c.id, ok: false, msg: e instanceof Error ? e.message : 'Test failed' });
     } finally {
       setTestingId(null);
@@ -170,6 +187,10 @@ export default function AviatrixConnectionSection() {
       <p className="text-[10px] text-[var(--color-text-muted)]">
         Fetch SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies directly from your Aviatrix Controller.
         Choose <strong>MCP</strong> (OAuth PKCE) or <strong>REST API</strong> (username + password, no redirect required).
+        {' '}Your Controller's security group must allow inbound HTTPS from our proxy:{' '}
+        {egressIp
+          ? <code className="px-1 rounded bg-[var(--color-surface-elevated)] font-mono select-all">{egressIp}</code>
+          : <span className="opacity-50">fetching…</span>}
       </p>
 
       {error && (
@@ -280,11 +301,18 @@ function TypeBadge({ type }: { type: 'mcp' | 'api' }) {
   );
 }
 
-function StatusBadge({ status }: { status: 'connected' | 'disconnected' | 'expired' }) {
+function StatusBadge({ status }: { status: 'connected' | 'configured' | 'disconnected' | 'expired' }) {
   if (status === 'connected') {
     return (
       <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-400">
         <CheckCircle2 size={9} /> Connected
+      </span>
+    );
+  }
+  if (status === 'configured') {
+    return (
+      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-500/15 text-blue-400">
+        Configured
       </span>
     );
   }
@@ -392,9 +420,9 @@ function ConnectionForm({
             <input type="text" value={(editing as AviatrixConnectionMCP).scope ?? ''} onChange={(e) => set('scope', e.target.value)} className={inputCls} style={inputStyle} placeholder="mcp:read" />
           </Field>
           <p className="text-[9px] text-[var(--color-text-muted)]">
-            Your Controller must allow{' '}
-            <code className="px-1 rounded bg-[var(--color-surface-elevated)]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
-            {' '}as an OAuth redirect URI.
+            Your Controller must register{' '}
+            <code className="px-1 rounded bg-[var(--color-surface-elevated)] text-[9px]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
+            {' '}as an allowed OAuth redirect URI.
           </p>
         </>
       )}
