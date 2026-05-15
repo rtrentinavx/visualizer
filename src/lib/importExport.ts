@@ -334,7 +334,29 @@ export function importTerraformHCL(hcl: string): DcfPolicyModel {
   return importTerraformHCLWithReport(hcl).topology;
 }
 
-export function importTerraformHCLWithReport(hcl: string): ImportReport {
+/**
+ * Parse the output of the support UUID-mapping command into a Map<uuid, name>.
+ *
+ * Expected format (one per line):
+ *   <SmartGroup name>   <uuid>
+ * (whitespace-separated — the `column -t -s'||'` output from the shell command)
+ *
+ * Lines that don't look like a name + UUID pair are silently skipped.
+ */
+export function parseUuidMapping(raw: string): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const line of raw.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 2) continue;
+    // Last token is the UUID (long hex-dash form); everything before it is the name.
+    const uuid = parts[parts.length - 1]!;
+    if (!/^[0-9a-f-]{30,}$/i.test(uuid)) continue;
+    map.set(uuid, parts.slice(0, -1).join(' '));
+  }
+  return map;
+}
+
+export function importTerraformHCLWithReport(hcl: string, uuidMap?: Map<string, string>): ImportReport {
   const root = parseHcl(hcl);
   const resources = findBlocks(root, 'resource');
   const unresolvedRefs: string[] = [];
@@ -352,12 +374,24 @@ export function importTerraformHCLWithReport(hcl: string): ImportReport {
 
   // Map from Terraform resource name to generated group ID
   const nameToId = new Map<string, string>();
-  // Map from Aviatrix-provided UUID (when the HCL block exposes one — common
-  // in controller-emitted Terraform after `terraform import`) to our group id.
-  // This lets bare-UUID refs in `src_smart_groups = ["abc-123-..."]` resolve
-  // back to the SmartGroup that owns the UUID, instead of silently falling
-  // back to sg-any.
+  // Map from Aviatrix-provided UUID to our group id. Pre-seeded with any
+  // external UUID→name mapping provided by the caller (from the support
+  // shell command output), then augmented as we parse uuid= attributes from
+  // the HCL blocks themselves.
   const uuidToId = new Map<string, string>();
+  // If the caller supplied an external UUID→name map, register those names as
+  // synthetic SmartGroups NOW so that bare-UUID refs in policy blocks resolve
+  // correctly even when the corresponding aviatrix_smart_group block is absent
+  // (common when only a policy list file is exported without the group files).
+  if (uuidMap) {
+    for (const [uuid, sgName] of uuidMap) {
+      if (!sgName) continue;
+      const id = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      nameToId.set(sgName, id);
+      uuidToId.set(uuid, id);
+      smartGroups.push({ id, name: sgName, color: '#9ca3af', criteria: [], matchType: 'any' });
+    }
+  }
 
   // First pass: Smart Groups
   for (const res of resources) {

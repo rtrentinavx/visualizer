@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle, Plug, Loader2 } from 'lucide-react';
 import { unzipSync, strFromU8 } from 'fflate';
-import { importTerraformHCLWithReport } from '../../lib/importExport';
+import { importTerraformHCLWithReport, parseUuidMapping } from '../../lib/importExport';
 import type { DcfPolicyModel } from '../../types/dcf';
 import { loadAviatrixSettings, getActiveConnection, getConnectionStatus, isApiConnection, isMcpConnection } from '../../lib/aviatrix/storage';
 import type { AviatrixConnection } from '../../lib/aviatrix/types';
@@ -29,7 +29,7 @@ function isVendoredPath(name: string): boolean {
   return name.includes('/.terraform/') || name.startsWith('.terraform/');
 }
 
-function extractZip(buffer: Uint8Array): ZipResult {
+function extractZip(buffer: Uint8Array, uuidMap?: Map<string, string>): ZipResult {
   const entries = unzipSync(buffer);
   const tfNames = Object.keys(entries).filter(
     (name) => TF_EXTENSIONS.test(name) && !isVendoredPath(name),
@@ -42,7 +42,7 @@ function extractZip(buffer: Uint8Array): ZipResult {
   const hcl = tfNames
     .map((name) => `# === ${name} ===\n${strFromU8(entries[name]!)}`)
     .join('\n\n');
-  const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
+  const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl, uuidMap);
   return { fileCount: tfNames.length, fileNames: tfNames, topology, unresolvedRefs };
 }
 
@@ -65,6 +65,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
   // most common cause of "Unused SmartGroup" false-positives is the import
   // dropping references silently; surfacing them here makes the cause obvious.
   const [unresolvedRefs, setUnresolvedRefs] = useState<string[]>([]);
+  const [uuidMappingInput, setUuidMappingInput] = useState('');
 
   useEffect(() => {
     loadAviatrixSettings()
@@ -79,6 +80,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
     setZipResult(null);
     setZipFileName(null);
     setUnresolvedRefs([]);
+    setUuidMappingInput('');
   };
 
   const switchTab = (tab: ImportTab) => {
@@ -94,7 +96,8 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
     }
     try {
       if (activeTab === 'terraform') {
-        const { topology, unresolvedRefs: refs } = importTerraformHCLWithReport(input.trim());
+        const uuidMap = uuidMappingInput.trim() ? parseUuidMapping(uuidMappingInput) : undefined;
+        const { topology, unresolvedRefs: refs } = importTerraformHCLWithReport(input.trim(), uuidMap);
         setPreview(topology);
         setUnresolvedRefs(refs);
         setSuccess(`Parsed Terraform HCL: ${topology.smartGroups.length - 1} groups imported, ${topology.policies.length} policies.`);
@@ -113,7 +116,8 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
         throw new Error('Zip file is larger than 50 MB. Extract locally and paste the .tf contents instead.');
       }
       const buffer = new Uint8Array(await file.arrayBuffer());
-      const result = extractZip(buffer);
+      const uuidMap = uuidMappingInput.trim() ? parseUuidMapping(uuidMappingInput) : undefined;
+      const result = extractZip(buffer, uuidMap);
       setZipResult(result);
       setPreview(result.topology);
       setUnresolvedRefs(result.unresolvedRefs);
@@ -280,19 +284,55 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
                   </p>
                   <pre className="text-[10px] font-mono p-2 rounded bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] overflow-x-auto select-all whitespace-pre-wrap break-all">{`cat /etc/localgateway/smgrp_resolver_smgrp_info | jq -r '.appDomainCfg | "\\(.name)||\\(.uuid)"' | column -t -s'||' | grep system`}</pre>
                   <p className="text-[10px] text-[var(--color-text-muted)]">
-                    This maps each SmartGroup name to its UUID so the importer can resolve references correctly.
+                    Paste the command output below to resolve UUID references during import. Leave blank if not needed.
                     Alternatively, use <strong>Aviatrix Live</strong> (REST API or MCP) for a full-fidelity import with no UUID ambiguity.
                   </p>
+                  <textarea
+                    value={uuidMappingInput}
+                    onChange={(e) => setUuidMappingInput(e.target.value)}
+                    placeholder={'SmartGroupName    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nAnotherGroup      yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy'}
+                    rows={4}
+                    className="w-full px-2 py-1.5 rounded text-[10px] border outline-none font-mono resize-none"
+                    style={{
+                      backgroundColor: 'var(--color-input-bg)',
+                      borderColor: 'var(--color-input-border)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  />
                 </div>
               </details>
             </div>
           )}
           {activeTab === 'zip' && (
-            <p className="text-xs text-[var(--color-text-muted)]">
-              Drop a zipped Terraform project. We extract every <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.tf</code> file
-              (skipping <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.terraform/</code> vendored content)
-              and pull only Aviatrix DCF resources. Non-DCF resources are silently ignored.
-            </p>
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Drop a zipped Terraform project. We extract every <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.tf</code> file
+                (skipping <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.terraform/</code> vendored content)
+                and pull only Aviatrix DCF resources. Non-DCF resources are silently ignored.
+              </p>
+              <details className="rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface)]">
+                <summary className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] select-none">
+                  SmartGroup UUID mapping (optional)
+                </summary>
+                <div className="px-3 pb-3 space-y-1.5">
+                  <p className="text-[10px] text-[var(--color-text-muted)]">
+                    Paste support's UUID mapping output to resolve bare UUID references. Leave blank if not needed.
+                  </p>
+                  <textarea
+                    value={uuidMappingInput}
+                    onChange={(e) => setUuidMappingInput(e.target.value)}
+                    placeholder={'SmartGroupName    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\nAnotherGroup      yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy'}
+                    rows={4}
+                    className="w-full px-2 py-1.5 rounded text-[10px] border outline-none font-mono resize-none"
+                    style={{
+                      backgroundColor: 'var(--color-input-bg)',
+                      borderColor: 'var(--color-input-border)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                  />
+                </div>
+              </details>
+            </div>
           )}
 
           {activeTab === 'terraform' && (
