@@ -195,7 +195,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // -----------------------------------------------------------------------
     let cid: string;
     try {
-      cid = await loginV1(base, username, password);
+      cid = await loginV2(base, username, password);
     } catch (e) {
       if (isTimeoutError(e)) {
         return res.status(504).json({ error: 'Controller did not respond within the timeout.' });
@@ -249,7 +249,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           try {
             // Use a short timeout for action-scanning so probing all candidates
             // for all entities stays well within Vercel's 60-second limit.
-            const data = await callV1(base, cid, action, 6_000);
+            const data = await callApi(base, cid, action, 6_000);
             raw[key] = toArray(data);
             succeeded = true;
             break;
@@ -370,50 +370,60 @@ async function getV25WithScheme(base: string, cid: string, path: string, scheme:
 }
 
 // ---------------------------------------------------------------------------
-// v1 helpers
+// v2 helpers  (POST /v2/api — the correct endpoint per controller Terraform)
 // ---------------------------------------------------------------------------
 
-async function loginV1(base: string, username: string, password: string): Promise<string> {
-  const params = new URLSearchParams({ action: 'login', username, password });
-  const r = await controllerFetch(`${base}/v1/api`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
+async function loginV2(base: string, username: string, password: string): Promise<string> {
+  // Try /v2/api first (confirmed correct by controller Terraform provisioners),
+  // then fall back to /v1/api for older installs.
+  for (const apiPath of ['/v2/api', '/v1/api']) {
+    const params = new URLSearchParams({ action: 'login', username, password });
+    try {
+      const r = await controllerFetch(`${base}${apiPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+      });
+      if (!r.ok) continue;
+      const body = await r.json() as Record<string, unknown>;
+      if (body['return'] !== true) continue;
+      const cid = body['CID'];
+      if (typeof cid === 'string' && cid) return cid;
+    } catch {
+      // try next path
+    }
   }
-  const body = await r.json() as Record<string, unknown>;
-  if (body['return'] !== true) {
-    const reason = typeof body['reason'] === 'string' ? body['reason'] : 'login rejected';
-    throw new Error(reason);
-  }
-  const cid = body['CID'];
-  if (typeof cid !== 'string' || !cid) {
-    throw new Error('v1 login response missing CID');
-  }
-  return cid;
+  throw new Error('Login failed on both /v2/api and /v1/api');
 }
 
-async function callV1(base: string, cid: string, action: string, timeoutMs = 22_000): Promise<unknown> {
-  const params = new URLSearchParams({ action, CID: cid });
-  const r = await controllerFetch(`${base}/v1/api`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: params.toString(),
-  }, timeoutMs);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
+async function callApi(base: string, cid: string, action: string, timeoutMs = 22_000): Promise<unknown> {
+  // Try /v2/api first — it supports DCF actions that /v1/api doesn't.
+  for (const apiPath of ['/v2/api', '/v1/api']) {
+    const params = new URLSearchParams({ action, CID: cid });
+    try {
+      const r = await controllerFetch(`${base}${apiPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+      }, timeoutMs);
+      if (!r.ok) {
+        const text = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
+      }
+      const body = await r.json() as Record<string, unknown>;
+      if (body['return'] === false) {
+        const reason = typeof body['reason'] === 'string' ? body['reason'] : 'action failed';
+        throw new Error(reason);
+      }
+      return body['results'] ?? body;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      // "Valid action required" on /v2/api → try /v1/api
+      if (msg.toLowerCase().includes('valid action') && apiPath === '/v2/api') continue;
+      throw e;
+    }
   }
-  const body = await r.json() as Record<string, unknown>;
-  if (body['return'] === false) {
-    const reason = typeof body['reason'] === 'string' ? body['reason'] : 'action failed';
-    throw new Error(reason);
-  }
-  // v1 wraps results in { results: [...] }
-  return body['results'] ?? body;
+  throw new Error('Valid action required');
 }
 
 // ---------------------------------------------------------------------------
