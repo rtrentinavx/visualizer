@@ -1,5 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { fetchWithTimeout, isTimeoutError } from '../ai/_timeout.js';
+import { Agent, fetch as undiciFetch } from 'undici';
+import { isTimeoutError } from '../ai/_timeout.js';
+
+/**
+ * Aviatrix controllers commonly expose self-signed TLS certificates (accessed
+ * by IP or internal hostname). Node's built-in fetch rejects these by default.
+ * We use an undici Agent with rejectUnauthorized: false so the proxy can reach
+ * the controller over HTTPS. The connection is still encrypted — we only skip
+ * certificate chain validation, which is acceptable for a private controller
+ * addressed directly by the customer.
+ */
+const controllerAgent = new Agent({ connect: { rejectUnauthorized: false } });
+
+async function controllerFetch(url: string, init: RequestInit, timeoutMs = 22_000): Promise<Response> {
+  return undiciFetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(timeoutMs),
+    dispatcher: controllerAgent,
+  }) as unknown as Response;
+}
 
 /**
  * Direct REST API proxy for live topology fetch from a customer's Aviatrix
@@ -154,7 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // ---------------------------------------------------------------------------
 
 async function loginV25(base: string, username: string, password: string): Promise<string> {
-  const r = await fetchWithTimeout(`${base}/v2.5/api/login`, {
+  const r = await controllerFetch(`${base}/v2.5/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -172,7 +191,7 @@ async function loginV25(base: string, username: string, password: string): Promi
 }
 
 async function getV25(base: string, token: string, path: string): Promise<unknown> {
-  const r = await fetchWithTimeout(`${base}${path}`, {
+  const r = await controllerFetch(`${base}${path}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   });
@@ -189,7 +208,7 @@ async function getV25(base: string, token: string, path: string): Promise<unknow
 
 async function loginV1(base: string, username: string, password: string): Promise<string> {
   const params = new URLSearchParams({ action: 'login', username, password });
-  const r = await fetchWithTimeout(`${base}/v1/api`, {
+  const r = await controllerFetch(`${base}/v1/api`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
@@ -212,7 +231,7 @@ async function loginV1(base: string, username: string, password: string): Promis
 
 async function callV1(base: string, cid: string, action: string): Promise<unknown> {
   const params = new URLSearchParams({ action, CID: cid });
-  const r = await fetchWithTimeout(`${base}/v1/api`, {
+  const r = await controllerFetch(`${base}/v1/api`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
