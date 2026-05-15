@@ -9,11 +9,12 @@ import {
   applyTokenGrant,
   clearConnectionTokens,
 } from './storage';
-import type { AviatrixConnection, AviatrixSettings } from './types';
+import type { AviatrixConnectionMCP, AviatrixSettings } from './types';
 
-const baseConnection = (overrides: Partial<AviatrixConnection> = {}): AviatrixConnection => ({
+const baseConnection = (overrides: Partial<AviatrixConnectionMCP> = {}): AviatrixConnectionMCP => ({
   id: 'c1',
   name: 'Test',
+  connectionType: 'mcp',
   mcpBaseUrl: 'https://controller.example.com/mcp',
   authEndpoint: 'https://controller.example.com/oauth/authorize',
   tokenEndpoint: 'https://controller.example.com/oauth/token',

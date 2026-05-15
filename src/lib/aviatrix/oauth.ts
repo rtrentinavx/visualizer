@@ -1,4 +1,4 @@
-import type { AviatrixConnection } from './types';
+import type { AviatrixConnectionMCP } from './types';
 
 /**
  * Client-side PKCE helpers + the Connect flow.
@@ -84,7 +84,7 @@ export function getRedirectUri(origin: string = window.location.origin): string 
  * to the customer's authEndpoint. Does NOT resolve — the browser navigates
  * away. The caller should treat this as a fire-and-forget.
  */
-export async function initiateConnect(connection: AviatrixConnection): Promise<void> {
+export async function initiateConnect(connection: AviatrixConnectionMCP): Promise<void> {
   if (!connection.authEndpoint || !connection.tokenEndpoint || !connection.clientId) {
     throw new Error('Connection is missing OAuth client config (authEndpoint / tokenEndpoint / clientId).');
   }

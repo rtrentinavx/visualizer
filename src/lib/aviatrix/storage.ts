@@ -1,22 +1,38 @@
 import { encryptTopology, decryptTopology } from '../cryptoStorage';
-import type { AviatrixSettings, AviatrixConnection, AviatrixConnectionStatus } from './types';
+import type {
+  AviatrixSettings,
+  AviatrixConnection,
+  AviatrixConnectionMCP,
+  AviatrixConnectionAPI,
+  AviatrixConnectionStatus,
+} from './types';
 
 const STORAGE_KEY = 'dcf-aviatrix-settings-v1';
 
-/**
- * 60 seconds of slop. We treat a token as expired this far ahead of its
- * advertised expiry so we don't issue a request that lands just after the
- * server-side expiry and gets a 401.
- */
 const TOKEN_EXPIRY_SLOP_MS = 60_000;
+
+/**
+ * Migrate a raw connection object loaded from localStorage. Older entries
+ * pre-date the `connectionType` discriminator — default them to 'mcp'.
+ */
+function migrateConnection(raw: Record<string, unknown>): AviatrixConnection {
+  if (!raw.connectionType) raw.connectionType = 'mcp';
+  return raw as unknown as AviatrixConnection;
+}
 
 function isValidAviatrixSettings(value: unknown): value is AviatrixSettings {
   if (!value || typeof value !== 'object') return false;
   const v = value as Record<string, unknown>;
-  return (
-    Array.isArray(v.connections) &&
-    (typeof v.activeConnectionId === 'string' || v.activeConnectionId === null)
-  );
+  if (!Array.isArray(v.connections)) return false;
+  if (typeof v.activeConnectionId !== 'string' && v.activeConnectionId !== null) return false;
+
+  // Migrate connections in place before the type guard finalises.
+  v.connections = (v.connections as unknown[]).map((c) => {
+    if (c && typeof c === 'object') return migrateConnection(c as Record<string, unknown>);
+    return c;
+  });
+
+  return true;
 }
 
 export async function saveAviatrixSettings(settings: AviatrixSettings): Promise<void> {
@@ -65,20 +81,25 @@ export function getActiveConnection(settings: AviatrixSettings): AviatrixConnect
 
 export function getConnectionStatus(c: AviatrixConnection | null, now: number = Date.now()): AviatrixConnectionStatus {
   if (!c) return 'disconnected';
+  if (c.connectionType === 'api') {
+    // Direct API connections have no token — credentials are the auth material.
+    return c.username && c.password ? 'connected' : 'disconnected';
+  }
+  // MCP — token-based.
   if (!c.accessToken) return 'disconnected';
   if (c.expiresAt !== undefined && c.expiresAt - TOKEN_EXPIRY_SLOP_MS <= now) return 'expired';
   return 'connected';
 }
 
 /**
- * Apply a token-grant response from the OAuth dance to a connection. Pure;
- * returns a new AviatrixConnection. Caller persists.
+ * Apply a token-grant response from the OAuth dance to an MCP connection.
+ * Pure; returns a new AviatrixConnectionMCP. Caller persists.
  */
 export function applyTokenGrant(
-  c: AviatrixConnection,
+  c: AviatrixConnectionMCP,
   grant: { accessToken: string; refreshToken?: string; expiresIn?: number },
   now: number = Date.now(),
-): AviatrixConnection {
+): AviatrixConnectionMCP {
   return {
     ...c,
     accessToken: grant.accessToken,
@@ -89,10 +110,11 @@ export function applyTokenGrant(
 }
 
 /** Wipe the post-OAuth state but keep the OAuth client config — equivalent to "Disconnect" in the UI. */
-export function clearConnectionTokens(c: AviatrixConnection): AviatrixConnection {
+export function clearConnectionTokens(c: AviatrixConnectionMCP): AviatrixConnectionMCP {
   return {
     id: c.id,
     name: c.name,
+    connectionType: 'mcp',
     mcpBaseUrl: c.mcpBaseUrl,
     authEndpoint: c.authEndpoint,
     tokenEndpoint: c.tokenEndpoint,
@@ -100,4 +122,12 @@ export function clearConnectionTokens(c: AviatrixConnection): AviatrixConnection
     scope: c.scope,
     lastFetchAt: c.lastFetchAt,
   };
+}
+
+/** Type guards for consumers that need to narrow the union. */
+export function isMcpConnection(c: AviatrixConnection): c is AviatrixConnectionMCP {
+  return c.connectionType === 'mcp';
+}
+export function isApiConnection(c: AviatrixConnection): c is AviatrixConnectionAPI {
+  return c.connectionType === 'api';
 }

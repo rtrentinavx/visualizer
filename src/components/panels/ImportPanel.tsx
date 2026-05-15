@@ -3,7 +3,7 @@ import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle, Plug, Loa
 import { unzipSync, strFromU8 } from 'fflate';
 import { importTerraformHCLWithReport } from '../../lib/importExport';
 import type { DcfPolicyModel } from '../../types/dcf';
-import { loadAviatrixSettings, getActiveConnection, getConnectionStatus } from '../../lib/aviatrix/storage';
+import { loadAviatrixSettings, getActiveConnection, getConnectionStatus, isApiConnection, isMcpConnection } from '../../lib/aviatrix/storage';
 import type { AviatrixConnection } from '../../lib/aviatrix/types';
 import { mapTopology } from '../../lib/aviatrix/mapTopology';
 
@@ -148,36 +148,47 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
   const handleFetchLive = async () => {
     resetState();
     setLiveWarnings([]);
-    if (!liveConnection || !liveConnection.accessToken) {
-      setError('No active Aviatrix connection. Configure one in AI Settings → Aviatrix Live Connection and click Connect first.');
+    if (!liveConnection) {
+      setError('No active Aviatrix connection. Configure one in AI Settings → Aviatrix Live Connection.');
+      return;
+    }
+    if (isMcpConnection(liveConnection) && !liveConnection.accessToken) {
+      setError('MCP connection is not authenticated. Go to AI Settings → Aviatrix Live Connection and click Connect.');
       return;
     }
     setIsFetchingLive(true);
     try {
-      const r = await fetch('/api/aviatrix/topology', {
+      let endpoint: string;
+      let body: Record<string, string>;
+      if (isApiConnection(liveConnection)) {
+        endpoint = '/api/aviatrix/topology-api';
+        body = { controllerBaseUrl: liveConnection.controllerBaseUrl, username: liveConnection.username, password: liveConnection.password };
+      } else {
+        endpoint = '/api/aviatrix/topology';
+        body = { baseUrl: liveConnection.mcpBaseUrl, accessToken: liveConnection.accessToken! };
+      }
+      const r = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          baseUrl: liveConnection.mcpBaseUrl,
-          accessToken: liveConnection.accessToken,
-        }),
+        body: JSON.stringify(body),
       });
       if (!r.ok) {
         const errBody = await r.json().catch(() => ({}));
-        throw new Error(errBody.error || `HTTP ${r.status}`);
+        throw new Error((errBody as { error?: string }).error || `HTTP ${r.status}`);
       }
       const data = await r.json() as {
         raw: { smartGroups: unknown[]; webGroups: unknown[]; threatGroups: unknown[]; geoGroups: unknown[]; policies: unknown[] };
-        toolNames: Record<string, string>;
         warnings: string[];
+        apiVersion?: string;
       };
       const { topology, droppedCounts } = mapTopology(data.raw);
       setPreview(topology);
       setLiveWarnings(data.warnings || []);
       const nonInternetGroups = topology.smartGroups.filter((g) => g.id !== 'sg-internet').length;
       const droppedTotal = Object.values(droppedCounts).reduce((a, b) => a + b, 0);
+      const viaLabel = data.apiVersion ? ` via ${data.apiVersion}` : '';
       setSuccess(
-        `Fetched live: ${nonInternetGroups} SmartGroups, ${topology.webGroups.length} WebGroups, ` +
+        `Fetched live${viaLabel}: ${nonInternetGroups} SmartGroups, ${topology.webGroups.length} WebGroups, ` +
           `${topology.threatGroups.length} ThreatGroups, ${topology.geoGroups.length} GeoGroups, ` +
           `${topology.policies.length} policies` +
           (droppedTotal > 0 ? ` (${droppedTotal} entries couldn't be mapped)` : '') + '.',
@@ -283,16 +294,21 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
           {activeTab === 'live' && (
             <div className="space-y-3">
               <p className="text-xs text-[var(--color-text-muted)]">
-                Fetch SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies from your Aviatrix Controller's MCP server.
-                Requires an active OAuth connection — set up in <strong>AI Settings → Aviatrix Live Connection</strong>.
+                Fetch SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies directly from your Aviatrix Controller.
+                Configure a connection (MCP or REST API) in <strong>AI Settings → Aviatrix Live Connection</strong>.
               </p>
               {liveConnection ? (
                 <div className="rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-3 space-y-1.5">
                   <div className="text-xs font-medium text-[var(--color-text-primary)] flex items-center gap-2">
                     <Plug size={12} className="text-[var(--color-accent-purple)]" />
                     {liveConnection.name}
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-500/15 text-slate-400">
+                      {isApiConnection(liveConnection) ? 'REST API' : 'MCP'}
+                    </span>
                   </div>
-                  <div className="text-[10px] text-[var(--color-text-muted)] font-mono truncate">{liveConnection.mcpBaseUrl}</div>
+                  <div className="text-[10px] text-[var(--color-text-muted)] font-mono truncate">
+                    {isApiConnection(liveConnection) ? liveConnection.controllerBaseUrl : liveConnection.mcpBaseUrl}
+                  </div>
                   <div className="text-[10px] text-[var(--color-text-muted)]">
                     Status: <strong>{getConnectionStatus(liveConnection)}</strong>
                   </div>

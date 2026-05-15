@@ -48,7 +48,7 @@ import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { evaluateTopology, applyAutoFix, applyWebGroupSplit, type EvaluationReport } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
-import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant } from './lib/aviatrix/storage';
+import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant, isMcpConnection } from './lib/aviatrix/storage';
 import { consumeOAuthHandoff } from './lib/aviatrix/oauth';
 import { useTheme } from './lib/useTheme';
 import { useTopology } from './lib/useTopology';
@@ -100,7 +100,9 @@ export default function App() {
       const settings = (await loadAviatrixSettings()) ?? { activeConnectionId: null, connections: [] };
       const idx = settings.connections.findIndex((c) => c.id === handoff.connectionId);
       if (idx < 0) return; // connection was deleted between Connect click and callback
-      const updated = applyTokenGrant(settings.connections[idx]!, {
+      const conn = settings.connections[idx]!;
+      if (!isMcpConnection(conn)) return; // OAuth handoff only applies to MCP connections
+      const updated = applyTokenGrant(conn, {
         accessToken: handoff.accessToken,
         refreshToken: handoff.refreshToken,
         expiresIn: handoff.expiresIn,

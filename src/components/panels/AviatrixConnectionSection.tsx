@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plug, Plus, Trash2, Loader2, CheckCircle2, AlertTriangle, X, ExternalLink } from 'lucide-react';
-import type { AviatrixConnection, AviatrixSettings } from '../../lib/aviatrix/types';
+import { Plug, Plus, Trash2, Loader2, CheckCircle2, AlertTriangle, X, ExternalLink, FlaskConical } from 'lucide-react';
+import type { AviatrixConnection, AviatrixConnectionMCP, AviatrixConnectionAPI, AviatrixSettings } from '../../lib/aviatrix/types';
 import {
   loadAviatrixSettings,
   saveAviatrixSettings,
@@ -8,26 +8,18 @@ import {
   getActiveConnection,
   getConnectionStatus,
   clearConnectionTokens,
+  isApiConnection,
 } from '../../lib/aviatrix/storage';
 import { initiateConnect } from '../../lib/aviatrix/oauth';
 
-/**
- * Aviatrix Live Connection — embedded section in the AI Settings panel.
- * MVP scope:
- * - Single-connection model (multi-connection support deferred).
- * - Create / edit / connect / disconnect / delete.
- * - Status badge reflecting token state.
- *
- * Loads its own state from encrypted localStorage on mount; doesn't take
- * props from AISettingsPanel so it can be moved into its own view later
- * without rewiring.
- */
 export default function AviatrixConnectionSection() {
   const [settings, setSettings] = useState<AviatrixSettings>(getDefaultAviatrixSettings);
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<AviatrixConnection | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [testingId, setTestingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     loadAviatrixSettings()
@@ -44,16 +36,13 @@ export default function AviatrixConnectionSection() {
     await saveAviatrixSettings(next).catch(() => {});
   };
 
-  const startNew = () => {
-    setEditing({
-      id: `aviatrix-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      name: 'Aviatrix Controller',
-      mcpBaseUrl: '',
-      authEndpoint: '',
-      tokenEndpoint: '',
-      clientId: '',
-      scope: 'mcp:read',
-    });
+  const startNew = (type: 'mcp' | 'api' = 'mcp') => {
+    const id = `aviatrix-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    if (type === 'api') {
+      setEditing({ id, name: 'Aviatrix Controller', connectionType: 'api', controllerBaseUrl: '', username: '', password: '' });
+    } else {
+      setEditing({ id, name: 'Aviatrix Controller', connectionType: 'mcp', mcpBaseUrl: '', authEndpoint: '', tokenEndpoint: '', clientId: '', scope: 'mcp:read' });
+    }
     setError(null);
   };
 
@@ -69,9 +58,16 @@ export default function AviatrixConnectionSection() {
 
   const saveEditing = async () => {
     if (!editing) return;
-    if (!editing.name.trim() || !editing.mcpBaseUrl.trim() || !editing.authEndpoint.trim() || !editing.tokenEndpoint.trim() || !editing.clientId.trim()) {
-      setError('Name, MCP base URL, auth endpoint, token endpoint, and client ID are required.');
-      return;
+    if (isApiConnection(editing)) {
+      if (!editing.name.trim() || !editing.controllerBaseUrl.trim() || !editing.username.trim() || !editing.password.trim()) {
+        setError('Name, Controller URL, username, and password are required.');
+        return;
+      }
+    } else {
+      if (!editing.name.trim() || !editing.mcpBaseUrl.trim() || !editing.authEndpoint.trim() || !editing.tokenEndpoint.trim() || !editing.clientId.trim()) {
+        setError('Name, MCP base URL, auth endpoint, token endpoint, and client ID are required.');
+        return;
+      }
     }
     const exists = settings.connections.some((c) => c.id === editing.id);
     const next: AviatrixSettings = {
@@ -84,27 +80,55 @@ export default function AviatrixConnectionSection() {
     setEditing(null);
   };
 
-  const handleConnect = async (c: AviatrixConnection) => {
+  const handleConnect = async (c: AviatrixConnectionMCP) => {
     setConnecting(true);
     setError(null);
     try {
-      // Make sure the latest connection state is committed before we navigate
-      // away — otherwise on return the handoff lookup wouldn't find the
-      // current OAuth client config.
       await persist({ ...settings, activeConnectionId: c.id });
-      await initiateConnect(c); // navigates away; this promise won't resolve.
+      await initiateConnect(c); // navigates away
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Connect failed.');
       setConnecting(false);
     }
   };
 
-  const handleDisconnect = async (c: AviatrixConnection) => {
+  const handleDisconnect = async (c: AviatrixConnectionMCP) => {
     const cleared = clearConnectionTokens(c);
     await persist({
       ...settings,
       connections: settings.connections.map((cc) => (cc.id === c.id ? cleared : cc)),
     });
+  };
+
+  const handleTestApi = async (c: AviatrixConnectionAPI) => {
+    setTestingId(c.id);
+    setTestResult(null);
+    setError(null);
+    try {
+      const r = await fetch('/api/aviatrix/topology-api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          controllerBaseUrl: c.controllerBaseUrl,
+          username: c.username,
+          password: c.password,
+          testOnly: true,
+        }),
+      });
+      const data = await r.json() as { apiVersion?: string; error?: string };
+      if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
+      const updated: AviatrixConnectionAPI = { ...c, connectedAt: Date.now() };
+      await persist({
+        ...settings,
+        activeConnectionId: settings.activeConnectionId ?? c.id,
+        connections: settings.connections.map((cc) => (cc.id === c.id ? updated : cc)),
+      });
+      setTestResult({ id: c.id, ok: true, msg: `Connected via ${data.apiVersion ?? 'API'}` });
+    } catch (e) {
+      setTestResult({ id: c.id, ok: false, msg: e instanceof Error ? e.message : 'Test failed' });
+    } finally {
+      setTestingId(null);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -113,10 +137,6 @@ export default function AviatrixConnectionSection() {
       connections: settings.connections.filter((c) => c.id !== id),
     };
     await persist(next);
-  };
-
-  const updateField = <K extends keyof AviatrixConnection>(key: K, value: AviatrixConnection[K]) => {
-    setEditing((prev) => (prev ? { ...prev, [key]: value } : prev));
   };
 
   if (!loaded) return null;
@@ -129,36 +149,27 @@ export default function AviatrixConnectionSection() {
           <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Aviatrix Live Connection</h3>
         </div>
         {!editing && (
-          <button
-            onClick={startNew}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white"
-            style={{ backgroundColor: 'var(--color-aviatrix)' }}
-          >
-            <Plus size={11} /> {settings.connections.length === 0 ? 'Configure' : 'New connection'}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => startNew('mcp')}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"
+            >
+              <Plus size={11} /> MCP
+            </button>
+            <button
+              onClick={() => startNew('api')}
+              className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white"
+              style={{ backgroundColor: 'var(--color-aviatrix)' }}
+            >
+              <Plus size={11} /> REST API
+            </button>
+          </div>
         )}
       </header>
 
       <p className="text-[10px] text-[var(--color-text-muted)]">
-        Read SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies directly from your Aviatrix Controller via its MCP server.
-        OAuth PKCE flow — your Controller must register
-        {' '}
-        <code className="px-1 rounded bg-[var(--color-surface-elevated)]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
-        {' '}
-        as an allowed redirect URI, AND your CoPilot + Controller security groups must allow inbound HTTPS from
-        {' '}
-        <code className="px-1 rounded bg-[var(--color-surface-elevated)]">3.134.16.45</code>
-        {' '}
-        on port 443 (the Visualizer's Vercel egress).
-        {' '}
-        <a
-          href="https://github.com/rtrentinavx/visualizer/blob/main/AVIATRIX_LIVE_SETUP.md"
-          target="_blank"
-          rel="noreferrer noopener"
-          className="text-[var(--color-accent-blue)] hover:underline"
-        >
-          Setup guide →
-        </a>
+        Fetch SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies directly from your Aviatrix Controller.
+        Choose <strong>MCP</strong> (OAuth PKCE) or <strong>REST API</strong> (username + password, no redirect required).
       </p>
 
       {error && (
@@ -171,17 +182,18 @@ export default function AviatrixConnectionSection() {
       {editing ? (
         <ConnectionForm
           editing={editing}
-          onChange={updateField}
+          onEditing={setEditing}
           onSave={saveEditing}
           onCancel={cancelEdit}
         />
       ) : settings.connections.length === 0 ? (
-        <p className="text-[11px] text-[var(--color-text-muted)] italic">No connection configured.</p>
+        <p className="text-[11px] text-[var(--color-text-muted)] italic">No connection configured. Add an MCP or REST API connection above.</p>
       ) : (
         <div className="space-y-2">
           {settings.connections.map((c) => {
             const cActive = c.id === settings.activeConnectionId;
-            const cStatus = cActive ? status : 'disconnected';
+            const cStatus = cActive ? status : getConnectionStatus(c);
+            const tr = testResult?.id === c.id ? testResult : null;
             return (
               <div
                 key={c.id}
@@ -189,32 +201,49 @@ export default function AviatrixConnectionSection() {
                   cActive ? 'border-[var(--color-accent-purple)] bg-[var(--color-accent-purple)]/5' : 'border-[var(--color-border-subtle)]'
                 }`}
               >
-                <Plug size={14} className="text-[var(--color-text-muted)]" />
+                <Plug size={14} className="text-[var(--color-text-muted)] shrink-0" />
                 <div className="flex-1 min-w-0">
                   <div className="text-xs font-medium text-[var(--color-text-primary)] truncate flex items-center gap-1.5">
                     {c.name}
+                    <TypeBadge type={c.connectionType} />
                     <StatusBadge status={cStatus} />
                   </div>
-                  <div className="text-[10px] text-[var(--color-text-muted)] truncate">{c.mcpBaseUrl}</div>
+                  <div className="text-[10px] text-[var(--color-text-muted)] truncate">
+                    {isApiConnection(c) ? c.controllerBaseUrl : c.mcpBaseUrl}
+                  </div>
+                  {tr && (
+                    <div className={`text-[10px] mt-0.5 ${tr.ok ? 'text-emerald-400' : 'text-red-400'}`}>{tr.msg}</div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
-                  {cStatus === 'connected' ? (
+                  {isApiConnection(c) ? (
                     <button
-                      onClick={() => handleDisconnect(c)}
-                      className="px-2 py-1 rounded text-[10px] font-medium border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"
+                      onClick={() => handleTestApi(c)}
+                      disabled={testingId === c.id}
+                      className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)] disabled:opacity-50"
                     >
-                      Disconnect
+                      {testingId === c.id ? <Loader2 size={10} className="animate-spin" /> : <FlaskConical size={10} />}
+                      Test
                     </button>
                   ) : (
-                    <button
-                      onClick={() => handleConnect(c)}
-                      disabled={connecting}
-                      className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white disabled:opacity-50"
-                      style={{ backgroundColor: 'var(--color-accent-purple)' }}
-                    >
-                      {connecting ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />}
-                      {cStatus === 'expired' ? 'Reconnect' : 'Connect'}
-                    </button>
+                    cStatus === 'connected' ? (
+                      <button
+                        onClick={() => handleDisconnect(c as AviatrixConnectionMCP)}
+                        className="px-2 py-1 rounded text-[10px] font-medium border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]"
+                      >
+                        Disconnect
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleConnect(c as AviatrixConnectionMCP)}
+                        disabled={connecting}
+                        className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-white disabled:opacity-50"
+                        style={{ backgroundColor: 'var(--color-accent-purple)' }}
+                      >
+                        {connecting ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />}
+                        {cStatus === 'expired' ? 'Reconnect' : 'Connect'}
+                      </button>
+                    )
                   )}
                   <button
                     onClick={() => startEdit(c)}
@@ -236,6 +265,18 @@ export default function AviatrixConnectionSection() {
         </div>
       )}
     </section>
+  );
+}
+
+// =============================================================================
+// Badges
+// =============================================================================
+
+function TypeBadge({ type }: { type: 'mcp' | 'api' }) {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-500/15 text-slate-400">
+      {type === 'api' ? 'REST API' : 'MCP'}
+    </span>
   );
 }
 
@@ -261,19 +302,35 @@ function StatusBadge({ status }: { status: 'connected' | 'disconnected' | 'expir
   );
 }
 
+// =============================================================================
+// Connection form
+// =============================================================================
+
 function ConnectionForm({
   editing,
-  onChange,
+  onEditing,
   onSave,
   onCancel,
 }: {
   editing: AviatrixConnection;
-  onChange: <K extends keyof AviatrixConnection>(key: K, value: AviatrixConnection[K]) => void;
+  onEditing: React.Dispatch<React.SetStateAction<AviatrixConnection | null>>;
   onSave: () => void;
   onCancel: () => void;
 }) {
   const inputCls = 'w-full px-2 py-1.5 rounded text-xs border outline-none font-mono';
   const inputStyle = { backgroundColor: 'var(--color-input-bg)', borderColor: 'var(--color-input-border)', color: 'var(--color-text-primary)' };
+
+  const switchType = (type: 'mcp' | 'api') => {
+    if (type === editing.connectionType) return;
+    if (type === 'api') {
+      onEditing({ id: editing.id, name: editing.name, connectionType: 'api', controllerBaseUrl: '', username: '', password: '' });
+    } else {
+      onEditing({ id: editing.id, name: editing.name, connectionType: 'mcp', mcpBaseUrl: '', authEndpoint: '', tokenEndpoint: '', clientId: '', scope: 'mcp:read' });
+    }
+  };
+
+  const set = (key: string, value: string) => onEditing((prev) => prev ? { ...prev, [key]: value } as AviatrixConnection : prev);
+
   return (
     <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-surface-raised)] p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -282,24 +339,66 @@ function ConnectionForm({
           <X size={12} />
         </button>
       </div>
+
+      {/* Type selector */}
+      <div className="flex gap-1 p-0.5 rounded bg-[var(--color-surface)] border border-[var(--color-border-subtle)]">
+        {(['mcp', 'api'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => switchType(t)}
+            className={`flex-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+              editing.connectionType === t
+                ? 'text-white'
+                : 'text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+            }`}
+            style={editing.connectionType === t ? { backgroundColor: 'var(--color-aviatrix)' } : {}}
+          >
+            {t === 'mcp' ? 'MCP (OAuth PKCE)' : 'Direct REST API'}
+          </button>
+        ))}
+      </div>
+
       <Field label="Name">
-        <input type="text" value={editing.name} onChange={(e) => onChange('name', e.target.value)} className={inputCls} style={inputStyle} placeholder="Customer Prod Controller" />
+        <input type="text" value={editing.name} onChange={(e) => set('name', e.target.value)} className={inputCls} style={inputStyle} placeholder="Customer Prod Controller" />
       </Field>
-      <Field label="MCP base URL" hint="The MCP server endpoint on the Controller.">
-        <input type="text" value={editing.mcpBaseUrl} onChange={(e) => onChange('mcpBaseUrl', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/mcp" />
-      </Field>
-      <Field label="OAuth authorize endpoint">
-        <input type="text" value={editing.authEndpoint} onChange={(e) => onChange('authEndpoint', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/oauth/authorize" />
-      </Field>
-      <Field label="OAuth token endpoint">
-        <input type="text" value={editing.tokenEndpoint} onChange={(e) => onChange('tokenEndpoint', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/oauth/token" />
-      </Field>
-      <Field label="Client ID">
-        <input type="text" value={editing.clientId} onChange={(e) => onChange('clientId', e.target.value)} className={inputCls} style={inputStyle} placeholder="dcf-visualizer" />
-      </Field>
-      <Field label="Scope (optional)">
-        <input type="text" value={editing.scope ?? ''} onChange={(e) => onChange('scope', e.target.value)} className={inputCls} style={inputStyle} placeholder="mcp:read" />
-      </Field>
+
+      {isApiConnection(editing) ? (
+        <>
+          <Field label="Controller URL" hint="Base URL of the Controller (no trailing slash).">
+            <input type="text" value={editing.controllerBaseUrl} onChange={(e) => set('controllerBaseUrl', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com" />
+          </Field>
+          <Field label="Username">
+            <input type="text" value={editing.username} onChange={(e) => set('username', e.target.value)} className={inputCls} style={inputStyle} placeholder="admin" autoComplete="username" />
+          </Field>
+          <Field label="Password" hint="Stored encrypted locally. Sent to our proxy on each fetch; never logged.">
+            <input type="password" value={editing.password} onChange={(e) => set('password', e.target.value)} className={inputCls} style={inputStyle} autoComplete="current-password" />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label="MCP base URL" hint="The MCP server endpoint on the Controller.">
+            <input type="text" value={(editing as AviatrixConnectionMCP).mcpBaseUrl} onChange={(e) => set('mcpBaseUrl', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/mcp" />
+          </Field>
+          <Field label="OAuth authorize endpoint">
+            <input type="text" value={(editing as AviatrixConnectionMCP).authEndpoint} onChange={(e) => set('authEndpoint', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/oauth/authorize" />
+          </Field>
+          <Field label="OAuth token endpoint">
+            <input type="text" value={(editing as AviatrixConnectionMCP).tokenEndpoint} onChange={(e) => set('tokenEndpoint', e.target.value)} className={inputCls} style={inputStyle} placeholder="https://controller.example.com/oauth/token" />
+          </Field>
+          <Field label="Client ID">
+            <input type="text" value={(editing as AviatrixConnectionMCP).clientId} onChange={(e) => set('clientId', e.target.value)} className={inputCls} style={inputStyle} placeholder="dcf-visualizer" />
+          </Field>
+          <Field label="Scope (optional)">
+            <input type="text" value={(editing as AviatrixConnectionMCP).scope ?? ''} onChange={(e) => set('scope', e.target.value)} className={inputCls} style={inputStyle} placeholder="mcp:read" />
+          </Field>
+          <p className="text-[9px] text-[var(--color-text-muted)]">
+            Your Controller must allow{' '}
+            <code className="px-1 rounded bg-[var(--color-surface-elevated)]">{typeof window !== 'undefined' ? `${window.location.origin}/auth/aviatrix/callback.html` : '/auth/aviatrix/callback.html'}</code>
+            {' '}as an OAuth redirect URI.
+          </p>
+        </>
+      )}
+
       <div className="flex gap-2 pt-1">
         <button onClick={onSave} className="px-3 py-1.5 rounded text-xs font-medium text-white" style={{ backgroundColor: 'var(--color-aviatrix)' }}>Save</button>
         <button onClick={onCancel} className="px-3 py-1.5 rounded text-xs font-medium border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-elevated)]">Cancel</button>
