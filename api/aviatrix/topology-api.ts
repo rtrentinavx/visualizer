@@ -207,39 +207,63 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v1', egressIp: await fetchEgressIp(), warnings });
     }
 
+    // -----------------------------------------------------------------------
+    // 3. Try v2.5 endpoints using the v1 CID as a Bearer token.
+    // Controllers that reject username/password on the v2.5 login endpoint
+    // (returning 400) often accept the v1 session CID as a Bearer token on
+    // v2.5 data endpoints — the OAuth flow issues the same kind of session
+    // token under the hood.
+    // -----------------------------------------------------------------------
     const raw = emptyRaw();
-    for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
-      const candidates = V1_ACTIONS[key];
-      let succeeded = false;
-      const skippedReasons: string[] = [];
-      for (const action of candidates) {
+    let usedV25WithCid = false;
+    {
+      const v25Failures: string[] = [];
+      for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
         try {
-          // Use a short timeout for action-scanning so probing all candidates
-          // for all entities stays well within Vercel's 60-second limit.
-          const data = await callV1(base, cid, action, 6_000);
+          const data = await getV25(base, cid, V25_PATHS[key]);
           raw[key] = toArray(data);
-          succeeded = true;
-          break;
         } catch (e) {
-          const msg = e instanceof Error ? e.message : 'unknown';
-          // "Valid action required" means this action name doesn't exist — try next candidate.
-          if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) {
-            skippedReasons.push(`${action}: ${msg}`);
-            continue;
-          }
-          // Any other error (auth, server error) — stop trying and warn.
-          warnings.push(`v1 ${key} (action=${action}) failed: ${msg}`);
-          succeeded = true; // don't fall through to "no valid action" warning
-          break;
+          v25Failures.push(key);
         }
       }
-      if (!succeeded) {
-        // Include the actual rejection messages from the controller to help diagnose action name issues.
-        const detail = skippedReasons.length > 0 ? ` — controller said: ${skippedReasons[0]}` : '';
-        warnings.push(`v1 ${key}: no valid action found (tried ${candidates.length} candidates${detail})`);
+      // If at least one v2.5 endpoint succeeded, report as v2.5+CID.
+      if (v25Failures.length < Object.keys(V25_PATHS).length) {
+        usedV25WithCid = true;
+        if (v25Failures.length > 0) {
+          warnings.push(`v2.5-with-CID partial: ${v25Failures.join(', ')} not available`);
+        }
       }
     }
-    return res.status(200).json({ raw, apiVersion: 'v1', warnings });
+
+    if (!usedV25WithCid) {
+      // v2.5 with CID also failed — fall back to v1 action scanning for each entity.
+      for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
+        const candidates = V1_ACTIONS[key];
+        let succeeded = false;
+        for (const action of candidates) {
+          try {
+            // Use a short timeout for action-scanning so probing all candidates
+            // for all entities stays well within Vercel's 60-second limit.
+            const data = await callV1(base, cid, action, 6_000);
+            raw[key] = toArray(data);
+            succeeded = true;
+            break;
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : 'unknown';
+            if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) continue;
+            warnings.push(`v1 ${key} (action=${action}) failed: ${msg}`);
+            succeeded = true;
+            break;
+          }
+        }
+        if (!succeeded) {
+          warnings.push(`v1 ${key}: DCF action not available (tried ${candidates.length} candidates)`);
+        }
+      }
+    }
+
+    const apiVersion = usedV25WithCid ? 'v2.5 (CID auth)' : 'v1';
+    return res.status(200).json({ raw, apiVersion, warnings });
 
   } catch (err) {
     console.error('[aviatrix/topology-api] outer error', err);
