@@ -217,21 +217,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw = emptyRaw();
     let usedV25WithCid = false;
     {
-      const v25Failures: string[] = [];
-      for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
-        try {
-          const data = await getV25(base, cid, V25_PATHS[key]);
-          raw[key] = toArray(data);
-        } catch (e) {
-          v25Failures.push(key);
+      // Probe one v2.5 endpoint first to check if CID-as-Bearer works at all.
+      // We log the HTTP status so the user can see whether it's auth (401) or
+      // path (404) that's blocking — that tells us which fix to apply.
+      let v25Probe: string | null = null;
+      try {
+        const probeResult = await getV25Diagnostic(base, cid, V25_PATHS.smartGroups);
+        if (probeResult.ok) {
+          v25Probe = 'ok';
+        } else {
+          v25Probe = `HTTP ${probeResult.status}`;
         }
+      } catch (e) {
+        v25Probe = `error: ${e instanceof Error ? e.message : 'unknown'}`;
       }
-      // If at least one v2.5 endpoint succeeded, report as v2.5+CID.
-      if (v25Failures.length < Object.keys(V25_PATHS).length) {
+
+      if (v25Probe === 'ok') {
+        const v25Failures: string[] = [];
+        for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
+          try {
+            const data = await getV25(base, cid, V25_PATHS[key]);
+            raw[key] = toArray(data);
+          } catch (e) {
+            v25Failures.push(key);
+          }
+        }
         usedV25WithCid = true;
         if (v25Failures.length > 0) {
           warnings.push(`v2.5-with-CID partial: ${v25Failures.join(', ')} not available`);
         }
+      } else {
+        warnings.push(`v2.5 DCF endpoints not accessible with session CID (${v25Probe}) — trying v1 actions`);
       }
     }
 
@@ -307,6 +323,15 @@ async function loginV25(base: string, username: string, password: string): Promi
     if (typeof token === 'string' && token) return token;
   }
   throw new Error('v2.5 login failed — bad credentials or unsupported format');
+}
+
+/** Like getV25 but returns the raw response instead of throwing on non-OK — for probing. */
+async function getV25Diagnostic(base: string, token: string, path: string): Promise<{ ok: boolean; status: number }> {
+  const r = await controllerFetch(`${base}${path}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  }, 8_000);
+  return { ok: r.ok, status: r.status };
 }
 
 async function getV25(base: string, token: string, path: string): Promise<unknown> {
