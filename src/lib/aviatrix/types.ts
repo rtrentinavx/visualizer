@@ -56,6 +56,8 @@ export interface AviatrixConnectionAPI extends AviatrixConnectionBase {
   username: string;
   /** Controller password — encrypted at rest via cryptoStorage. */
   password: string;
+  /** Outbound IP observed by the proxy during the last successful Test — the IP the customer must allow-list. */
+  egressIp?: string;
 }
 
 // ---------------------------------------------------------------------------

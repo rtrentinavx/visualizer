@@ -35,6 +35,9 @@ export default function AviatrixConnectionSection() {
 
   const active = getActiveConnection(settings);
   const status = getConnectionStatus(active);
+  // Prefer the egress IP reported by the topology-api proxy itself (same Vercel region as the
+  // actual controller calls). Fall back to the section-level fetch for MCP connections.
+  const displayEgressIp = (active && isApiConnection(active) && active.egressIp) ? active.egressIp : egressIp;
 
   const persist = async (next: AviatrixSettings) => {
     setSettings(next);
@@ -125,15 +128,16 @@ export default function AviatrixConnectionSection() {
           testOnly: true,
         }),
       });
-      const data = await r.json() as { apiVersion?: string; error?: string };
+      const data = await r.json() as { apiVersion?: string; egressIp?: string; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
-      // Test passed — mark connectedAt so status transitions to 'connected'.
-      const updated: AviatrixConnectionAPI = { ...c, connectedAt: Date.now() };
+      // Test passed — mark connectedAt + persist the proxy's egress IP so we can show the correct allow-list IP.
+      const updated: AviatrixConnectionAPI = { ...c, connectedAt: Date.now(), egressIp: data.egressIp ?? c.egressIp };
       await persist({
         ...settings,
         activeConnectionId: settings.activeConnectionId ?? c.id,
         connections: settings.connections.map((cc) => (cc.id === c.id ? updated : cc)),
       });
+      if (data.egressIp) setEgressIp(data.egressIp);
       setTestResult({ id: c.id, ok: true, msg: `Connected via ${data.apiVersion ?? 'API'}` });
     } catch (e) {
       // Test failed — clear connectedAt so status reverts to 'configured'.
@@ -188,9 +192,9 @@ export default function AviatrixConnectionSection() {
         Fetch SmartGroups, WebGroups, ThreatGroups, GeoGroups, and policies directly from your Aviatrix Controller.
         Choose <strong>MCP</strong> (OAuth PKCE) or <strong>REST API</strong> (username + password, no redirect required).
         {' '}Your Controller's security group must allow inbound HTTPS from our proxy:{' '}
-        {egressIp
-          ? <code className="px-1 rounded bg-[var(--color-surface-elevated)] font-mono select-all">{egressIp}</code>
-          : <span className="opacity-50">fetching…</span>}
+        {displayEgressIp
+          ? <code className="px-1 rounded bg-[var(--color-surface-elevated)] font-mono select-all">{displayEgressIp}</code>
+          : <span className="opacity-50">run Test to see the exact IP</span>}
       </p>
 
       {error && (

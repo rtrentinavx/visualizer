@@ -119,12 +119,17 @@ const V25_PATHS: Record<EntityKey, string> = {
   policies: '/v2.5/api/distributed-firewalling/policies',
 };
 
-const V1_ACTIONS: Record<EntityKey, string> = {
-  smartGroups: 'list_smart_group_info',
-  webGroups: 'list_fqdn_filter_tags',
-  threatGroups: 'list_threat_groups',
-  geoGroups: 'list_geo_groups',
-  policies: 'list_distributed_firewalling_policy_list',
+/**
+ * Ordered candidate action names per entity. The proxy tries each in sequence
+ * and uses the first that doesn't return "Valid action required". This handles
+ * variation across Controller versions without hard-coding a single name.
+ */
+const V1_ACTIONS: Record<EntityKey, string[]> = {
+  smartGroups:  ['get_smart_group', 'list_smart_groups', 'list_smart_group_info'],
+  webGroups:    ['list_fqdn_filter_tags', 'get_fqdn_filter_tag', 'list_web_groups'],
+  threatGroups: ['list_threat_iq_lists', 'get_threat_iq_list', 'list_threat_groups'],
+  geoGroups:    ['list_geo_groups', 'get_geo_group', 'list_geo_fqdn_filter_tags'],
+  policies:     ['get_dcf_policy', 'list_dcf_policy', 'get_distributed_firewalling_policy', 'list_distributed_firewalling_policy_list'],
 };
 
 interface DirectApiRequest {
@@ -166,7 +171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (v25Token !== null) {
       if (testOnly) {
-        return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v2.5', warnings });
+        return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v2.5', egressIp: await fetchEgressIp(), warnings });
       }
       const raw = emptyRaw();
       for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
@@ -194,16 +199,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (testOnly) {
-      return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v1', warnings });
+      return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v1', egressIp: await fetchEgressIp(), warnings });
     }
 
     const raw = emptyRaw();
     for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
-      try {
-        const data = await callV1(base, cid, V1_ACTIONS[key]);
-        raw[key] = toArray(data);
-      } catch (e) {
-        warnings.push(`v1 ${key} (action=${V1_ACTIONS[key]}) failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      const candidates = V1_ACTIONS[key];
+      let succeeded = false;
+      for (const action of candidates) {
+        try {
+          const data = await callV1(base, cid, action);
+          raw[key] = toArray(data);
+          succeeded = true;
+          break;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'unknown';
+          // "Valid action required" means this action name doesn't exist — try next candidate.
+          if (msg.toLowerCase().includes('valid action')) continue;
+          // Any other error (auth, server error) — stop trying and warn.
+          warnings.push(`v1 ${key} (action=${action}) failed: ${msg}`);
+          succeeded = true; // don't fall through to "no valid action" warning
+          break;
+        }
+      }
+      if (!succeeded) {
+        warnings.push(`v1 ${key}: no valid action found (tried: ${candidates.join(', ')})`);
       }
     }
     return res.status(200).json({ raw, apiVersion: 'v1', warnings });
@@ -322,6 +342,18 @@ function toArray(data: unknown): unknown[] {
     }
   }
   return [];
+}
+
+/** Reflect the outbound IP of THIS function invocation — used so the UI can show the exact IP the customer must allow-list. */
+async function fetchEgressIp(): Promise<string | null> {
+  try {
+    const r = await fetch('https://api.ipify.org?format=json', { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) return null;
+    const { ip } = await r.json() as { ip?: string };
+    return typeof ip === 'string' ? ip : null;
+  } catch {
+    return null;
+  }
 }
 
 function isHttpUrl(s: string): boolean {
