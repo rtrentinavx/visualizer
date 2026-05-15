@@ -13,11 +13,8 @@ import { isTimeoutError } from '../ai/_timeout.js';
 const controllerAgent = new Agent({ connect: { rejectUnauthorized: false } });
 
 async function controllerFetch(url: string, init: RequestInit, timeoutMs = 22_000): Promise<Response> {
-  return undiciFetch(url, {
-    ...init,
-    signal: AbortSignal.timeout(timeoutMs),
-    dispatcher: controllerAgent,
-  }) as unknown as Response;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return undiciFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs), dispatcher: controllerAgent } as any) as unknown as Response;
 }
 
 /**
