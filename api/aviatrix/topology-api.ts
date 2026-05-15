@@ -217,26 +217,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw = emptyRaw();
     let usedV25WithCid = false;
     {
-      // Probe one v2.5 endpoint first to check if CID-as-Bearer works at all.
-      // We log the HTTP status so the user can see whether it's auth (401) or
-      // path (404) that's blocking — that tells us which fix to apply.
-      let v25Probe: string | null = null;
-      try {
-        const probeResult = await getV25Diagnostic(base, cid, V25_PATHS.smartGroups);
-        if (probeResult.ok) {
-          v25Probe = 'ok';
-        } else {
-          v25Probe = `HTTP ${probeResult.status}`;
-        }
-      } catch (e) {
-        v25Probe = `error: ${e instanceof Error ? e.message : 'unknown'}`;
-      }
+      // Probe one v2.5 endpoint trying several auth schemes (Bearer, CID header,
+      // CID query param). Log which scheme worked (or all status codes if none did).
+      const probe = await probeV25Auth(base, cid, V25_PATHS.smartGroups);
 
-      if (v25Probe === 'ok') {
+      if (probe.ok) {
         const v25Failures: string[] = [];
         for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
           try {
-            const data = await getV25(base, cid, V25_PATHS[key]);
+            const data = await getV25WithScheme(base, cid, V25_PATHS[key], probe.scheme);
             raw[key] = toArray(data);
           } catch (e) {
             v25Failures.push(key);
@@ -244,10 +233,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
         usedV25WithCid = true;
         if (v25Failures.length > 0) {
-          warnings.push(`v2.5-with-CID partial: ${v25Failures.join(', ')} not available`);
+          warnings.push(`v2.5-with-CID (${probe.scheme}) partial: ${v25Failures.join(', ')} not available`);
         }
       } else {
-        warnings.push(`v2.5 DCF endpoints not accessible with session CID (${v25Probe}) — trying v1 actions`);
+        warnings.push(`v2.5 DCF endpoints not accessible (tried Bearer/CID-header/CID-query, all returned HTTP ${probe.status}) — trying v1 actions`);
       }
     }
 
@@ -325,20 +314,54 @@ async function loginV25(base: string, username: string, password: string): Promi
   throw new Error('v2.5 login failed — bad credentials or unsupported format');
 }
 
-/** Like getV25 but returns the raw response instead of throwing on non-OK — for probing. */
-async function getV25Diagnostic(base: string, token: string, path: string): Promise<{ ok: boolean; status: number }> {
-  const r = await controllerFetch(`${base}${path}`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  }, 8_000);
-  return { ok: r.ok, status: r.status };
+/**
+ * Probe a v2.5 endpoint trying several auth formats in sequence.
+ * Returns the first successful response, or the last failure details.
+ */
+async function probeV25Auth(
+  base: string,
+  cid: string,
+  path: string,
+): Promise<{ ok: boolean; status: number; scheme: string }> {
+  const schemes: Array<{ label: string; headers: Record<string, string>; url?: string }> = [
+    // Standard Bearer (JWT) — may fail if CID isn't a valid JWT.
+    { label: 'Bearer', headers: { Authorization: `Bearer ${cid}`, Accept: 'application/json' } },
+    // Aviatrix-specific CID scheme used by some controller versions.
+    { label: 'CID-header', headers: { Authorization: `CID ${cid}`, Accept: 'application/json' } },
+    // CID as a query parameter — used by some internal/older v2.5 implementations.
+    { label: 'CID-query', headers: { Accept: 'application/json' }, url: `${base}${path}?CID=${encodeURIComponent(cid)}` },
+  ];
+  let lastStatus = 0;
+  for (const s of schemes) {
+    const url = s.url ?? `${base}${path}`;
+    try {
+      const r = await controllerFetch(url, { method: 'GET', headers: s.headers }, 8_000);
+      if (r.ok) return { ok: true, status: r.status, scheme: s.label };
+      lastStatus = r.status;
+    } catch {
+      // network error — try next scheme
+    }
+  }
+  return { ok: false, status: lastStatus, scheme: 'none' };
 }
 
 async function getV25(base: string, token: string, path: string): Promise<unknown> {
-  const r = await controllerFetch(`${base}${path}`, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-  });
+  return getV25WithScheme(base, token, path, 'Bearer');
+}
+
+async function getV25WithScheme(base: string, cid: string, path: string, scheme: string): Promise<unknown> {
+  const url = scheme === 'CID-query'
+    ? `${base}${path}?CID=${encodeURIComponent(cid)}`
+    : `${base}${path}`;
+  const authHeader = scheme === 'Bearer'
+    ? `Bearer ${cid}`
+    : scheme === 'CID-header'
+      ? `CID ${cid}`
+      : undefined;
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (authHeader) headers['Authorization'] = authHeader;
+
+  const r = await controllerFetch(url, { method: 'GET', headers });
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
