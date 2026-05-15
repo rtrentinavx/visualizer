@@ -125,11 +125,30 @@ const V25_PATHS: Record<EntityKey, string> = {
  * variation across Controller versions without hard-coding a single name.
  */
 const V1_ACTIONS: Record<EntityKey, string[]> = {
-  smartGroups:  ['get_smart_group', 'list_smart_groups', 'list_smart_group_info'],
+  // SmartGroups are internally "App Domains" in some controller versions.
+  smartGroups:  [
+    'list_smart_group_info', 'list_smart_groups', 'get_smart_group',
+    'list_app_domain', 'list_app_domain_list', 'list_app_domain_filter',
+    'list_micro_segmentation_group', 'list_micro_seg_group',
+    'get_smart_group_list', 'list_smart_group',
+  ],
   webGroups:    ['list_fqdn_filter_tags', 'get_fqdn_filter_tag', 'list_web_groups'],
-  threatGroups: ['list_threat_iq_lists', 'get_threat_iq_list', 'list_threat_groups'],
-  geoGroups:    ['list_geo_groups', 'get_geo_group', 'list_geo_fqdn_filter_tags'],
-  policies:     ['get_dcf_policy', 'list_dcf_policy', 'get_distributed_firewalling_policy', 'list_distributed_firewalling_policy_list'],
+  threatGroups: [
+    'list_threat_iq_lists', 'get_threat_iq_list', 'list_threat_groups',
+    'list_threat_iq_group', 'list_threatiq_group', 'list_threat_iq_filter',
+    'get_threat_iq_groups', 'list_threat_group',
+  ],
+  geoGroups:    [
+    'list_geo_groups', 'get_geo_group', 'list_geo_fqdn_filter_tags',
+    'list_geo_group', 'list_geo_filter', 'list_geo_filter_tags',
+    'get_geo_groups', 'list_geo_group_info',
+  ],
+  policies:     [
+    'list_distributed_firewalling_policy', 'get_dcf_policy', 'list_dcf_policy',
+    'list_distributed_firewalling_policy_list', 'get_distributed_firewalling_policy',
+    'list_distributed_fw_policy', 'list_dcf_policies', 'get_dcf_policies',
+    'list_distributed_firewalling_policies',
+  ],
 };
 
 interface DirectApiRequest {
@@ -206,6 +225,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
       const candidates = V1_ACTIONS[key];
       let succeeded = false;
+      const skippedReasons: string[] = [];
       for (const action of candidates) {
         try {
           const data = await callV1(base, cid, action);
@@ -215,7 +235,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         } catch (e) {
           const msg = e instanceof Error ? e.message : 'unknown';
           // "Valid action required" means this action name doesn't exist — try next candidate.
-          if (msg.toLowerCase().includes('valid action')) continue;
+          if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) {
+            skippedReasons.push(`${action}: ${msg}`);
+            continue;
+          }
           // Any other error (auth, server error) — stop trying and warn.
           warnings.push(`v1 ${key} (action=${action}) failed: ${msg}`);
           succeeded = true; // don't fall through to "no valid action" warning
@@ -223,7 +246,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
       if (!succeeded) {
-        warnings.push(`v1 ${key}: no valid action found (tried: ${candidates.join(', ')})`);
+        // Include the actual rejection messages from the controller to help diagnose action name issues.
+        const detail = skippedReasons.length > 0 ? ` — controller said: ${skippedReasons[0]}` : '';
+        warnings.push(`v1 ${key}: no valid action found (tried ${candidates.length} candidates${detail})`);
       }
     }
     return res.status(200).json({ raw, apiVersion: 'v1', warnings });
@@ -242,21 +267,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // ---------------------------------------------------------------------------
 
 async function loginV25(base: string, username: string, password: string): Promise<string> {
-  const r = await controllerFetch(`${base}/v2.5/api/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`HTTP ${r.status}: ${text.slice(0, 300)}`);
+  // Try JSON body first (standard v2.5 format), then fall back to form-encoded
+  // (some older v2.5 implementations reject JSON login requests).
+  for (const attempt of [
+    {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' } as Record<string, string>,
+      body: JSON.stringify({ username, password }),
+    },
+    {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' } as Record<string, string>,
+      body: new URLSearchParams({ username, password }).toString(),
+    },
+  ]) {
+    const r = await controllerFetch(`${base}/v2.5/api/login`, {
+      method: 'POST',
+      headers: attempt.headers,
+      body: attempt.body,
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      // 404/405 → endpoint doesn't exist; 400/401 → wrong format, try next
+      if (r.status === 404 || r.status === 405) throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+      continue;
+    }
+    const body = await r.json() as Record<string, unknown>;
+    const token = body['access_token'] ?? body['accessToken'] ?? body['token'];
+    if (typeof token === 'string' && token) return token;
   }
-  const body = await r.json() as Record<string, unknown>;
-  const token = body['access_token'] ?? body['accessToken'] ?? body['token'];
-  if (typeof token !== 'string' || !token) {
-    throw new Error('v2.5 login response missing access_token');
-  }
-  return token;
+  throw new Error('v2.5 login failed — bad credentials or unsupported format');
 }
 
 async function getV25(base: string, token: string, path: string): Promise<unknown> {
