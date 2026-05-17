@@ -126,17 +126,29 @@ const V25_PATHS: Record<EntityKey, string> = {
  * and uses the first that doesn't return "Valid action required". This handles
  * variation across Controller versions without hard-coding a single name.
  */
-// SmartGroups are internally called "App Domains" in some controller versions.
-// Keep the candidate list short — each call costs a round-trip.  We use a
-// 6-second per-call timeout during scanning (see the entity loop below) so
-// that probing all candidates for all entities finishes well within Vercel's
-// 60-second function limit.
-const V1_ACTIONS: Record<EntityKey, string[]> = {
-  smartGroups:  ['list_app_domain', 'list_smart_group', 'list_smart_groups', 'list_smart_group_info', 'get_smart_group'],
+// Action names for POST /v2/api. DCF-related features use a dcf_ prefix
+// matching the controller feature flags (dcf_multi_policies, k8s_dcf_policies).
+const V2_ACTIONS: Record<EntityKey, string[]> = {
+  smartGroups:  [
+    'list_smart_groups', 'list_smart_group', 'list_app_domain',
+    'dcf_list_smart_groups', 'dcf_list_smart_group',
+    'list_smart_group_info', 'get_smart_group',
+  ],
   webGroups:    ['list_fqdn_filter_tags', 'get_fqdn_filter_tag'],
-  threatGroups: ['list_threat_iq_lists', 'list_threat_iq_group', 'list_threat_groups', 'get_threat_iq_list'],
-  geoGroups:    ['list_geo_groups', 'list_geo_group', 'list_geo_fqdn_filter_tags', 'get_geo_group'],
-  policies:     ['list_distributed_firewalling_policy', 'list_dcf_policy', 'get_dcf_policy', 'list_distributed_firewalling_policy_list'],
+  threatGroups: [
+    'list_threat_iq_lists', 'dcf_list_threat_groups',
+    'list_threat_iq_group', 'list_threat_groups',
+  ],
+  geoGroups:    [
+    'list_geo_groups', 'dcf_list_geo_groups',
+    'list_geo_group', 'list_geo_fqdn_filter_tags',
+  ],
+  policies:     [
+    'list_distributed_firewalling_policy_list',
+    'dcf_list_policies', 'dcf_list_policy',
+    'list_dcf_policy', 'get_dcf_policy',
+    'list_distributed_firewalling_policy',
+  ],
 };
 
 interface DirectApiRequest {
@@ -166,35 +178,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const base = controllerBaseUrl.replace(/\/$/, '');
     const warnings: string[] = [];
 
-    // -----------------------------------------------------------------------
-    // 1. Try v2.5
-    // -----------------------------------------------------------------------
-    let v25Token: string | null = null;
-    try {
-      v25Token = await loginV25(base, username, password);
-    } catch (e) {
-      warnings.push(`v2.5 login failed (${e instanceof Error ? e.message : 'unknown'}); trying v1.`);
-    }
-
-    if (v25Token !== null) {
-      if (testOnly) {
-        return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v2.5', egressIp: await fetchEgressIp(), warnings });
-      }
-      const raw = emptyRaw();
-      for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
-        try {
-          const data = await getV25(base, v25Token, V25_PATHS[key]);
-          raw[key] = toArray(data);
-        } catch (e) {
-          warnings.push(`v2.5 ${key} fetch failed: ${e instanceof Error ? e.message : 'unknown'}`);
-        }
-      }
-      return res.status(200).json({ raw, apiVersion: 'v2.5', warnings });
-    }
-
-    // -----------------------------------------------------------------------
-    // 2. Fall back to v1
-    // -----------------------------------------------------------------------
+    // Login via /v2/api (confirmed correct endpoint per controller Terraform).
     let cid: string;
     try {
       cid = await loginV2(base, username, password);
@@ -206,76 +190,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (testOnly) {
-      return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v1', egressIp: await fetchEgressIp(), warnings });
+      return res.status(200).json({ raw: emptyRaw(), apiVersion: 'v2', egressIp: await fetchEgressIp(), warnings });
     }
 
-    // -----------------------------------------------------------------------
-    // 3. Try v2.5 endpoints using the v1 CID as a Bearer token.
-    // Controllers that reject username/password on the v2.5 login endpoint
-    // (returning 400) often accept the v1 session CID as a Bearer token on
-    // v2.5 data endpoints — the OAuth flow issues the same kind of session
-    // token under the hood.
-    // -----------------------------------------------------------------------
     const raw = emptyRaw();
-    let usedV25WithCid = false;
-    {
-      // Probe one v2.5 endpoint trying several auth schemes (Bearer, CID header,
-      // CID query param). Log which scheme worked (or all status codes if none did).
-      const probe = await probeV25Auth(base, cid, V25_PATHS.smartGroups);
-
-      if (probe.ok) {
-        const v25Failures: string[] = [];
-        for (const key of Object.keys(V25_PATHS) as EntityKey[]) {
-          try {
-            const data = await getV25WithScheme(base, cid, V25_PATHS[key], probe.scheme);
-            raw[key] = toArray(data);
-          } catch (e) {
-            v25Failures.push(key);
-          }
+    for (const key of Object.keys(V2_ACTIONS) as EntityKey[]) {
+      const candidates = V2_ACTIONS[key];
+      let succeeded = false;
+      for (const action of candidates) {
+        try {
+          const data = await callApi(base, cid, action, 6_000);
+          raw[key] = toArray(data);
+          succeeded = true;
+          break;
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'unknown';
+          if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) continue;
+          warnings.push(`${key} (action=${action}) failed: ${msg}`);
+          succeeded = true;
+          break;
         }
-        usedV25WithCid = true;
-        if (v25Failures.length > 0) {
-          warnings.push(`v2.5-with-CID (${probe.scheme}) partial: ${v25Failures.join(', ')} not available`);
-        }
-      } else {
-        warnings.push(`v2.5 DCF endpoints not accessible (tried Bearer/CID-header/CID-query, all returned HTTP ${probe.status}) — trying v1 actions`);
+      }
+      if (!succeeded) {
+        warnings.push(`${key}: no matching action on /v2/api (tried: ${candidates.join(', ')})`);
       }
     }
 
-    if (!usedV25WithCid) {
-      // Try a discovery call first — if the controller exposes a list-actions
-      // endpoint we can extract the real action names instead of guessing.
-      const discoveredActions = await discoverActions(base, cid);
-      if (discoveredActions) {
-        warnings.push(`Discovered controller actions (DCF-related): ${discoveredActions}`);
-      }
-
-      // Fall back to known action candidates.
-      for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
-        const candidates = V1_ACTIONS[key];
-        let succeeded = false;
-        for (const action of candidates) {
-          try {
-            const data = await callApi(base, cid, action, 6_000);
-            raw[key] = toArray(data);
-            succeeded = true;
-            break;
-          } catch (e) {
-            const msg = e instanceof Error ? e.message : 'unknown';
-            if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) continue;
-            warnings.push(`${key} (action=${action}) failed: ${msg}`);
-            succeeded = true;
-            break;
-          }
-        }
-        if (!succeeded) {
-          warnings.push(`${key}: no matching action found (tried ${candidates.length} candidates)`);
-        }
-      }
-    }
-
-    const apiVersion = usedV25WithCid ? 'v2.5 (CID auth)' : 'v1';
-    return res.status(200).json({ raw, apiVersion, warnings });
+    return res.status(200).json({ raw, apiVersion: 'v2', warnings });
 
   } catch (err) {
     console.error('[aviatrix/topology-api] outer error', err);
@@ -298,28 +239,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
  * Falls back to plain JSON login without the header in case the controller
  * version doesn't require the pre-token step.
  */
+/**
+ * v2.5 login — mirrors the goaviatrix two-step flow:
+ *   1. POST /v2/api  action=get_api_token  (no CID)  → { api_token }
+ *   2. POST /v2.5/api/login  body={username,password}  header X-Access-Key: <api_token>
+ *      → { access_token }
+ *
+ * Also tries without the pre-token in case the controller version skips step 1.
+ */
 async function loginV25(base: string, username: string, password: string): Promise<string> {
-  // Step 1 — try to obtain the API pre-token (may not be required on all versions).
+  // Step 1 — get the pre-auth API token (POST action, no CID required).
   let apiToken: string | undefined;
   try {
-    const r = await controllerFetch(`${base}/v2/api?action=get_api_token`, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
+    const params = new URLSearchParams({ action: 'get_api_token' });
+    const r = await controllerFetch(`${base}/v2/api`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+      body: params.toString(),
     }, 8_000);
     if (r.ok) {
       const body = await r.json() as Record<string, unknown>;
-      const t = body['api_token'] ?? body['apiToken'] ?? body['token'];
+      const t = (body as Record<string, Record<string, unknown>>)['results']?.['api_token']
+        ?? body['api_token'] ?? body['apiToken'];
       if (typeof t === 'string' && t) apiToken = t;
     }
-  } catch { /* not fatal — try login without it */ }
+  } catch { /* not fatal */ }
 
-  // Step 2 — POST credentials; include X-Access-Key when we have the pre-token.
-  for (const withToken of apiToken ? [true, false] : [false]) {
+  // Step 2 — POST credentials with X-Access-Key header (and fallback without).
+  for (const token of apiToken ? [apiToken, undefined] : [undefined]) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
-    if (withToken && apiToken) headers['X-Access-Key'] = apiToken;
+    if (token) headers['X-Access-Key'] = token;
 
     try {
       const r = await controllerFetch(`${base}/v2.5/api/login`, {
@@ -329,8 +281,8 @@ async function loginV25(base: string, username: string, password: string): Promi
       }, 10_000);
       if (!r.ok) continue;
       const body = await r.json() as Record<string, unknown>;
-      const token = body['access_token'] ?? body['accessToken'] ?? body['token'];
-      if (typeof token === 'string' && token) return token;
+      const access = body['access_token'] ?? body['accessToken'] ?? body['token'];
+      if (typeof access === 'string' && access) return access;
     } catch { /* try next */ }
   }
   throw new Error('v2.5 login failed');
