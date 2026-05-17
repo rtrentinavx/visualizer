@@ -111,8 +111,10 @@ export const config = { maxDuration: 60 };
 
 type EntityKey = 'smartGroups' | 'webGroups' | 'threatGroups' | 'geoGroups' | 'policies';
 
+// Smart groups are "app-domains" in the v2.5 REST API (confirmed from
+// goaviatrix/smart_group.go which calls PostAPIContext25("app-domains")).
 const V25_PATHS: Record<EntityKey, string> = {
-  smartGroups: '/v2.5/api/smart-groups',
+  smartGroups: '/v2.5/api/app-domains',
   webGroups: '/v2.5/api/web-groups',
   threatGroups: '/v2.5/api/threat-groups',
   geoGroups: '/v2.5/api/geo-groups',
@@ -288,35 +290,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 // v2.5 helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * v2.5 login — two-step flow used by the Aviatrix Go client:
+ *   1. GET /v2/api?action=get_api_token  (no auth) → { api_token: "..." }
+ *   2. POST /v2.5/api/login  with X-Access-Key: <api_token>  → { access_token: "..." }
+ *
+ * Falls back to plain JSON login without the header in case the controller
+ * version doesn't require the pre-token step.
+ */
 async function loginV25(base: string, username: string, password: string): Promise<string> {
-  // Try JSON body first (standard v2.5 format), then fall back to form-encoded
-  // (some older v2.5 implementations reject JSON login requests).
-  for (const attempt of [
-    {
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' } as Record<string, string>,
-      body: JSON.stringify({ username, password }),
-    },
-    {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' } as Record<string, string>,
-      body: new URLSearchParams({ username, password }).toString(),
-    },
-  ]) {
-    const r = await controllerFetch(`${base}/v2.5/api/login`, {
-      method: 'POST',
-      headers: attempt.headers,
-      body: attempt.body,
-    });
-    if (!r.ok) {
-      const text = await r.text().catch(() => '');
-      // 404/405 → endpoint doesn't exist; 400/401 → wrong format, try next
-      if (r.status === 404 || r.status === 405) throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
-      continue;
+  // Step 1 — try to obtain the API pre-token (may not be required on all versions).
+  let apiToken: string | undefined;
+  try {
+    const r = await controllerFetch(`${base}/v2/api?action=get_api_token`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    }, 8_000);
+    if (r.ok) {
+      const body = await r.json() as Record<string, unknown>;
+      const t = body['api_token'] ?? body['apiToken'] ?? body['token'];
+      if (typeof t === 'string' && t) apiToken = t;
     }
-    const body = await r.json() as Record<string, unknown>;
-    const token = body['access_token'] ?? body['accessToken'] ?? body['token'];
-    if (typeof token === 'string' && token) return token;
+  } catch { /* not fatal — try login without it */ }
+
+  // Step 2 — POST credentials; include X-Access-Key when we have the pre-token.
+  for (const withToken of apiToken ? [true, false] : [false]) {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+    if (withToken && apiToken) headers['X-Access-Key'] = apiToken;
+
+    try {
+      const r = await controllerFetch(`${base}/v2.5/api/login`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ username, password }),
+      }, 10_000);
+      if (!r.ok) continue;
+      const body = await r.json() as Record<string, unknown>;
+      const token = body['access_token'] ?? body['accessToken'] ?? body['token'];
+      if (typeof token === 'string' && token) return token;
+    } catch { /* try next */ }
   }
-  throw new Error('v2.5 login failed — bad credentials or unsupported format');
+  throw new Error('v2.5 login failed');
 }
 
 /**
