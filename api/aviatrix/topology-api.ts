@@ -241,14 +241,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (!usedV25WithCid) {
-      // v2.5 with CID also failed — fall back to v1 action scanning for each entity.
+      // Try a discovery call first — if the controller exposes a list-actions
+      // endpoint we can extract the real action names instead of guessing.
+      const discoveredActions = await discoverActions(base, cid);
+      if (discoveredActions) {
+        warnings.push(`Discovered controller actions (DCF-related): ${discoveredActions}`);
+      }
+
+      // Fall back to known action candidates.
       for (const key of Object.keys(V1_ACTIONS) as EntityKey[]) {
         const candidates = V1_ACTIONS[key];
         let succeeded = false;
         for (const action of candidates) {
           try {
-            // Use a short timeout for action-scanning so probing all candidates
-            // for all entities stays well within Vercel's 60-second limit.
             const data = await callApi(base, cid, action, 6_000);
             raw[key] = toArray(data);
             succeeded = true;
@@ -256,13 +261,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           } catch (e) {
             const msg = e instanceof Error ? e.message : 'unknown';
             if (msg.toLowerCase().includes('valid action') || msg.toLowerCase().includes('invalid action')) continue;
-            warnings.push(`v1 ${key} (action=${action}) failed: ${msg}`);
+            warnings.push(`${key} (action=${action}) failed: ${msg}`);
             succeeded = true;
             break;
           }
         }
         if (!succeeded) {
-          warnings.push(`v1 ${key}: DCF action not available (tried ${candidates.length} candidates)`);
+          warnings.push(`${key}: no matching action found (tried ${candidates.length} candidates)`);
         }
       }
     }
@@ -462,6 +467,32 @@ async function fetchEgressIp(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Try known API introspection actions. If any succeeds and the response
+ * contains action names that look DCF-related, return them as a string
+ * (for the caller to surface in warnings). Returns null if no discovery
+ * endpoint is available.
+ */
+async function discoverActions(base: string, cid: string): Promise<string | null> {
+  const discoveryActions = ['list_actions', 'get_actions', 'list_api_actions', 'get_api_list'];
+  for (const action of discoveryActions) {
+    try {
+      const data = await callApi(base, cid, action, 6_000) as unknown;
+      const text = JSON.stringify(data);
+      // Extract action names that look DCF/smartgroup/firewalling related.
+      const matches = (text.match(/"[^"]*(?:smart_group|firewalling|dcf|threat|geo_group)[^"]*"/gi) ?? [])
+        .map((s) => s.replace(/"/g, ''))
+        .slice(0, 20);
+      if (matches.length > 0) return matches.join(', ');
+      // Return first 200 chars of the raw response so we can see the structure.
+      return `(action=${action} succeeded but no DCF entries found) raw: ${text.slice(0, 200)}`;
+    } catch {
+      // not a valid action — try next
+    }
+  }
+  return null;
 }
 
 function isHttpUrl(s: string): boolean {
