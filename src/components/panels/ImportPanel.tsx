@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle, Plug, Loader2 } from 'lucide-react';
+import { X, Upload, FileCode, FileArchive, AlertTriangle, CheckCircle, Plug, Loader2, Shield } from 'lucide-react';
 import { unzipSync, strFromU8 } from 'fflate';
 import { importTerraformHCLWithReport, parseUuidMapping } from '../../lib/importExport';
+import { importFortiPolicy } from '../../lib/fortiImport';
+import { importPanPolicy } from '../../lib/panImport';
 import type { DcfPolicyModel } from '../../types/dcf';
 import { loadAviatrixSettings, getActiveConnection, getConnectionStatus, isApiConnection, isMcpConnection } from '../../lib/aviatrix/storage';
 import type { AviatrixConnection } from '../../lib/aviatrix/types';
@@ -12,7 +14,7 @@ interface ImportPanelProps {
   onClose: () => void;
 }
 
-type ImportTab = 'terraform' | 'zip' | 'live';
+type ImportTab = 'terraform' | 'zip' | 'live' | 'forti' | 'pan';
 
 interface ZipResult {
   fileCount: number;
@@ -66,6 +68,10 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
   // dropping references silently; surfacing them here makes the cause obvious.
   const [unresolvedRefs, setUnresolvedRefs] = useState<string[]>([]);
   const [uuidMappingInput, setUuidMappingInput] = useState('');
+  const [fortiInput, setFortiInput] = useState('');
+  const [fortiWarnings, setFortiWarnings] = useState<string[]>([]);
+  const [panInput, setPanInput] = useState('');
+  const [panWarnings, setPanWarnings] = useState<string[]>([]);
 
   useEffect(() => {
     loadAviatrixSettings()
@@ -81,6 +87,10 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
     setZipFileName(null);
     setUnresolvedRefs([]);
     setUuidMappingInput('');
+    setFortiInput('');
+    setFortiWarnings([]);
+    setPanInput('');
+    setPanWarnings([]);
   };
 
   const switchTab = (tab: ImportTab) => {
@@ -101,6 +111,28 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
         setPreview(topology);
         setUnresolvedRefs(refs);
         setSuccess(`Parsed Terraform HCL: ${topology.smartGroups.length - 1} groups imported, ${topology.policies.length} policies.`);
+      } else if (activeTab === 'forti') {
+        if (!fortiInput.trim()) { setError('Paste FortiGate config or XML to import.'); return; }
+        const { topology, warnings } = importFortiPolicy(fortiInput.trim());
+        setPreview(topology);
+        setFortiWarnings(warnings);
+        const nonSpecial = topology.smartGroups.filter((g) => g.id !== 'sg-any' && g.id !== 'sg-internet').length;
+        setSuccess(
+          `Parsed FortiGate config: ${nonSpecial} SmartGroup${nonSpecial === 1 ? '' : 's'}, ` +
+          `${topology.policies.length} polic${topology.policies.length === 1 ? 'y' : 'ies'}.` +
+          (warnings.length > 0 ? ` ${warnings.length} item${warnings.length === 1 ? '' : 's'} dropped (see below).` : ''),
+        );
+      } else if (activeTab === 'pan') {
+        if (!panInput.trim()) { setError('Paste Palo Alto running-config XML to import.'); return; }
+        const { topology, warnings } = importPanPolicy(panInput.trim());
+        setPreview(topology);
+        setPanWarnings(warnings);
+        const nonSpecial = topology.smartGroups.filter((g) => g.id !== 'sg-any' && g.id !== 'sg-internet').length;
+        setSuccess(
+          `Parsed PAN-OS config: ${nonSpecial} SmartGroup${nonSpecial === 1 ? '' : 's'}, ` +
+          `${topology.policies.length} polic${topology.policies.length === 1 ? 'y' : 'ies'}.` +
+          (warnings.length > 0 ? ` ${warnings.length} item${warnings.length === 1 ? '' : 's'} dropped (see below).` : ''),
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse input');
@@ -263,6 +295,28 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
             <Plug size={14} />
             Aviatrix Live
           </button>
+          <button
+            onClick={() => switchTab('forti')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === 'forti'
+                ? 'border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
+                : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+            }`}
+          >
+            <Shield size={14} />
+            FortiGate
+          </button>
+          <button
+            onClick={() => switchTab('pan')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+              activeTab === 'pan'
+                ? 'border-[var(--color-accent-blue)] text-[var(--color-accent-blue)]'
+                : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]'
+            }`}
+          >
+            <Shield size={14} />
+            Palo Alto
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -401,6 +455,70 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
             </div>
           )}
 
+          {activeTab === 'forti' && (
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Paste a FortiGate <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">.conf</code> backup
+                {' '}or FortiManager <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">XML</code> export.
+                Address objects, address groups, service objects, and policies are mapped to DCF.
+                NAT, UTM profiles, and FQDN/geography addresses have no DCF equivalent and are dropped with a warning.
+              </p>
+              <details className="rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface)]">
+                <summary className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] select-none">
+                  How to export from FortiGate
+                </summary>
+                <div className="px-3 pb-3 space-y-1.5 text-[10px] text-[var(--color-text-muted)]">
+                  <p><strong>.conf (CLI):</strong></p>
+                  <pre className="p-2 rounded bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] overflow-x-auto font-mono whitespace-pre-wrap break-all">{`execute backup config flash backup.conf`}</pre>
+                  <p className="mt-1"><strong>XML (FortiManager):</strong> Policy &amp; Objects → right-click policy package → Export → XML</p>
+                </div>
+              </details>
+              <textarea
+                value={fortiInput}
+                onChange={(e) => setFortiInput(e.target.value)}
+                placeholder={'config firewall address\n    edit "CORP-NET"\n        set subnet 10.0.0.0 255.255.0.0\n    next\nend\n...'}
+                className="w-full h-48 px-3 py-2 rounded text-xs border outline-none font-mono resize-none"
+                style={{
+                  backgroundColor: 'var(--color-input-bg)',
+                  borderColor: 'var(--color-input-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+              />
+            </div>
+          )}
+
+          {activeTab === 'pan' && (
+            <div className="space-y-2">
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Paste a PAN-OS <code className="px-1 py-0.5 rounded bg-[var(--color-surface-elevated)] text-[10px]">running-config.xml</code>{' '}
+                or Panorama config. Supports single-firewall vsys and Panorama device-group / shared scope.
+                Zones, security profiles, App-ID overrides, and FQDN/dynamic addresses have no DCF equivalent and are dropped with a warning.
+              </p>
+              <details className="rounded border border-[var(--color-border-subtle)] bg-[var(--color-surface)]">
+                <summary className="px-3 py-2 text-[10px] font-medium text-[var(--color-text-muted)] cursor-pointer hover:text-[var(--color-text-secondary)] select-none">
+                  How to export from PAN-OS
+                </summary>
+                <div className="px-3 pb-3 space-y-1.5 text-[10px] text-[var(--color-text-muted)]">
+                  <p><strong>GUI:</strong> Device → Setup → Operations → Export running config → download XML</p>
+                  <p><strong>CLI:</strong></p>
+                  <pre className="p-2 rounded bg-[var(--color-surface-elevated)] text-[var(--color-text-primary)] overflow-x-auto font-mono whitespace-pre-wrap break-all">{`scp export configuration from running-config.xml to user@host:path`}</pre>
+                  <p className="mt-1"><strong>Panorama:</strong> Panorama → Setup → Operations → Export Panorama config → XML</p>
+                </div>
+              </details>
+              <textarea
+                value={panInput}
+                onChange={(e) => setPanInput(e.target.value)}
+                placeholder={'<?xml version="1.0"?>\n<config version="10.1.0">\n  <devices>\n    ...\n  </devices>\n</config>'}
+                className="w-full h-48 px-3 py-2 rounded text-xs border outline-none font-mono resize-none"
+                style={{
+                  backgroundColor: 'var(--color-input-bg)',
+                  borderColor: 'var(--color-input-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+              />
+            </div>
+          )}
+
           {activeTab === 'zip' && (
             <>
               <input
@@ -474,6 +592,52 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
             </div>
           )}
 
+          {panWarnings.length > 0 && (
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 text-xs">
+                  <p className="font-medium text-amber-300">
+                    {panWarnings.length} item{panWarnings.length === 1 ? '' : 's'} dropped
+                  </p>
+                  <p className="text-[10px] text-amber-200/80 mt-0.5">
+                    These PAN-OS concepts have no DCF equivalent. Review and configure manually after import.
+                  </p>
+                </div>
+              </div>
+              <details className="text-[10px] text-amber-200/80 pl-6">
+                <summary className="cursor-pointer">Show dropped items</summary>
+                <ul className="mt-1 space-y-0.5 list-disc pl-4">
+                  {panWarnings.slice(0, 20).map((w, i) => <li key={i}>{w}</li>)}
+                  {panWarnings.length > 20 && <li>… and {panWarnings.length - 20} more</li>}
+                </ul>
+              </details>
+            </div>
+          )}
+
+          {fortiWarnings.length > 0 && (
+            <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                <div className="flex-1 text-xs">
+                  <p className="font-medium text-amber-300">
+                    {fortiWarnings.length} item{fortiWarnings.length === 1 ? '' : 's'} dropped
+                  </p>
+                  <p className="text-[10px] text-amber-200/80 mt-0.5">
+                    These FortiGate concepts have no DCF equivalent. Review and configure manually after import.
+                  </p>
+                </div>
+              </div>
+              <details className="text-[10px] text-amber-200/80 pl-6">
+                <summary className="cursor-pointer">Show dropped items</summary>
+                <ul className="mt-1 space-y-0.5 list-disc pl-4">
+                  {fortiWarnings.slice(0, 20).map((w, i) => <li key={i}>{w}</li>)}
+                  {fortiWarnings.length > 20 && <li>… and {fortiWarnings.length - 20} more</li>}
+                </ul>
+              </details>
+            </div>
+          )}
+
           {unresolvedRefs.length > 0 && (
             <div className="p-3 rounded-lg border border-amber-500/30 bg-amber-500/10 space-y-1.5">
               <div className="flex items-start gap-2">
@@ -499,7 +663,7 @@ export default function ImportPanel({ onImport, onClose }: ImportPanelProps) {
         </div>
 
         <div className="p-3 border-t border-[var(--color-border-subtle)] flex items-center gap-2">
-          {activeTab === 'terraform' && (
+          {(activeTab === 'terraform' || activeTab === 'forti' || activeTab === 'pan') && (
             <button
               onClick={handleParse}
               className="px-4 py-1.5 rounded-md text-xs font-medium border transition-colors"

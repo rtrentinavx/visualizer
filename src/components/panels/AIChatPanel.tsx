@@ -32,6 +32,7 @@ interface ChatMessage {
 
 export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy }: AIChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [apiHistory, setApiHistory] = useState<AIMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
@@ -67,7 +68,14 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
 
     const systemMsg: AIMessage = { role: 'system', content: SYSTEM_PROMPT_POLICY_GENERATION };
     const delimitedUserInput = delimitUserInput(userText);
-    const contextMsg: AIMessage = { role: 'user', content: buildPolicyGenerationPrompt(topology, delimitedUserInput) };
+
+    // First turn: inject topology context so the model knows the current policy model.
+    // Subsequent turns: send only the user message — topology is already in the history.
+    const currentApiUserMsg: AIMessage = apiHistory.length === 0
+      ? { role: 'user', content: buildPolicyGenerationPrompt(topology, delimitedUserInput) }
+      : { role: 'user', content: delimitedUserInput };
+
+    const apiMessages: AIMessage[] = [systemMsg, ...apiHistory, currentApiUserMsg];
 
     setIsStreaming(true);
     const controller = new AbortController();
@@ -76,7 +84,7 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
     let fullContent = '';
 
     try {
-      for await (const chunk of streamChat(profile, [systemMsg, contextMsg], PROMPT_VERSIONS.policyGeneration, controller.signal)) {
+      for await (const chunk of streamChat(profile, apiMessages, PROMPT_VERSIONS.policyGeneration, controller.signal)) {
         if (chunk.done) break;
         fullContent += chunk.content;
         setMessages((prev) => {
@@ -96,6 +104,10 @@ export default function AIChatPanel({ topology, profile, onClose, onApplyPolicy 
         setMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${filtered.reason}`, error: true }]);
         return;
       }
+
+      // Stream completed cleanly — append this turn to API history so future
+      // turns have full conversation context.
+      setApiHistory((prev) => [...prev, currentApiUserMsg, { role: 'assistant', content: fullContent }]);
 
       // Validate with Zod schema
       const validated = safeParseAIOutput(PolicySuggestionArraySchema, fullContent);

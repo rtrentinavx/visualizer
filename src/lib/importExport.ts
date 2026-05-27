@@ -497,6 +497,16 @@ export function importTerraformHCLWithReport(hcl: string, uuidMap?: Map<string, 
     for (const [tfName, gid] of nameToId) {
       if (ref.includes(tfName)) return gid;
     }
+    // Bare UUID with no matching resource — uuidMap wasn't provided or didn't
+    // cover this group. Create a placeholder SmartGroup using the UUID as its
+    // name so the policy reference is preserved rather than silently becoming
+    // sg-any.
+    if (/^[0-9a-f-]{30,}$/i.test(ref)) {
+      const id = `sg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      uuidToId.set(ref, id);
+      smartGroups.push({ id, name: ref, color: '#9ca3af', criteria: [], matchType: 'any' });
+      return id;
+    }
     return null;
   }
 
