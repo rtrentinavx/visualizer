@@ -118,4 +118,140 @@ describe('mapTopology', () => {
     const { topology } = mapTopology(raw);
     expect(topology.policies[0]!.decrypt).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // v2.5 REST API shapes (selector.any[].all format — confirmed from live 8.2 controller)
+  // -------------------------------------------------------------------------
+
+  it('v2.5: maps SmartGroup selector.any[].all with cidr + vpc/name criteria', () => {
+    const raw = {
+      smartGroups: [{
+        uuid: 'sg-vpc-1',
+        name: 'naas-shared-cluster',
+        selector: { any: [
+          { all: { type: 'vpc', name: 'naas-shared-vnet' } },
+          { all: { cidr: '10.1.0.0/16' } },
+        ]},
+      }],
+      webGroups: [], threatGroups: [], geoGroups: [], policies: [],
+    };
+    const { topology } = mapTopology(raw);
+    const sg = topology.smartGroups.find(g => g.id === 'sg-vpc-1')!;
+    expect(sg.name).toBe('naas-shared-cluster');
+    expect(sg.criteria).toContainEqual({ type: 'vm', key: 'vpc', operator: 'equals', value: 'naas-shared-vnet' });
+    expect(sg.criteria).toContainEqual({ type: 'subnet', cidr: '10.1.0.0/16' });
+  });
+
+  it('v2.5: maps WebGroup selector.any[].all.snifilter', () => {
+    const raw = {
+      smartGroups: [],
+      webGroups: [{
+        uuid: 'wg-azure-egress',
+        name: 'azure-egress',
+        selector: { any: [
+          { all: { snifilter: '*.blob.core.windows.net' } },
+          { all: { snifilter: 'pypi.org' } },
+        ]},
+      }],
+      threatGroups: [], geoGroups: [], policies: [],
+    };
+    const { topology } = mapTopology(raw);
+    expect(topology.webGroups[0]!.fqdns).toEqual(['*.blob.core.windows.net', 'pypi.org']);
+  });
+
+  it('v2.5: maps GeoGroup selector.any[].all.country_iso_code', () => {
+    const raw = {
+      smartGroups: [], webGroups: [], threatGroups: [],
+      geoGroups: [{
+        uuid: 'gg-blocked',
+        name: 'patternc-sg-geo-blocked',
+        selector: { any: [
+          { all: { country_iso_code: 'IR', external: 'geo' } },
+          { all: { country_iso_code: 'KP', external: 'geo' } },
+          { all: { country_iso_code: 'RU', external: 'geo' } },
+        ]},
+      }],
+      policies: [],
+    };
+    const { topology } = mapTopology(raw);
+    expect(topology.geoGroups[0]!.countries).toEqual(['IR', 'KP', 'RU']);
+  });
+
+  it('v2.5: maps ThreatGroup selector.any[].all.external to category', () => {
+    const raw = {
+      smartGroups: [], webGroups: [],
+      threatGroups: [{
+        uuid: 'tg-threat-intel',
+        name: 'patternc-sg-threat-intel',
+        selector: { any: [
+          { all: { external: 'threatiq', severity: 'major' } },
+          { all: { external: 'threatiq', severity: 'critical' } },
+        ]},
+      }],
+      geoGroups: [], policies: [],
+    };
+    const { topology } = mapTopology(raw);
+    expect(topology.threatGroups[0]!.category).toBe('malware');
+  });
+
+  it('v2.5: maps policy src_ads/dst_ads, port_ranges [{lo,hi}], and decrypt_policy=DECRYPT_ALLOWED', () => {
+    const raw = {
+      smartGroups: [
+        { uuid: 'sg-src', name: 'Src', selector: { any: [{ all: { cidr: '10.0.0.0/24' } }] } },
+        { uuid: 'sg-dst', name: 'Dst', selector: { any: [{ all: { cidr: '10.0.1.0/24' } }] } },
+      ],
+      webGroups: [
+        { uuid: 'wg-sfdc', name: 'Salesforce', selector: { any: [{ all: { snifilter: '*.salesforce.com' } }] } },
+      ],
+      threatGroups: [], geoGroups: [],
+      policies: [{
+        uuid: 'pol-1',
+        name: 'allow-https',
+        action: 'PERMIT',
+        priority: 10,
+        protocol: 'TCP',
+        src_ads: ['sg-src'],
+        dst_ads: ['sg-dst'],
+        web_filters: ['wg-sfdc'],
+        port_ranges: [{ lo: 443, hi: 443 }, { lo: 8080, hi: 8090 }],
+        decrypt_policy: 'DECRYPT_ALLOWED',
+        logging: true,
+      }],
+    };
+    const { topology } = mapTopology(raw);
+    const policy = topology.policies[0]!;
+    expect(policy.srcGroupId).toBe('sg-src');
+    expect(policy.dstGroupId).toBe('sg-dst');
+    expect(policy.webGroupIds).toEqual(['wg-sfdc']);
+    expect(policy.ports).toBe('443,8080-8090');
+    expect(policy.action).toBe('allow');
+    expect(policy.decrypt).toBe(true);
+  });
+
+  it('v2.5: remaps controller wildcard UUID (def000ad-...) to sg-any', () => {
+    const ANY_UUID = 'def000ad-0000-0000-0000-000000000000';
+    const INTERNET_UUID = 'def000ad-0000-0000-0000-000000000001';
+    const raw = {
+      smartGroups: [
+        { uuid: ANY_UUID, name: 'avtx_system_v4_wildcard_app_domain',
+          selector: { any: [{ all: { cidr: '0.0.0.0/0' } }] } },
+        { uuid: INTERNET_UUID, name: 'avtx_system_internet_routes_app_domain',
+          selector: { any: [{ all: { cidr: '0.0.0.0/5' } }] } },
+      ],
+      webGroups: [], threatGroups: [], geoGroups: [],
+      policies: [{
+        uuid: 'pol-1', name: 'deny-all', action: 'DENY', priority: 999,
+        protocol: 'PROTOCOL_UNSPECIFIED',
+        src_ads: [ANY_UUID],
+        dst_ads: [INTERNET_UUID],
+        web_filters: [], port_ranges: [], logging: false,
+      }],
+    };
+    const { topology } = mapTopology(raw);
+    expect(topology.smartGroups.find(g => g.id === 'sg-any')).toBeDefined();
+    expect(topology.smartGroups.find(g => g.id === 'sg-internet')).toBeDefined();
+    expect(topology.policies[0]!.srcGroupId).toBe('sg-any');
+    expect(topology.policies[0]!.dstGroupId).toBe('sg-internet');
+    expect(topology.policies[0]!.protocol).toBe('any');
+  });
 });
