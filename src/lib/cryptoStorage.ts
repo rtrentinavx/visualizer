@@ -9,17 +9,23 @@ const SALT = new Uint8Array([0x9a, 0xf2, 0x1c, 0x8e, 0x3b, 0x55, 0x77, 0x11, 0x4
 const PBKDF2_ITERATIONS = 600000;
 const LEGACY_PBKDF2_ITERATIONS = 100000;
 
+const keyCache = new Map<number, CryptoKey>();
+
 async function deriveKey(iterations: number): Promise<CryptoKey> {
+  const cached = keyCache.get(iterations);
+  if (cached) return cached;
   const passphrase = 'dcf-visualizer-storage-key-v1';
   const encoder = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey('raw', encoder.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
+  const key = await crypto.subtle.deriveKey(
     { name: 'PBKDF2', salt: SALT, iterations, hash: 'SHA-256' },
     keyMaterial,
     { name: 'AES-GCM', length: 256 },
     false,
     ['encrypt', 'decrypt']
   );
+  keyCache.set(iterations, key);
+  return key;
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {

@@ -169,11 +169,18 @@ function FilterCombobox({
 export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
   const [sourceFilter, setSourceFilter] = useState('');
   const [destFilter, setDestFilter] = useState('');
+  const [showAllGroups, setShowAllGroups] = useState(false);
 
-  const { groups, matrix } = useMemo(() => {
-    const groups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
+  const { allGroups, groups, matrix } = useMemo(() => {
+    const allGroups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
+    const policyGroupIds = new Set(
+      topology.policies.flatMap((p) => [p.srcGroupId, p.dstGroupId]).filter(Boolean)
+    );
+    const groups = showAllGroups
+      ? allGroups
+      : allGroups.filter((g) => policyGroupIds.has(g.id));
+
     const matrix: Record<string, Record<string, DcfPolicy[]>> = {};
-
     for (const src of groups) {
       matrix[src.id] = {};
       for (const dst of groups) {
@@ -186,11 +193,11 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
       }
     }
 
-    return { groups, matrix };
-  }, [topology]);
+    return { allGroups, groups, matrix };
+  }, [topology, showAllGroups]);
 
-  const filteredRows = useMemo(() => groups.filter((g) => matchesFilter(g, sourceFilter, groups)), [groups, sourceFilter]);
-  const filteredCols = useMemo(() => groups.filter((g) => matchesFilter(g, destFilter, groups)), [groups, destFilter]);
+  const filteredRows = useMemo(() => groups.filter((g) => matchesFilter(g, sourceFilter, allGroups)), [groups, allGroups, sourceFilter]);
+  const filteredCols = useMemo(() => groups.filter((g) => matchesFilter(g, destFilter, allGroups)), [groups, allGroups, destFilter]);
   const anyFilterActive = sourceFilter !== '' || destFilter !== '';
   const isFiltered = filteredRows.length !== groups.length || filteredCols.length !== groups.length;
 
@@ -211,17 +218,30 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <FilterCombobox label="Src" value={sourceFilter} onChange={setSourceFilter} groups={groups} placeholder="rows…" />
+          <FilterCombobox label="Src" value={sourceFilter} onChange={setSourceFilter} groups={allGroups} placeholder="rows…" />
           <ArrowRight size={12} className="text-[var(--color-text-muted)] shrink-0" />
-          <FilterCombobox label="Dst" value={destFilter} onChange={setDestFilter} groups={groups} placeholder="columns…" />
-          <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap pl-2">
+          <FilterCombobox label="Dst" value={destFilter} onChange={setDestFilter} groups={allGroups} placeholder="columns…" />
+          <button
+            type="button"
+            onClick={() => setShowAllGroups((v) => !v)}
+            className="text-xs px-2 py-1 rounded border transition-colors whitespace-nowrap"
+            style={{
+              backgroundColor: showAllGroups ? 'var(--color-accent-blue)' : 'var(--color-surface)',
+              borderColor: showAllGroups ? 'var(--color-accent-blue)' : 'var(--color-border-subtle)',
+              color: showAllGroups ? '#fff' : 'var(--color-text-secondary)',
+            }}
+            title={showAllGroups ? 'Showing all groups — click to show policy groups only' : 'Showing only groups referenced in policies — click to show all'}
+          >
+            {showAllGroups ? `All ${allGroups.length}` : `${groups.length} / ${allGroups.length}`}
+          </button>
+          <div className="text-xs text-[var(--color-text-muted)] whitespace-nowrap pl-1">
             {isFiltered ? (
               <>
                 <span className="text-[var(--color-accent-blue)] font-medium">{filteredRows.length}×{filteredCols.length}</span>
                 {' '}of {groups.length}×{groups.length}
               </>
             ) : (
-              <>{topology.policies.length} policies · {groups.length} groups</>
+              <>{topology.policies.length} policies</>
             )}
           </div>
         </div>
