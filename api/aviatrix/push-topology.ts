@@ -111,33 +111,6 @@ function mapBackId(localId: string): string {
   return localId;
 }
 
-/**
- * Normalize a controller-side protocol string to our canonical form so we can
- * compare it to a local DcfPolicy.protocol value.
- */
-function normalizeProto(raw: string): string {
-  return raw.toLowerCase().replace('protocol_', '').replace('_unspecified', '') || 'any';
-}
-
-/**
- * Choose the protocol value to PUT back to the controller.
- *
- * Controllers (8.x) return PROTOCOL_TCP / PROTOCOL_ANY_UNSPECIFIED on GET but
- * reject those same values on PUT with AVXERR-DFW-0003. The accepted write
- * format strips the PROTOCOL_ prefix and _UNSPECIFIED suffix — i.e. "TCP",
- * "UDP", "ICMP", or "ANY".
- *
- * If the user changed the protocol to 'any' we also use "ANY" (stripped form)
- * rather than reconstructing PROTOCOL_ANY_UNSPECIFIED.
- */
-function resolveProtocol(local: string, rawControllerProto: unknown): string {
-  const ctrlRaw = typeof rawControllerProto === 'string' ? rawControllerProto : '';
-  // Stripped form is what the controller actually accepts on write.
-  const stripped = ctrlRaw.replace(/^PROTOCOL_/i, '').replace(/_UNSPECIFIED$/i, '') || 'ANY';
-  if (normalizeProto(ctrlRaw) === local) return stripped; // unchanged — use stripped form
-  if (local === 'any') return 'ANY';
-  return local.toUpperCase();  // TCP, UDP, ICMP
-}
 
 function parsePorts(ports: string | undefined): Array<{ lo: number; hi: number }> {
   if (!ports) return [];
@@ -271,12 +244,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       updatedCount++;
       // Spread the raw policy first to preserve any fields we don't model,
       // then override only the fields we understand.
-      return {
+      const merged: Record<string, unknown> = {
         ...rp,
         name: local.name,
         priority: local.priority,
         action: local.action === 'allow' ? 'PERMIT' : 'DENY',
-        protocol: resolveProtocol(local.protocol, rp['protocol']),
         src_ads: [mapBackId(local.srcGroupId)],
         dst_ads: [mapBackId(local.dstGroupId)],
         port_ranges: parsePorts(local.ports),
@@ -285,6 +257,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         web_filters: local.webGroupIds ?? rp['web_filters'] ?? [],
         enforcement: local.enforcement !== false,
       };
+
+      // Protocol: controller rejects every "any" variant (PROTOCOL_ANY_UNSPECIFIED,
+      // ANY, etc.) on write. Omitting the field entirely defaults to any-protocol.
+      // For specific protocols the stripped uppercase form (TCP/UDP/ICMP) is accepted.
+      if (local.protocol !== 'any') {
+        merged['protocol'] = local.protocol.toUpperCase();
+      } else {
+        delete merged['protocol'];
+      }
+
+      return merged;
     });
 
     if (updatedCount === 0) {
@@ -317,18 +300,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Step 5 — deploy (only when at least one PolicyList was updated successfully)
+  // Step 5 — deploy (only when at least one PolicyList was updated successfully).
+  // Try v2.5 REST first; fall back to v2 form-encoded action if it rejects the body.
   if (result.policyListsPushed > 0) {
     try {
-      const deployR = await controllerFetch(
+      let deployR = await controllerFetch(
         `${base}/v2.5/api/microseg/deploy-policy`,
         {
           method: 'POST',
-          headers: { Authorization: authHeader, Accept: 'application/json' },
-          // No Content-Type / no body — endpoint rejects application/json with empty body
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({}),
         },
         20_000,
       );
+
+      // v2.5 rejects body in some controller versions — fall back to v2 form-encoded
+      if (!deployR.ok && deployR.status === 400) {
+        const params = new URLSearchParams({ action: 'deploy_distributed_firewalling_policy', CID: cid });
+        deployR = await controllerFetch(`${base}/v2/api`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+        }, 20_000);
+      }
+
       result.deployed = deployR.ok;
       if (!deployR.ok) {
         const errText = await deployR.text().catch(() => '');
