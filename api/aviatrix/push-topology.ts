@@ -258,14 +258,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         enforcement: local.enforcement !== false,
       };
 
-      // Protocol: controller rejects every "any" variant (PROTOCOL_ANY_UNSPECIFIED,
-      // ANY, etc.) on write. Omitting the field entirely defaults to any-protocol.
-      // For specific protocols the stripped uppercase form (TCP/UDP/ICMP) is accepted.
-      if (local.protocol !== 'any') {
-        merged['protocol'] = local.protocol.toUpperCase();
-      } else {
-        delete merged['protocol'];
+      // Protocol: controller (8.x) rejects every known "any" representation
+      // (PROTOCOL_ANY_UNSPECIFIED, ANY, omitted) on write with AVXERR-DFW-0003/0004,
+      // even though it sends PROTOCOL_ANY_UNSPECIFIED on GET. Skip such policies
+      // rather than failing the entire PolicyList PUT.
+      if (local.protocol === 'any') {
+        result.warnings.push(`Policy "${local.name}" skipped: protocol 'any' cannot be written to this controller version (known limitation)`);
+        updatedCount--; // undo the increment — this policy won't be changed
+        return rp;      // return the unchanged raw policy
       }
+      merged['protocol'] = local.protocol.toUpperCase(); // TCP, UDP, ICMP
 
       return merged;
     });
@@ -301,36 +303,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Step 5 — deploy (only when at least one PolicyList was updated successfully).
-  // Try v2.5 REST first; fall back to v2 form-encoded action if it rejects the body.
   if (result.policyListsPushed > 0) {
     try {
-      let deployR = await controllerFetch(
+      const deployBody = JSON.stringify({});
+      const deployR = await controllerFetch(
         `${base}/v2.5/api/microseg/deploy-policy`,
         {
           method: 'POST',
-          headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({}),
+          headers: {
+            Authorization: authHeader,
+            'Content-Type': 'application/json',
+            'Content-Length': String(Buffer.byteLength(deployBody)),
+            Accept: 'application/json',
+          },
+          body: deployBody,
         },
         20_000,
       );
-
-      // v2.5 rejects body in some controller versions — fall back to v2 form-encoded
-      if (!deployR.ok && deployR.status === 400) {
-        const params = new URLSearchParams({ action: 'deploy_distributed_firewalling_policy', CID: cid });
-        deployR = await controllerFetch(`${base}/v2/api`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: params.toString(),
-        }, 20_000);
-      }
-
       result.deployed = deployR.ok;
       if (!deployR.ok) {
         const errText = await deployR.text().catch(() => '');
-        result.warnings.push(`Deploy returned HTTP ${deployR.status} — ${errText.slice(0, 200)}`);
+        result.warnings.push(`Deploy returned HTTP ${deployR.status} — ${errText.slice(0, 200)}. Trigger a manual deploy from the Aviatrix controller if needed.`);
       }
     } catch (e) {
-      result.warnings.push(`Deploy step failed: ${e instanceof Error ? e.message : 'unknown'}`);
+      result.warnings.push(`Deploy step failed: ${e instanceof Error ? e.message : 'unknown'}. Trigger a manual deploy from the Aviatrix controller if needed.`);
     }
   }
 
