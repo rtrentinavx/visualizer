@@ -15,6 +15,7 @@ import { isTourCompleted, wasTourAutoShown, markTourAutoShown } from './lib/tour
 import { hasAIDataConsent } from './lib/aiDataConsent';
 const AIDataConsentModal = lazyImport(() => import('./components/modals/AIDataConsentModal'));
 import PolicyMatrix from './components/panels/PolicyMatrix';
+import PolicyList from './components/panels/PolicyList';
 import InspectorPanel from './components/panels/InspectorPanel';
 import TrafficSimulator from './components/panels/TrafficSimulator';
 
@@ -300,6 +301,11 @@ export default function App() {
                 onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
               />
             </Suspense>
+          ) : viewMode === 'list' ? (
+            <PolicyList
+              topology={topology}
+              onSelectPolicy={handleSelectPolicy}
+            />
           ) : viewMode === 'aiSettings' ? (
             <Suspense fallback={<PanelLoader />}>
               <AISettingsPanel

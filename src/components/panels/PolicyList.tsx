@@ -1,0 +1,274 @@
+import { useMemo, useState } from 'react';
+import {
+  Plus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown,
+  ShieldCheck, ShieldX, Lock, Globe, Ban, List,
+} from 'lucide-react';
+import type { DcfPolicyModel } from '../../types/dcf';
+
+type SortKey = 'priority' | 'name' | 'src' | 'dst' | 'action' | 'protocol';
+type SortDir = 'asc' | 'desc';
+
+interface PolicyListProps {
+  topology: DcfPolicyModel;
+  onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
+}
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronsUpDown size={10} className="opacity-30" />;
+  return dir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />;
+}
+
+function ActionBadge({ action }: { action: string }) {
+  if (action === 'allow') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-500/10 text-green-400 border border-green-500/20">
+        <ShieldCheck size={10} />
+        Allow
+      </span>
+    );
+  }
+  if (action === 'deny') {
+    return (
+      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+        <ShieldX size={10} />
+        Deny
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] border border-[var(--color-border-subtle)]">
+      {action}
+    </span>
+  );
+}
+
+export default function PolicyList({ topology, onSelectPolicy }: PolicyListProps) {
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('priority');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const groupMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const g of topology.smartGroups) m.set(g.id, g.name);
+    return m;
+  }, [topology.smartGroups]);
+
+  const gName = (id: string) => groupMap.get(id) ?? id;
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    if (!q) return topology.policies;
+    return topology.policies.filter((p) =>
+      p.name.toLowerCase().includes(q) ||
+      gName(p.srcGroupId).toLowerCase().includes(q) ||
+      gName(p.dstGroupId).toLowerCase().includes(q) ||
+      p.action.toLowerCase().includes(q) ||
+      p.protocol.toLowerCase().includes(q) ||
+      (p.ports ?? '').toLowerCase().includes(q)
+    );
+  }, [topology.policies, groupMap, search]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case 'priority':  cmp = a.priority - b.priority; break;
+        case 'name':      cmp = a.name.localeCompare(b.name); break;
+        case 'src':       cmp = gName(a.srcGroupId).localeCompare(gName(b.srcGroupId)); break;
+        case 'dst':       cmp = gName(a.dstGroupId).localeCompare(gName(b.dstGroupId)); break;
+        case 'action':    cmp = a.action.localeCompare(b.action); break;
+        case 'protocol':  cmp = a.protocol.localeCompare(b.protocol); break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [filtered, sortKey, sortDir, groupMap]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const thClass = (key: SortKey) =>
+    `px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider cursor-pointer select-none whitespace-nowrap transition-colors hover:text-[var(--color-text-primary)] ${
+      sortKey === key ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'
+    }`;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Toolbar */}
+      <div className="p-4 border-b border-[var(--color-border-subtle)] flex items-center justify-between gap-3 flex-wrap shrink-0">
+        <div>
+          <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+            Policy List
+          </h2>
+          <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
+            {sorted.length === topology.policies.length
+              ? `${topology.policies.length} policies, sorted by ${sortKey}`
+              : `${sorted.length} of ${topology.policies.length} policies`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-md border px-2 py-1" style={{ backgroundColor: 'var(--color-input-bg)', borderColor: search ? 'var(--color-accent-blue)' : 'var(--color-input-border)' }}>
+            <Search size={12} className="text-[var(--color-text-muted)] shrink-0" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter policies…"
+              className="w-40 text-xs bg-transparent outline-none"
+              style={{ color: 'var(--color-text-primary)' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="p-0.5 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)]">
+                <X size={10} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => onSelectPolicy('__new__')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white"
+            style={{ backgroundColor: 'var(--color-aviatrix)' }}
+          >
+            <Plus size={12} />
+            New Policy
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto">
+        {topology.policies.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
+            <div className="w-12 h-12 rounded-full bg-[var(--color-surface-elevated)] flex items-center justify-center mb-4">
+              <List size={24} className="text-[var(--color-text-muted)]" />
+            </div>
+            <p className="text-sm font-medium text-[var(--color-text-secondary)]">No policies yet</p>
+            <p className="text-xs text-[var(--color-text-muted)] mt-1 max-w-xs">
+              Create your first policy to start controlling traffic between SmartGroups.
+            </p>
+            <button
+              onClick={() => onSelectPolicy('__new__')}
+              className="mt-4 flex items-center gap-1.5 px-4 py-2 rounded-md text-xs font-medium text-white"
+              style={{ backgroundColor: 'var(--color-aviatrix)' }}
+            >
+              <Plus size={14} />
+              Create Policy
+            </button>
+          </div>
+        ) : sorted.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-center py-12">
+            <p className="text-sm font-medium text-[var(--color-text-secondary)]">No matches for "{search}"</p>
+            <button onClick={() => setSearch('')} className="mt-2 text-xs text-[var(--color-accent-blue)] hover:underline">
+              Clear filter
+            </button>
+          </div>
+        ) : (
+          <table className="w-full text-xs border-collapse">
+            <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--color-surface-raised)' }}>
+              <tr className="border-b border-[var(--color-border-subtle)]">
+                <th onClick={() => handleSort('priority')} className={thClass('priority')}>
+                  <span className="flex items-center gap-1">#<SortIcon active={sortKey === 'priority'} dir={sortDir} /></span>
+                </th>
+                <th onClick={() => handleSort('name')} className={thClass('name')}>
+                  <span className="flex items-center gap-1">Name<SortIcon active={sortKey === 'name'} dir={sortDir} /></span>
+                </th>
+                <th onClick={() => handleSort('src')} className={thClass('src')}>
+                  <span className="flex items-center gap-1">Source<SortIcon active={sortKey === 'src'} dir={sortDir} /></span>
+                </th>
+                <th onClick={() => handleSort('dst')} className={thClass('dst')}>
+                  <span className="flex items-center gap-1">Destination<SortIcon active={sortKey === 'dst'} dir={sortDir} /></span>
+                </th>
+                <th onClick={() => handleSort('action')} className={thClass('action')}>
+                  <span className="flex items-center gap-1">Action<SortIcon active={sortKey === 'action'} dir={sortDir} /></span>
+                </th>
+                <th onClick={() => handleSort('protocol')} className={thClass('protocol')}>
+                  <span className="flex items-center gap-1">Protocol / Ports<SortIcon active={sortKey === 'protocol'} dir={sortDir} /></span>
+                </th>
+                <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] whitespace-nowrap">
+                  Flags
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p, i) => (
+                <tr
+                  key={p.id}
+                  onClick={() => onSelectPolicy(p.id, p.srcGroupId, p.dstGroupId)}
+                  className="border-b border-[var(--color-border-subtle)] cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
+                  style={{ backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)' }}
+                >
+                  {/* Priority */}
+                  <td className="px-3 py-2 font-mono font-bold text-[var(--color-text-muted)] whitespace-nowrap">
+                    {p.priority}
+                  </td>
+
+                  {/* Name */}
+                  <td className="px-3 py-2 font-medium text-[var(--color-text-primary)] max-w-[200px]">
+                    <span className="block truncate">{p.name}</span>
+                  </td>
+
+                  {/* Source */}
+                  <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
+                    <span className="block truncate">{gName(p.srcGroupId)}</span>
+                    {p.srcExcludeGroupIds && p.srcExcludeGroupIds.length > 0 && (
+                      <span className="text-[9px] text-[var(--color-accent-red)]">
+                        excl. {p.srcExcludeGroupIds.map(gName).join(', ')}
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Destination */}
+                  <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
+                    <span className="block truncate">{gName(p.dstGroupId)}</span>
+                    {p.dstExcludeGroupIds && p.dstExcludeGroupIds.length > 0 && (
+                      <span className="text-[9px] text-[var(--color-accent-red)]">
+                        excl. {p.dstExcludeGroupIds.map(gName).join(', ')}
+                      </span>
+                    )}
+                  </td>
+
+                  {/* Action */}
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <ActionBadge action={p.action} />
+                  </td>
+
+                  {/* Protocol / Ports */}
+                  <td className="px-3 py-2 font-mono text-[var(--color-text-secondary)] whitespace-nowrap">
+                    {p.protocol.toUpperCase()}
+                    {p.ports ? <span className="text-[var(--color-text-muted)">/{p.ports}</span> : null}
+                  </td>
+
+                  {/* Flags */}
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-1.5">
+                      {p.decrypt && (
+                        <span title="TLS Decrypt">
+                          <Lock size={11} className="text-[var(--color-accent-purple)]" />
+                        </span>
+                      )}
+                      {(p.threatGroup || p.geoGroup) && (
+                        <span title={p.threatGroup ? 'Threat group' : 'Geo group'}>
+                          <Globe size={11} className="text-[var(--color-accent-amber)]" />
+                        </span>
+                      )}
+                      {((p.srcExcludeGroupIds?.length ?? 0) > 0 || (p.dstExcludeGroupIds?.length ?? 0) > 0) && (
+                        <span title="Has exclusions">
+                          <Ban size={11} className="text-[var(--color-accent-red)]" />
+                        </span>
+                      )}
+                      {p.logging && (
+                        <span title="Logging enabled" className="text-[9px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-elevated)] px-1 rounded">
+                          log
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
