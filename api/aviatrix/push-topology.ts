@@ -112,11 +112,35 @@ function mapBackId(localId: string): string {
 }
 
 function protoToRaw(p: string): string {
-  if (p === 'any')  return 'PROTOCOL_ANY_UNSPECIFIED';
   if (p === 'tcp')  return 'PROTOCOL_TCP';
   if (p === 'udp')  return 'PROTOCOL_UDP';
   if (p === 'icmp') return 'PROTOCOL_ICMP';
-  return 'PROTOCOL_ANY_UNSPECIFIED';
+  // 'any' intentionally falls through — callers should use the controller's
+  // original protocol string instead of reconstructing it, because
+  // PROTOCOL_ANY_UNSPECIFIED is rejected on write by some controller versions.
+  return '';
+}
+
+/**
+ * Normalize a controller-side protocol string to our canonical form so we can
+ * compare it to a local DcfPolicy.protocol value.
+ */
+function normalizeProto(raw: string): string {
+  return raw.toLowerCase().replace('protocol_', '').replace('_unspecified', '') || 'any';
+}
+
+/**
+ * Choose the protocol value to PUT back.
+ * If the user didn't change the protocol, preserve the controller's original
+ * string (avoids AVXERR-DFW-0003 where PROTOCOL_ANY_UNSPECIFIED is rejected on write).
+ * If they changed it to a specific protocol, use the mapped enum.
+ * If they changed it to "any", fall back to the controller's original value too.
+ */
+function resolveProtocol(local: string, rawControllerProto: unknown): string {
+  const ctrlRaw = typeof rawControllerProto === 'string' ? rawControllerProto : '';
+  if (normalizeProto(ctrlRaw) === local) return ctrlRaw; // unchanged — preserve exactly
+  if (local === 'any') return ctrlRaw;                   // changed to any — safest to keep original
+  return protoToRaw(local) || ctrlRaw;                   // changed to specific protocol
 }
 
 function parsePorts(ports: string | undefined): Array<{ lo: number; hi: number }> {
@@ -256,7 +280,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         name: local.name,
         priority: local.priority,
         action: local.action === 'allow' ? 'PERMIT' : 'DENY',
-        protocol: protoToRaw(local.protocol),
+        protocol: resolveProtocol(local.protocol, rp['protocol']),
         src_ads: [mapBackId(local.srcGroupId)],
         dst_ads: [mapBackId(local.dstGroupId)],
         port_ranges: parsePorts(local.ports),
