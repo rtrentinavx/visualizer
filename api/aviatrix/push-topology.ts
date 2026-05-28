@@ -111,16 +111,6 @@ function mapBackId(localId: string): string {
   return localId;
 }
 
-function protoToRaw(p: string): string {
-  if (p === 'tcp')  return 'PROTOCOL_TCP';
-  if (p === 'udp')  return 'PROTOCOL_UDP';
-  if (p === 'icmp') return 'PROTOCOL_ICMP';
-  // 'any' intentionally falls through — callers should use the controller's
-  // original protocol string instead of reconstructing it, because
-  // PROTOCOL_ANY_UNSPECIFIED is rejected on write by some controller versions.
-  return '';
-}
-
 /**
  * Normalize a controller-side protocol string to our canonical form so we can
  * compare it to a local DcfPolicy.protocol value.
@@ -130,17 +120,23 @@ function normalizeProto(raw: string): string {
 }
 
 /**
- * Choose the protocol value to PUT back.
- * If the user didn't change the protocol, preserve the controller's original
- * string (avoids AVXERR-DFW-0003 where PROTOCOL_ANY_UNSPECIFIED is rejected on write).
- * If they changed it to a specific protocol, use the mapped enum.
- * If they changed it to "any", fall back to the controller's original value too.
+ * Choose the protocol value to PUT back to the controller.
+ *
+ * Controllers (8.x) return PROTOCOL_TCP / PROTOCOL_ANY_UNSPECIFIED on GET but
+ * reject those same values on PUT with AVXERR-DFW-0003. The accepted write
+ * format strips the PROTOCOL_ prefix and _UNSPECIFIED suffix — i.e. "TCP",
+ * "UDP", "ICMP", or "ANY".
+ *
+ * If the user changed the protocol to 'any' we also use "ANY" (stripped form)
+ * rather than reconstructing PROTOCOL_ANY_UNSPECIFIED.
  */
 function resolveProtocol(local: string, rawControllerProto: unknown): string {
   const ctrlRaw = typeof rawControllerProto === 'string' ? rawControllerProto : '';
-  if (normalizeProto(ctrlRaw) === local) return ctrlRaw; // unchanged — preserve exactly
-  if (local === 'any') return ctrlRaw;                   // changed to any — safest to keep original
-  return protoToRaw(local) || ctrlRaw;                   // changed to specific protocol
+  // Stripped form is what the controller actually accepts on write.
+  const stripped = ctrlRaw.replace(/^PROTOCOL_/i, '').replace(/_UNSPECIFIED$/i, '') || 'ANY';
+  if (normalizeProto(ctrlRaw) === local) return stripped; // unchanged — use stripped form
+  if (local === 'any') return 'ANY';
+  return local.toUpperCase();  // TCP, UDP, ICMP
 }
 
 function parsePorts(ports: string | undefined): Array<{ lo: number; hi: number }> {
@@ -328,8 +324,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         `${base}/v2.5/api/microseg/deploy-policy`,
         {
           method: 'POST',
-          headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
-          body: JSON.stringify({}),
+          headers: { Authorization: authHeader, Accept: 'application/json' },
+          // No Content-Type / no body — endpoint rejects application/json with empty body
         },
         20_000,
       );
