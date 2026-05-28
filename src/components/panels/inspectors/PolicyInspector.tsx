@@ -8,6 +8,20 @@ import { scorePolicy, type PolicyScore } from '../../../lib/policyScorer';
 import { compareImpact, withPolicyChange, type FlowImpact, type FlowOutcome } from '../../../lib/policyImpact';
 import { Input, Select, Toggle, MultiSelect, InspectorFooter } from './_shared';
 
+interface ExplanationResult {
+  summary: string;
+  securityImplications?: string;
+  recommendations?: string[];
+}
+
+function parseExplanation(raw: string): ExplanationResult | null {
+  try {
+    const match = raw.match(/```json\s*([\s\S]*?)```/);
+    if (match?.[1]) return JSON.parse(match[1]) as ExplanationResult;
+  } catch { /* noop */ }
+  return null;
+}
+
 interface PolicyInspectorProps {
   topology: DcfPolicyModel;
   selectedItem: { type: string; id: string; srcId?: string; dstId?: string };
@@ -339,16 +353,50 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
                 {explaining ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
                 {explaining ? 'Analyzing...' : 'Explain this policy'}
               </button>
-              {explanation && (
-                <div className="mt-2">
-                  <div className="p-2.5 rounded text-xs text-[var(--color-text-secondary)] bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20">
-                    {explanation}
-                  </div>
-                  <p className="text-[9px] text-[var(--color-text-muted)] mt-1">
-                    AI-generated analysis · Network paths marked [INFERRED] are not confirmed by your topology.
-                  </p>
-                </div>
-              )}
+              {(explaining || explanation) && (() => {
+                const parsed = parseExplanation(explanation);
+                if (explaining && !parsed) {
+                  return (
+                    <div className="mt-2 p-2.5 rounded bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20 flex items-center gap-2">
+                      <Loader2 size={10} className="animate-spin text-[var(--color-accent-purple)] shrink-0" />
+                      <span className="text-xs text-[var(--color-text-muted)]">Analyzing policy…</span>
+                    </div>
+                  );
+                }
+                if (parsed) {
+                  return (
+                    <div className="mt-2 space-y-1">
+                      <div className="p-2.5 rounded text-xs bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20 space-y-2">
+                        <p className="font-medium text-[var(--color-text-primary)] leading-snug">{parsed.summary}</p>
+                        {parsed.securityImplications && (
+                          <p className="text-[var(--color-text-secondary)] leading-snug">{parsed.securityImplications}</p>
+                        )}
+                        {parsed.recommendations && parsed.recommendations.length > 0 && (
+                          <ul className="space-y-1">
+                            {parsed.recommendations.map((r, i) => (
+                              <li key={i} className="flex items-start gap-1.5 text-[var(--color-text-secondary)] leading-snug">
+                                <span className="text-[var(--color-accent-purple)] shrink-0 mt-px">→</span>
+                                <span>{r}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-[var(--color-text-muted)]">
+                        AI-generated · [INFERRED] paths are not confirmed by your topology.
+                      </p>
+                    </div>
+                  );
+                }
+                if (explanation) {
+                  return (
+                    <div className="mt-2 p-2.5 rounded text-xs text-[var(--color-text-secondary)] bg-[var(--color-accent-purple)]/5 border border-[var(--color-accent-purple)]/20 whitespace-pre-wrap">
+                      {explanation}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
             </div>
           )}
         </div>
