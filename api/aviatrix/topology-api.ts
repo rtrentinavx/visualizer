@@ -322,16 +322,20 @@ function shouldIncludeAppDomain(ad: unknown): boolean {
 /**
  * Walk dcf_policies (which can be PolicyLists or PolicyBlocks) and collect
  * all user-defined rule entries from PolicyList.policies arrays.
+ * Each policy is tagged with _dcf_policy_list_uuid so the push path can
+ * address the correct parent PolicyList when writing back to the controller.
  */
 function flattenPolicies(dcfPolicies: unknown[]): unknown[] {
   const out: unknown[] = [];
   for (const obj of dcfPolicies) {
     if (!obj || typeof obj !== 'object') continue;
-    const polList = (obj as Record<string, unknown>)['policies'];
+    const plObj = obj as Record<string, unknown>;
+    const plUuid = typeof plObj['uuid'] === 'string' ? plObj['uuid'] : undefined;
+    const polList = plObj['policies'];
     if (!Array.isArray(polList)) continue;
     for (const p of polList) {
       if (p && typeof p === 'object' && !(p as Record<string, unknown>)['system_resource']) {
-        out.push(p);
+        out.push(plUuid ? Object.assign({}, p as object, { _dcf_policy_list_uuid: plUuid }) : p);
       }
     }
   }

@@ -4,6 +4,7 @@ import {
   LayoutGrid, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
   RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route, History, Wand2, List,
+  Send,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
@@ -32,6 +33,7 @@ export interface AppHeaderActions {
   openHistory: () => void;
   openAutopilot: () => void;
   openAbout: () => void;
+  openPushConfirm?: () => void;
 }
 
 interface AppHeaderProps {
@@ -40,6 +42,7 @@ interface AppHeaderProps {
   theme: 'light' | 'dark';
   cloudSyncStatus: 'idle' | 'saving' | 'saved' | 'loading' | 'error';
   aiProfileActive: boolean;
+  controllerConnected: boolean;
   onViewChange: (mode: ViewMode) => void;
   onToggleTheme: () => void;
   actions: AppHeaderActions;
@@ -205,7 +208,7 @@ function tabClass(active: boolean) {
 // Component
 // =============================================================================
 
-export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, aiProfileActive, onViewChange, onToggleTheme, actions }: AppHeaderProps) {
+export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, aiProfileActive, controllerConnected, onViewChange, onToggleTheme, actions }: AppHeaderProps) {
   const score = scoreTopology(topology);
   const allAch = getAllAchievements();
   const unlocked = allAch.filter((a) => a.unlockedAt).length;
@@ -283,6 +286,9 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <IconButton icon={CloudDownload} overrideIcon={loadIcon} label={cloudSyncStatus === 'loading' ? 'Loading from cloud…' : 'Load from cloud'} onClick={actions.loadCloud} disabled={syncBusy} />
           <IconButton icon={History} label="Version history — view + restore prior snapshots" onClick={actions.openHistory} dataTour="history-btn" />
           <IconButton icon={FileCode} label="Export as Terraform" onClick={actions.openTerraform} />
+          {controllerConnected && actions.openPushConfirm && (
+            <IconButton icon={Send} label="Push changes to controller" onClick={actions.openPushConfirm} accent="blue" />
+          )}
         </ToolbarGroup>
 
         <GroupDivider />

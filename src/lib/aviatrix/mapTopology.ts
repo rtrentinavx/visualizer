@@ -356,6 +356,7 @@ function mapPolicy(raw: unknown, index: number): DcfPolicy | null {
     logging: o['logging'] === true,
     decrypt,
     enforcement: o['enforcement'] !== false,
+    policyListUuid: pickString(o, '_dcf_policy_list_uuid'),
   };
 }
 

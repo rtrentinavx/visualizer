@@ -54,6 +54,8 @@ export interface DcfPolicy {
   threatGroup?: string;
   geoGroup?: string;
   webGroupIds?: string[];
+  /** UUID of the parent PolicyList on the controller. Only present when imported via live API. */
+  policyListUuid?: string;
 }
 
 export interface TrafficFlow {

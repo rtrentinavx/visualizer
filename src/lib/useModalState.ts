@@ -16,7 +16,8 @@ export type ModalName =
   | 'recommendations'
   | 'history'
   | 'autopilot'
-  | 'tour';
+  | 'tour'
+  | 'pushConfirm';
 
 export interface UseModalState {
   active: ModalName | null;

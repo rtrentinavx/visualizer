@@ -7,6 +7,7 @@ import { isRecommendationsDismissed, dismissRecommendations, clearRecommendation
 import AboutModal from './components/modals/AboutModal';
 import AchievementsModal from './components/modals/AchievementsModal';
 import ConfirmModal from './components/modals/ConfirmModal';
+import PushConfirmModal from './components/modals/PushConfirmModal';
 import TerraformExportModal from './components/modals/TerraformExportModal';
 import AppHeader, { type ViewMode, type AppHeaderActions } from './components/AppHeader';
 import AchievementToaster from './components/AchievementToaster';
@@ -49,7 +50,8 @@ import { saveTopologyToCloud, loadTopologyFromCloud } from './lib/upstashSync';
 import { evaluateTopology, applyAutoFix, applyWebGroupSplit, type EvaluationReport } from './lib/policyEvaluator';
 import { loadAISettings, saveAISettings, getDefaultAISettings } from './lib/ai/storage';
 import type { AISettings } from './lib/ai/types';
-import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant, isMcpConnection } from './lib/aviatrix/storage';
+import { loadAviatrixSettings, saveAviatrixSettings, applyTokenGrant, isMcpConnection, getActiveConnection, isApiConnection } from './lib/aviatrix/storage';
+import type { AviatrixConnectionAPI } from './lib/aviatrix/types';
 import { consumeOAuthHandoff } from './lib/aviatrix/oauth';
 import { useTheme } from './lib/useTheme';
 import { useTopology } from './lib/useTopology';
@@ -82,6 +84,7 @@ export default function App() {
   const [confirmModal, setConfirmModal] = useState<ConfirmState>({ open: false, title: '', message: '', onConfirm: () => {} });
   const [evaluatorReport, setEvaluatorReport] = useState<EvaluationReport | null>(null);
   const [aiSettings, setAISettings] = useState<AISettings>(getDefaultAISettings);
+  const [activeApiConnection, setActiveApiConnection] = useState<AviatrixConnectionAPI | null>(null);
 
   // Load AI settings on mount
   useEffect(() => {
@@ -89,6 +92,19 @@ export default function App() {
       if (saved) setAISettings(saved);
     }).catch(() => {});
   }, []);
+
+  // Load controller connection on mount AND whenever the user leaves the aiSettings
+  // view — AviatrixConnectionSection saves directly to localStorage, so we need to
+  // re-read after the user may have just configured or tested a connection.
+  const refreshApiConnection = useCallback(() => {
+    loadAviatrixSettings().then((s) => {
+      if (!s) { setActiveApiConnection(null); return; }
+      const conn = getActiveConnection(s);
+      setActiveApiConnection(conn && isApiConnection(conn) ? conn : null);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshApiConnection(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Aviatrix OAuth handoff: when the callback page writes a token blob to
   // localStorage and bounces back here, pick it up, apply the grant to the
@@ -136,6 +152,7 @@ export default function App() {
   }, [modals]);
 
   const handleViewChange = (mode: ViewMode) => {
+    if (viewMode === 'aiSettings' && mode !== 'aiSettings') refreshApiConnection();
     setViewMode(mode);
     setSelectedCell(null);
     setSelectedItem(null);
@@ -261,6 +278,7 @@ export default function App() {
     openHistory: () => modals.open('history'),
     openAutopilot: () => modals.open('autopilot'),
     openAbout: () => modals.open('about'),
+    openPushConfirm: activeApiConnection ? () => modals.open('pushConfirm') : undefined,
   };
 
   const activeAIProfile = aiSettings.profiles?.find((p) => p.id === aiSettings.activeProfileId);
@@ -274,6 +292,7 @@ export default function App() {
           theme={theme}
           cloudSyncStatus={cloudSyncStatus}
           aiProfileActive={!!aiSettings.activeProfileId}
+          controllerConnected={!!activeApiConnection}
           onViewChange={handleViewChange}
           onToggleTheme={toggleTheme}
           actions={headerActions}
@@ -344,6 +363,14 @@ export default function App() {
 
       {modals.isOpen('terraformExport') && (
         <TerraformExportModal topology={topology} onClose={modals.close} />
+      )}
+
+      {modals.isOpen('pushConfirm') && activeApiConnection && (
+        <PushConfirmModal
+          topology={topology}
+          connection={activeApiConnection}
+          onClose={modals.close}
+        />
       )}
 
       {modals.isOpen('bestPractices') && (
