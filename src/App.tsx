@@ -325,11 +325,13 @@ export default function App() {
             <PolicyList
               topology={topology}
               onSelectPolicy={handleSelectPolicy}
+              onBulkDeletePolicies={(ids) => dispatch({ type: 'bulkDeletePolicies', policyIds: ids })}
             />
           ) : viewMode === 'groups' ? (
             <SmartGroupList
               topology={topology}
               onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
+              onBulkDeleteGroups={(ids) => dispatch({ type: 'bulkDeleteGroups', groupIds: ids })}
             />
           ) : viewMode === 'aiSettings' ? (
             <Suspense fallback={<PanelLoader />}>

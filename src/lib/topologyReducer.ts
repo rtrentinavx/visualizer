@@ -7,6 +7,8 @@ export type TopologyAction =
   | { type: 'updateItem'; itemType: ItemType; itemId: string; data: Record<string, unknown> }
   | { type: 'deleteItem'; itemType: ItemType; itemId: string }
   | { type: 'createItem'; itemType: ItemType; id: string; data: Record<string, unknown> }
+  | { type: 'bulkDeletePolicies'; policyIds: string[] }
+  | { type: 'bulkDeleteGroups'; groupIds: string[] }
   | { type: 'addFlow'; flow: TrafficFlow }
   | { type: 'updateFlow'; id: string; data: Partial<TrafficFlow> }
   | { type: 'deleteFlow'; id: string }
@@ -43,6 +45,20 @@ export function topologyReducer(state: DcfPolicyModel, action: TopologyAction): 
 
     case 'deleteItem':
       return applyDeleteItem(state, action.itemType, action.itemId);
+
+    case 'bulkDeletePolicies': {
+      const ids = new Set(action.policyIds);
+      return { ...state, policies: state.policies.filter((p) => !ids.has(p.id)) };
+    }
+
+    case 'bulkDeleteGroups': {
+      const ids = new Set(action.groupIds);
+      return {
+        ...state,
+        smartGroups: state.smartGroups.filter((g) => !ids.has(g.id)),
+        policies: state.policies.filter((p) => !ids.has(p.srcGroupId) && !ids.has(p.dstGroupId)),
+      };
+    }
 
     case 'createItem':
       return applyCreateItem(state, action.itemType, action.id, action.data);

@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
   Search, X, ChevronUp, ChevronDown, ChevronsUpDown,
-  Layers, Plus, Tag, Network,
+  Layers, Plus, Tag, Network, Trash2,
 } from 'lucide-react';
 import type { DcfPolicyModel, SmartGroup, SmartGroupCriteria } from '../../types/dcf';
+import ConfirmModal from '../modals/ConfirmModal';
 
 const SPECIAL_IDS = new Set(['sg-any', 'sg-internet']);
 
@@ -87,12 +88,15 @@ interface SmartGroupListProps {
   topology: DcfPolicyModel;
   onSelectGroup: (groupId: string) => void;
   onNewGroup?: () => void;
+  onBulkDeleteGroups?: (ids: string[]) => void;
 }
 
-export default function SmartGroupList({ topology, onSelectGroup, onNewGroup }: SmartGroupListProps) {
+export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, onBulkDeleteGroups }: SmartGroupListProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Build policy usage counts per group
   const usageMap = useMemo(() => {
@@ -159,6 +163,53 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup }: 
 
   const total = topology.smartGroups.length;
   const nonSpecial = total - topology.smartGroups.filter((g) => SPECIAL_IDS.has(g.id)).length;
+
+  // Only non-special rows are selectable
+  const selectableIds = sorted.filter((r) => !r.isSpecial).map((r) => r.group.id);
+  const allSelectableSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const someSelectableSelected = selectableIds.some((id) => selected.has(id));
+
+  const toggleSelectAll = () => {
+    if (allSelectableSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        selectableIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelected((prev) => new Set([...prev, ...selectableIds]));
+    }
+  };
+
+  const toggleRow = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  // Cascade: count policies that reference any selected group
+  const cascadePolicyCount = useMemo(() => {
+    if (selected.size === 0) return 0;
+    return topology.policies.filter(
+      (p) => selected.has(p.srcGroupId) || selected.has(p.dstGroupId)
+    ).length;
+  }, [selected, topology.policies]);
+
+  const handleBulkDelete = () => {
+    if (onBulkDeleteGroups) {
+      onBulkDeleteGroups([...selected]);
+    }
+    setSelected(new Set());
+    setShowConfirm(false);
+  };
+
+  const selectionCount = selected.size;
+
+  const confirmMessage = cascadePolicyCount > 0
+    ? `Delete ${selectionCount} ${selectionCount === 1 ? 'group' : 'groups'} — this will also remove ${cascadePolicyCount} ${cascadePolicyCount === 1 ? 'policy' : 'policies'} that reference them. This action cannot be undone.`
+    : `Delete ${selectionCount} ${selectionCount === 1 ? 'group' : 'groups'}. This action cannot be undone.`;
 
   return (
     <div className="flex flex-col h-full">
@@ -230,6 +281,19 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup }: 
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--color-surface-raised)' }}>
               <tr className="border-b border-[var(--color-border-subtle)]">
+                {onBulkDeleteGroups && (
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allSelectableSelected}
+                      ref={(el) => { if (el) el.indeterminate = someSelectableSelected && !allSelectableSelected; }}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer accent-[var(--color-aviatrix)]"
+                      aria-label="Select all non-built-in groups"
+                      disabled={selectableIds.length === 0}
+                    />
+                  </th>
+                )}
                 <th onClick={() => handleSort('name')} className={thClass('name')}>
                   <span className="flex items-center gap-1">Name<SortIcon active={sortKey === 'name'} dir={sortDir} /></span>
                 </th>
@@ -258,14 +322,31 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup }: 
                 const { group: g, criteriaType, srcCount, dstCount, totalCount, isSpecial } = row;
                 const isUnused = !isSpecial && totalCount === 0;
                 const isCidrOnly = criteriaType === 'cidr';
+                const isSelected = selected.has(g.id);
 
                 return (
                   <tr
                     key={g.id}
                     onClick={() => onSelectGroup(g.id)}
                     className="border-b border-[var(--color-border-subtle)] cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
-                    style={{ backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)' }}
+                    style={{
+                      backgroundColor: isSelected
+                        ? 'var(--color-accent-blue)18'
+                        : i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                    }}
                   >
+                    {onBulkDeleteGroups && (
+                      <td className="px-3 py-2 w-8" onClick={(e) => { e.stopPropagation(); if (!isSpecial) toggleRow(g.id); }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => { if (!isSpecial) toggleRow(g.id); }}
+                          disabled={isSpecial}
+                          className="cursor-pointer accent-[var(--color-aviatrix)] disabled:opacity-30 disabled:cursor-not-allowed"
+                          aria-label={`Select group ${g.name}`}
+                        />
+                      </td>
+                    )}
                     {/* Name + color chip */}
                     <td className="px-3 py-2 font-medium text-[var(--color-text-primary)] max-w-[220px]">
                       <div className="flex items-center gap-2 min-w-0">
@@ -354,6 +435,48 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup }: 
           </table>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selectionCount > 0 && onBulkDeleteGroups && (
+        <div
+          className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5 border-t"
+          style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+        >
+          <span className="text-xs text-[var(--color-text-secondary)] font-medium">
+            {selectionCount} {selectionCount === 1 ? 'group' : 'groups'} selected
+            {cascadePolicyCount > 0 && (
+              <span className="ml-1.5 text-amber-400">
+                · will remove {cascadePolicyCount} {cascadePolicyCount === 1 ? 'policy' : 'policies'}
+              </span>
+            )}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelected(new Set())}
+              className="px-3 py-1 rounded text-xs border transition-colors"
+              style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium text-white transition-colors bg-red-500 hover:bg-red-600"
+            >
+              <Trash2 size={11} />
+              Delete {selectionCount}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showConfirm && (
+        <ConfirmModal
+          title={cascadePolicyCount > 0 ? 'Cascade delete — groups + policies' : `Delete ${selectionCount} ${selectionCount === 1 ? 'group' : 'groups'}?`}
+          message={confirmMessage}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
     </div>
   );
 }

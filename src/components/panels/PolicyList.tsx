@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import {
   Plus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown,
-  ShieldCheck, ShieldX, Lock, Globe, Ban, List,
+  ShieldCheck, ShieldX, Lock, Globe, Ban, List, Trash2,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../../types/dcf';
+import ConfirmModal from '../modals/ConfirmModal';
 
 type SortKey = 'priority' | 'name' | 'src' | 'dst' | 'action' | 'protocol';
 type SortDir = 'asc' | 'desc';
@@ -11,6 +12,7 @@ type SortDir = 'asc' | 'desc';
 interface PolicyListProps {
   topology: DcfPolicyModel;
   onSelectPolicy: (policyId: string, srcId?: string, dstId?: string) => void;
+  onBulkDeletePolicies?: (ids: string[]) => void;
 }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
@@ -42,10 +44,12 @@ function ActionBadge({ action }: { action: string }) {
   );
 }
 
-export default function PolicyList({ topology, onSelectPolicy }: PolicyListProps) {
+export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolicies }: PolicyListProps) {
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('priority');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const groupMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -92,6 +96,40 @@ export default function PolicyList({ topology, onSelectPolicy }: PolicyListProps
     `px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider cursor-pointer select-none whitespace-nowrap transition-colors hover:text-[var(--color-text-primary)] ${
       sortKey === key ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)]'
     }`;
+
+  const visibleIds = sorted.map((p) => p.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const someVisibleSelected = visibleIds.some((id) => selected.has(id));
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelected((prev) => new Set([...prev, ...visibleIds]));
+    }
+  };
+
+  const toggleRow = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (onBulkDeletePolicies) {
+      onBulkDeletePolicies([...selected]);
+    }
+    setSelected(new Set());
+    setShowConfirm(false);
+  };
+
+  const selectionCount = selected.size;
 
   return (
     <div className="flex flex-col h-full">
@@ -166,6 +204,18 @@ export default function PolicyList({ topology, onSelectPolicy }: PolicyListProps
           <table className="w-full text-xs border-collapse">
             <thead className="sticky top-0 z-10" style={{ backgroundColor: 'var(--color-surface-raised)' }}>
               <tr className="border-b border-[var(--color-border-subtle)]">
+                {onBulkDeletePolicies && (
+                  <th className="px-3 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      ref={(el) => { if (el) el.indeterminate = someVisibleSelected && !allVisibleSelected; }}
+                      onChange={toggleSelectAll}
+                      className="cursor-pointer accent-[var(--color-aviatrix)]"
+                      aria-label="Select all visible policies"
+                    />
+                  </th>
+                )}
                 <th onClick={() => handleSort('priority')} className={thClass('priority')}>
                   <span className="flex items-center gap-1">#<SortIcon active={sortKey === 'priority'} dir={sortDir} /></span>
                 </th>
@@ -190,85 +240,140 @@ export default function PolicyList({ topology, onSelectPolicy }: PolicyListProps
               </tr>
             </thead>
             <tbody>
-              {sorted.map((p, i) => (
-                <tr
-                  key={p.id}
-                  onClick={() => onSelectPolicy(p.id, p.srcGroupId, p.dstGroupId)}
-                  className="border-b border-[var(--color-border-subtle)] cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
-                  style={{ backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)' }}
-                >
-                  {/* Priority */}
-                  <td className="px-3 py-2 font-mono font-bold text-[var(--color-text-muted)] whitespace-nowrap">
-                    {p.priority}
-                  </td>
-
-                  {/* Name */}
-                  <td className="px-3 py-2 font-medium text-[var(--color-text-primary)] max-w-[200px]">
-                    <span className="block truncate">{p.name}</span>
-                  </td>
-
-                  {/* Source */}
-                  <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
-                    <span className="block truncate">{gName(p.srcGroupId)}</span>
-                    {p.srcExcludeGroupIds && p.srcExcludeGroupIds.length > 0 && (
-                      <span className="text-[9px] text-[var(--color-accent-red)]">
-                        excl. {p.srcExcludeGroupIds.map(gName).join(', ')}
-                      </span>
+              {sorted.map((p, i) => {
+                const isSelected = selected.has(p.id);
+                return (
+                  <tr
+                    key={p.id}
+                    onClick={() => onSelectPolicy(p.id, p.srcGroupId, p.dstGroupId)}
+                    className="border-b border-[var(--color-border-subtle)] cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
+                    style={{
+                      backgroundColor: isSelected
+                        ? 'var(--color-accent-blue)18'
+                        : i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                    }}
+                  >
+                    {onBulkDeletePolicies && (
+                      <td className="px-3 py-2 w-8" onClick={(e) => { e.stopPropagation(); toggleRow(p.id); }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRow(p.id)}
+                          className="cursor-pointer accent-[var(--color-aviatrix)]"
+                          aria-label={`Select policy ${p.name}`}
+                        />
+                      </td>
                     )}
-                  </td>
+                    {/* Priority */}
+                    <td className="px-3 py-2 font-mono font-bold text-[var(--color-text-muted)] whitespace-nowrap">
+                      {p.priority}
+                    </td>
 
-                  {/* Destination */}
-                  <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
-                    <span className="block truncate">{gName(p.dstGroupId)}</span>
-                    {p.dstExcludeGroupIds && p.dstExcludeGroupIds.length > 0 && (
-                      <span className="text-[9px] text-[var(--color-accent-red)]">
-                        excl. {p.dstExcludeGroupIds.map(gName).join(', ')}
-                      </span>
-                    )}
-                  </td>
+                    {/* Name */}
+                    <td className="px-3 py-2 font-medium text-[var(--color-text-primary)] max-w-[200px]">
+                      <span className="block truncate">{p.name}</span>
+                    </td>
 
-                  {/* Action */}
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    <ActionBadge action={p.action} />
-                  </td>
-
-                  {/* Protocol / Ports */}
-                  <td className="px-3 py-2 font-mono text-[var(--color-text-secondary)] whitespace-nowrap">
-                    {p.protocol.toUpperCase()}
-                    {p.ports ? <span className="text-[var(--color-text-muted)">/{p.ports}</span> : null}
-                  </td>
-
-                  {/* Flags */}
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-1.5">
-                      {p.decrypt && (
-                        <span title="TLS Decrypt">
-                          <Lock size={11} className="text-[var(--color-accent-purple)]" />
+                    {/* Source */}
+                    <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
+                      <span className="block truncate">{gName(p.srcGroupId)}</span>
+                      {p.srcExcludeGroupIds && p.srcExcludeGroupIds.length > 0 && (
+                        <span className="text-[9px] text-[var(--color-accent-red)]">
+                          excl. {p.srcExcludeGroupIds.map(gName).join(', ')}
                         </span>
                       )}
-                      {(p.threatGroup || p.geoGroup) && (
-                        <span title={p.threatGroup ? 'Threat group' : 'Geo group'}>
-                          <Globe size={11} className="text-[var(--color-accent-amber)]" />
+                    </td>
+
+                    {/* Destination */}
+                    <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
+                      <span className="block truncate">{gName(p.dstGroupId)}</span>
+                      {p.dstExcludeGroupIds && p.dstExcludeGroupIds.length > 0 && (
+                        <span className="text-[9px] text-[var(--color-accent-red)]">
+                          excl. {p.dstExcludeGroupIds.map(gName).join(', ')}
                         </span>
                       )}
-                      {((p.srcExcludeGroupIds?.length ?? 0) > 0 || (p.dstExcludeGroupIds?.length ?? 0) > 0) && (
-                        <span title="Has exclusions">
-                          <Ban size={11} className="text-[var(--color-accent-red)]" />
-                        </span>
-                      )}
-                      {p.logging && (
-                        <span title="Logging enabled" className="text-[9px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-elevated)] px-1 rounded">
-                          log
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <ActionBadge action={p.action} />
+                    </td>
+
+                    {/* Protocol / Ports */}
+                    <td className="px-3 py-2 font-mono text-[var(--color-text-secondary)] whitespace-nowrap">
+                      {p.protocol.toUpperCase()}
+                      {p.ports ? <span className="text-[var(--color-text-muted)">/{p.ports}</span> : null}
+                    </td>
+
+                    {/* Flags */}
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        {p.decrypt && (
+                          <span title="TLS Decrypt">
+                            <Lock size={11} className="text-[var(--color-accent-purple)]" />
+                          </span>
+                        )}
+                        {(p.threatGroup || p.geoGroup) && (
+                          <span title={p.threatGroup ? 'Threat group' : 'Geo group'}>
+                            <Globe size={11} className="text-[var(--color-accent-amber)]" />
+                          </span>
+                        )}
+                        {((p.srcExcludeGroupIds?.length ?? 0) > 0 || (p.dstExcludeGroupIds?.length ?? 0) > 0) && (
+                          <span title="Has exclusions">
+                            <Ban size={11} className="text-[var(--color-accent-red)]" />
+                          </span>
+                        )}
+                        {p.logging && (
+                          <span title="Logging enabled" className="text-[9px] font-mono text-[var(--color-text-muted)] bg-[var(--color-surface-elevated)] px-1 rounded">
+                            log
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selectionCount > 0 && onBulkDeletePolicies && (
+        <div
+          className="shrink-0 flex items-center justify-between gap-3 px-4 py-2.5 border-t"
+          style={{ backgroundColor: 'var(--color-surface-raised)', borderColor: 'var(--color-border-subtle)' }}
+        >
+          <span className="text-xs text-[var(--color-text-secondary)] font-medium">
+            {selectionCount} {selectionCount === 1 ? 'policy' : 'policies'} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelected(new Set())}
+              className="px-3 py-1 rounded text-xs border transition-colors"
+              style={{ borderColor: 'var(--color-border-subtle)', color: 'var(--color-text-muted)' }}
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setShowConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium text-white transition-colors bg-red-500 hover:bg-red-600"
+            >
+              <Trash2 size={11} />
+              Delete {selectionCount}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showConfirm && (
+        <ConfirmModal
+          title={`Delete ${selectionCount} ${selectionCount === 1 ? 'policy' : 'policies'}?`}
+          message={`This will permanently remove ${selectionCount} ${selectionCount === 1 ? 'policy' : 'policies'}. This action cannot be undone.`}
+          onConfirm={handleBulkDelete}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
     </div>
   );
 }
