@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { X, Send, CheckCircle, AlertTriangle, Loader2, Info, ArrowRight, Minus, Plus, Edit3 } from 'lucide-react';
+import { X, Send, CheckCircle, AlertTriangle, Loader2, Info, ArrowRight, Minus, Plus, Edit3, Trash2 } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel, SmartGroup } from '../../types/dcf';
 import type { AviatrixConnectionAPI } from '../../lib/aviatrix/types';
 import type { PushResult } from '../../../api/aviatrix/push-topology';
@@ -102,6 +102,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
   // SmartGroup diff state
   const [changedGroups, setChangedGroups] = useState<SmartGroupDiff[]>([]);
   const [newGroups, setNewGroups] = useState<SmartGroup[]>([]);
+  const [deletedGroups, setDeletedGroups] = useState<SmartGroup[]>([]);
 
   const [result, setResult] = useState<PushResult | null>(null);
 
@@ -163,6 +164,12 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
           if (nameChanged || criteriaChanged) changedSgs.push({ group: local, nameChanged, criteriaChanged });
         }
 
+        // --- Deleted SmartGroups: on controller but missing locally ---
+        const localSgIds = new Set(topology.smartGroups.map((g) => g.id));
+        const deletedSgs = ctrlTopology.smartGroups.filter(
+          (g) => isControllerUuid(g.id) && !localSgIds.has(g.id)
+        );
+
         const lists = pl ?? [];
         setDiffs(changed);
         setUnchangedCount(unchanged);
@@ -171,6 +178,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
         if (lists.length > 0) setTargetPolicyListUuid(lists[0]!.uuid);
         setChangedGroups(changedSgs);
         setNewGroups(newSgs);
+        setDeletedGroups(deletedSgs);
         setPhase('diff');
       })
       .catch((e) => {
@@ -187,6 +195,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
     let pushData: PushResult;
     const hasNew = newPolicies.length > 0 && !!targetPolicyListUuid;
     const sgsToPush = [...changedGroups.map((d) => d.group), ...newGroups];
+    const sgUuidsToDelete = deletedGroups.map((g) => g.id);
     try {
       const resp = await fetch('/api/aviatrix/push-topology', {
         method: 'POST',
@@ -198,6 +207,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
           policies: topology.policies,
           ...(hasNew ? { newPolicies, targetPolicyListUuid } : {}),
           ...(sgsToPush.length > 0 ? { smartGroups: sgsToPush } : {}),
+          ...(sgUuidsToDelete.length > 0 ? { smartGroupsToDelete: sgUuidsToDelete } : {}),
         }),
       });
       pushData = await resp.json() as PushResult;
@@ -217,7 +227,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
 
     // Re-sync: if push was successful, re-fetch from controller and replace local topology
     if (pushData.errors.length === 0 &&
-        (pushData.policyListsPushed > 0 || pushData.smartGroupsUpdated > 0 || pushData.smartGroupsCreated > 0) &&
+        (pushData.policyListsPushed > 0 || pushData.smartGroupsUpdated > 0 || pushData.smartGroupsCreated > 0 || pushData.smartGroupsDeleted > 0) &&
         onPushed) {
       try {
         const r = await fetch('/api/aviatrix/topology-api', {
@@ -240,11 +250,11 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
 
   const hasChanges = diffs.length > 0;
   const hasNew = newPolicies.length > 0;
-  const hasSgChanges = changedGroups.length > 0 || newGroups.length > 0;
+  const hasSgChanges = changedGroups.length > 0 || newGroups.length > 0 || deletedGroups.length > 0;
   const canPush = hasChanges || hasNew || hasSgChanges || !!fetchError;
   const pushSuccess = phase === 'done' && result && result.errors.length === 0;
 
-  const totalChanges = diffs.length + newPolicies.length + changedGroups.length + newGroups.length;
+  const totalChanges = diffs.length + newPolicies.length + changedGroups.length + newGroups.length + deletedGroups.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -395,12 +405,13 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
               )}
 
               {/* SmartGroup changes */}
-              {(changedGroups.length > 0 || newGroups.length > 0) && (
+              {(changedGroups.length > 0 || newGroups.length > 0 || deletedGroups.length > 0) && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
                     SmartGroups
                     {changedGroups.length > 0 && <span className="font-normal normal-case"> · {changedGroups.length} changed</span>}
                     {newGroups.length > 0 && <span className="font-normal normal-case"> · {newGroups.length} new</span>}
+                    {deletedGroups.length > 0 && <span className="font-normal normal-case text-red-400"> · {deletedGroups.length} to delete</span>}
                   </p>
 
                   <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-subtle)' }}>
@@ -409,7 +420,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
                         key={d.group.id}
                         className="px-3 py-2 flex items-center gap-1.5"
                         style={{
-                          borderBottom: (i < changedGroups.length - 1 || newGroups.length > 0) ? '1px solid var(--color-border-subtle)' : undefined,
+                          borderBottom: (i < changedGroups.length - 1 || newGroups.length > 0 || deletedGroups.length > 0) ? '1px solid var(--color-border-subtle)' : undefined,
                           backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
                         }}
                       >
@@ -425,13 +436,27 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
                         key={g.id}
                         className="px-3 py-2 flex items-center gap-1.5"
                         style={{
-                          borderBottom: i < newGroups.length - 1 ? '1px solid var(--color-border-subtle)' : undefined,
+                          borderBottom: (i < newGroups.length - 1 || deletedGroups.length > 0) ? '1px solid var(--color-border-subtle)' : undefined,
                           backgroundColor: (changedGroups.length + i) % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
                         }}
                       >
                         <Plus size={10} className="text-green-400 shrink-0" />
                         <span className="text-xs text-[var(--color-text-primary)]">{g.name}</span>
                         <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">{g.criteria.length} criteria</span>
+                      </div>
+                    ))}
+                    {deletedGroups.map((g, i) => (
+                      <div
+                        key={g.id}
+                        className="px-3 py-2 flex items-center gap-1.5"
+                        style={{
+                          borderBottom: i < deletedGroups.length - 1 ? '1px solid var(--color-border-subtle)' : undefined,
+                          backgroundColor: (changedGroups.length + newGroups.length + i) % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                        }}
+                      >
+                        <Trash2 size={10} className="text-red-400 shrink-0" />
+                        <span className="text-xs text-red-400/80 line-through">{g.name}</span>
+                        <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">delete</span>
                       </div>
                     ))}
                   </div>
@@ -460,6 +485,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
                       {result.policiesUpdated > 0 && `${result.policiesUpdated} ${result.policiesUpdated === 1 ? 'policy' : 'policies'} updated across ${result.policyListsPushed} PolicyList${result.policyListsPushed !== 1 ? 's' : ''}. `}
                       {result.smartGroupsUpdated > 0 && `${result.smartGroupsUpdated} SmartGroup${result.smartGroupsUpdated !== 1 ? 's' : ''} updated. `}
                       {result.smartGroupsCreated > 0 && `${result.smartGroupsCreated} SmartGroup${result.smartGroupsCreated !== 1 ? 's' : ''} created. `}
+                      {result.smartGroupsDeleted > 0 && `${result.smartGroupsDeleted} SmartGroup${result.smartGroupsDeleted !== 1 ? 's' : ''} deleted. `}
                       {result.deployed ? 'Deployed.' : 'Deploy step not confirmed.'}
                     </p>
                   </div>

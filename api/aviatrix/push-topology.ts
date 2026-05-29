@@ -150,6 +150,7 @@ interface PushRequest {
   newPolicies?: DcfPolicy[];
   targetPolicyListUuid?: string;
   smartGroups?: SmartGroup[];
+  smartGroupsToDelete?: string[];
 }
 
 export interface PushResult {
@@ -157,6 +158,7 @@ export interface PushResult {
   policiesUpdated: number;
   smartGroupsUpdated: number;
   smartGroupsCreated: number;
+  smartGroupsDeleted: number;
   warnings: string[];
   errors: string[];
   deployed: boolean;
@@ -166,7 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!req.body || typeof req.body !== 'object') return res.status(400).json({ error: 'Request body must be JSON.' });
 
-  const { controllerBaseUrl, username, password, policies, newPolicies, targetPolicyListUuid, smartGroups } = req.body as PushRequest;
+  const { controllerBaseUrl, username, password, policies, newPolicies, targetPolicyListUuid, smartGroups, smartGroupsToDelete } = req.body as PushRequest;
   if (!controllerBaseUrl || !username || !password) {
     return res.status(400).json({ error: 'Missing controllerBaseUrl, username, or password.' });
   }
@@ -176,12 +178,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const hasExistingEdits = Array.isArray(policies) && policies.length > 0;
   const hasNewPolicies = Array.isArray(newPolicies) && newPolicies.length > 0;
   const hasSmartGroups = Array.isArray(smartGroups) && smartGroups.length > 0;
-  if (!hasExistingEdits && !hasNewPolicies && !hasSmartGroups) {
-    return res.status(400).json({ error: 'No policies to push.' });
+  const hasSmartGroupDeletes = Array.isArray(smartGroupsToDelete) && smartGroupsToDelete.length > 0;
+  if (!hasExistingEdits && !hasNewPolicies && !hasSmartGroups && !hasSmartGroupDeletes) {
+    return res.status(400).json({ error: 'No changes to push.' });
   }
 
   const base = controllerBaseUrl.replace(/\/$/, '');
-  const result: PushResult = { policyListsPushed: 0, policiesUpdated: 0, smartGroupsUpdated: 0, smartGroupsCreated: 0, warnings: [], errors: [], deployed: false };
+  const result: PushResult = { policyListsPushed: 0, policiesUpdated: 0, smartGroupsUpdated: 0, smartGroupsCreated: 0, smartGroupsDeleted: 0, warnings: [], errors: [], deployed: false };
 
   // Step 1 — authenticate
   let cid: string;
@@ -437,8 +440,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Step 7 — deploy (when at least one PolicyList or SmartGroup was updated).
-  if (result.policyListsPushed > 0 || result.smartGroupsUpdated > 0 || result.smartGroupsCreated > 0) {
+  // Step 7 — delete SmartGroups removed from the local topology.
+  if (hasSmartGroupDeletes) {
+    for (const uuid of (smartGroupsToDelete as string[])) {
+      if (!isControllerUuid(uuid)) continue;
+      try {
+        const delR = await controllerFetch(
+          `${base}/v2.5/api/app-domains/${uuid}`,
+          { method: 'DELETE', headers: { Authorization: authHeader, Accept: 'application/json' } },
+          10_000,
+        );
+        if (delR.ok) {
+          result.smartGroupsDeleted++;
+        } else {
+          const errText = await delR.text().catch(() => '');
+          result.errors.push(`SmartGroup delete ${uuid}: HTTP ${delR.status} — ${errText.slice(0, 200)}`);
+        }
+      } catch (e) {
+        result.errors.push(`SmartGroup delete ${uuid}: ${e instanceof Error ? e.message : 'unknown error'}`);
+      }
+    }
+  }
+
+  // Step 8 — deploy (when at least one PolicyList or SmartGroup was changed).
+  if (result.policyListsPushed > 0 || result.smartGroupsUpdated > 0 || result.smartGroupsCreated > 0 || result.smartGroupsDeleted > 0) {
     try {
       const deployBody = JSON.stringify({});
       const deployR = await controllerFetch(
