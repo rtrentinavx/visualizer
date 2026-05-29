@@ -81,12 +81,12 @@ html, body, #root {
 
 /* Sentry Feedback Widget — top-right corner */
 #sentry-feedback {
-  position: fixed;
-  top: 16px;
-  right: 16px;
+  position: fixed !important;
+  top: 16px !important;
+  right: 16px !important;
   bottom: auto !important;
   left: auto !important;
-  z-index: 100000;
+  z-index: 100000 !important;
   pointer-events: none;
 }
 

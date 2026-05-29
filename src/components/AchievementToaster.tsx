@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { checkAchievements, type Achievement } from '../lib/achievements';
 
 export default function AchievementToaster({ topology }: { topology: DcfPolicyModel }) {
   const [toasts, setToasts] = useState<Achievement[]>([]);
+  const isFirstRun = useRef(true);
 
   useEffect(() => {
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
     const scores = new Map(topology.policies.map((p) => [p.id, 0]));
     const newAchievements = checkAchievements(topology, 0, scores);
     if (newAchievements.length > 0) {
