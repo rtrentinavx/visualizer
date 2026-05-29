@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useEffect, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import { Analytics } from '@vercel/analytics/react'
@@ -17,51 +17,52 @@ if (SENTRY_DSN) {
       Sentry.browserTracingIntegration(),
       Sentry.feedbackIntegration({
         colorScheme: 'system',
-        autoInject: true,
+        autoInject: false,
       }),
     ],
     tracesSampleRate: 1.0,
     tracePropagationTargets: ['localhost'],
   })
-
-  // Fallback: ensure the feedback widget is visible and clickable.
-  // Sentry's autoInject can silently fail in bundled Vite apps / strict CSP environments.
-  const ensureFeedbackWidget = () => {
-    try {
-      const existing = document.getElementById('sentry-feedback')
-      if (existing) {
-        existing.style.position = 'fixed'
-        existing.style.top = '16px'
-        existing.style.right = '16px'
-        existing.style.bottom = 'auto'
-        existing.style.left = 'auto'
-        existing.style.zIndex = '100000'
-        existing.style.pointerEvents = 'auto'
-        console.log('[Sentry] Feedback widget found in DOM.')
-        return
-      }
-
-      const feedback = Sentry.getFeedback()
-      if (!feedback) {
-        console.warn('[Sentry] Feedback integration not available.')
-        return
-      }
-
-      console.log('[Sentry] Auto-injected widget missing — creating manually.')
-      const widget = feedback.createWidget()
-      widget.appendToDom()
-    } catch (err) {
-      console.error('[Sentry] Failed to create feedback widget:', err)
-    }
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(ensureFeedbackWidget, 500))
-  } else {
-    setTimeout(ensureFeedbackWidget, 500)
-  }
 } else {
   console.warn('[Sentry] VITE_SENTRY_DSN not set — skipping Sentry init.')
+}
+
+function ReportBugButton() {
+  const btnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!btnRef.current) return
+    const feedback = Sentry.getFeedback()
+    if (!feedback) return
+    try {
+      feedback.attachTo(btnRef.current, { formTitle: 'Report a Bug' })
+    } catch {
+      // attachTo not available — clicking the button will do nothing
+    }
+  }, [])
+
+  if (!SENTRY_DSN) return null
+
+  return (
+    <button
+      ref={btnRef}
+      style={{
+        position: 'fixed',
+        top: 16,
+        right: 16,
+        zIndex: 100000,
+        padding: '6px 12px',
+        fontSize: 12,
+        borderRadius: 6,
+        border: '1px solid var(--color-border-subtle)',
+        backgroundColor: 'var(--color-surface-raised)',
+        color: 'var(--color-text-secondary)',
+        cursor: 'pointer',
+      }}
+    >
+      Report a Bug
+    </button>
+  )
 }
 
 createRoot(document.getElementById('root')!).render(
@@ -69,6 +70,7 @@ createRoot(document.getElementById('root')!).render(
     <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
       <ThemeProvider>
         <App />
+        <ReportBugButton />
         <Analytics />
       </ThemeProvider>
     </Sentry.ErrorBoundary>
