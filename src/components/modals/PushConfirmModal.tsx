@@ -103,6 +103,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
   const [changedGroups, setChangedGroups] = useState<SmartGroupDiff[]>([]);
   const [newGroups, setNewGroups] = useState<SmartGroup[]>([]);
   const [deletedGroups, setDeletedGroups] = useState<SmartGroup[]>([]);
+  const [ctrlGroupCount, setCtrlGroupCount] = useState(0);
 
   const [result, setResult] = useState<PushResult | null>(null);
 
@@ -179,6 +180,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
         setChangedGroups(changedSgs);
         setNewGroups(newSgs);
         setDeletedGroups(deletedSgs);
+        setCtrlGroupCount(ctrlTopology.smartGroups.filter((g) => isControllerUuid(g.id)).length);
         setPhase('diff');
       })
       .catch((e) => {
@@ -305,6 +307,9 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">No changes detected</p>
                   <p className="text-xs text-[var(--color-text-muted)] mt-1">
                     All {unchangedCount} {unchangedCount === 1 ? 'policy' : 'policies'} match the controller.
+                  </p>
+                  <p className="text-xs text-[var(--color-text-muted)] mt-0.5 font-mono">
+                    Controller: {ctrlGroupCount} groups · Local: {topology.smartGroups.filter((g) => isControllerUuid(g.id)).length} groups
                   </p>
                 </div>
               )}
