@@ -336,10 +336,11 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
                     }}
                   >
                     {onBulkDeleteGroups && (
-                      <td className="px-3 py-2 w-8" onClick={(e) => { e.stopPropagation(); if (!isSpecial) toggleRow(g.id); }}>
+                      <td className="px-3 py-2 w-8">
                         <input
                           type="checkbox"
                           checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={() => { if (!isSpecial) toggleRow(g.id); }}
                           disabled={isSpecial}
                           className="cursor-pointer accent-[var(--color-aviatrix)] disabled:opacity-30 disabled:cursor-not-allowed"
