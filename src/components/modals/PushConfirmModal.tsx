@@ -219,6 +219,7 @@ export default function PushConfirmModal({ topology, connection, onClose, onPush
         policiesUpdated: 0,
         smartGroupsUpdated: 0,
         smartGroupsCreated: 0,
+        smartGroupsDeleted: 0,
         warnings: [],
         errors: [e instanceof Error ? e.message : 'Network error'],
         deployed: false,
