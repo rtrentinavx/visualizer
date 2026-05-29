@@ -1,7 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import https from 'https';
 import http from 'http';
-import type { DcfPolicy } from '../../src/types/dcf.js';
+import type { DcfPolicy, SmartGroup } from '../../src/types/dcf.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isControllerUuid(id: string): boolean { return UUID_RE.test(id); }
+
+function buildAppDomainBody(sg: SmartGroup): Record<string, unknown> {
+  const selectorAny = sg.criteria
+    .map((c) => {
+      if (c.type === 'subnet' && c.cidr) return { all: { cidr: c.cidr } };
+      if (c.type === 'vm' && c.key) return { all: { [c.key]: c.value ?? '' } };
+      return null;
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
+  return { name: sg.name, selector: { any: selectorAny } };
+}
 
 export const config = { maxDuration: 60 };
 
@@ -133,11 +147,16 @@ interface PushRequest {
   username: string;
   password: string;
   policies: DcfPolicy[];
+  newPolicies?: DcfPolicy[];
+  targetPolicyListUuid?: string;
+  smartGroups?: SmartGroup[];
 }
 
 export interface PushResult {
   policyListsPushed: number;
   policiesUpdated: number;
+  smartGroupsUpdated: number;
+  smartGroupsCreated: number;
   warnings: string[];
   errors: string[];
   deployed: boolean;
@@ -147,19 +166,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   if (!req.body || typeof req.body !== 'object') return res.status(400).json({ error: 'Request body must be JSON.' });
 
-  const { controllerBaseUrl, username, password, policies } = req.body as PushRequest;
+  const { controllerBaseUrl, username, password, policies, newPolicies, targetPolicyListUuid, smartGroups } = req.body as PushRequest;
   if (!controllerBaseUrl || !username || !password) {
     return res.status(400).json({ error: 'Missing controllerBaseUrl, username, or password.' });
   }
   if (!isHttpUrl(controllerBaseUrl)) {
     return res.status(400).json({ error: 'controllerBaseUrl must be an http(s) URL.' });
   }
-  if (!Array.isArray(policies) || policies.length === 0) {
+  const hasExistingEdits = Array.isArray(policies) && policies.length > 0;
+  const hasNewPolicies = Array.isArray(newPolicies) && newPolicies.length > 0;
+  const hasSmartGroups = Array.isArray(smartGroups) && smartGroups.length > 0;
+  if (!hasExistingEdits && !hasNewPolicies && !hasSmartGroups) {
     return res.status(400).json({ error: 'No policies to push.' });
   }
 
   const base = controllerBaseUrl.replace(/\/$/, '');
-  const result: PushResult = { policyListsPushed: 0, policiesUpdated: 0, warnings: [], errors: [], deployed: false };
+  const result: PushResult = { policyListsPushed: 0, policiesUpdated: 0, smartGroupsUpdated: 0, smartGroupsCreated: 0, warnings: [], errors: [], deployed: false };
 
   // Step 1 — authenticate
   let cid: string;
@@ -188,9 +210,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Step 3 — group local policies by policyListUuid (skip policies without one)
-  const pushable = policies.filter((p) => p.policyListUuid);
-  if (pushable.length === 0) {
+  const pushable = (hasExistingEdits ? policies : []).filter((p) => p.policyListUuid);
+  if (pushable.length === 0 && !hasNewPolicies) {
     return res.status(200).json({ ...result, warnings: ['No policies have a controller origin — nothing to push. Import from a live controller first.'] });
+  }
+  if (hasNewPolicies && !targetPolicyListUuid) {
+    return res.status(400).json({ error: 'targetPolicyListUuid is required when pushing new policies.' });
   }
 
   const byPolicyList = new Map<string, DcfPolicy[]>();
@@ -221,7 +246,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let updatedCount = 0;
 
     const rawPolicies = asArray(rawPL['policies']);
-    const newPolicies = rawPolicies.map((rawPolicy) => {
+    const mergedPolicies = rawPolicies.map((rawPolicy) => {
       if (!rawPolicy || typeof rawPolicy !== 'object') return rawPolicy;
       const rp = rawPolicy as Record<string, unknown>;
       if (rp['system_resource']) return rp; // never touch system-managed entries
@@ -277,7 +302,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       continue;
     }
 
-    const putBody: Record<string, unknown> = { policies: newPolicies };
+    const putBody: Record<string, unknown> = { policies: mergedPolicies };
     if (typeof rawPL['name'] === 'string') putBody['name'] = rawPL['name'];
 
     try {
@@ -302,8 +327,118 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // Step 5 — deploy (only when at least one PolicyList was updated successfully).
-  if (result.policyListsPushed > 0) {
+  // Step 5 — append new (locally-created) policies to the target PolicyList.
+  if (hasNewPolicies && targetPolicyListUuid) {
+    const targetPL = plMap.get(targetPolicyListUuid);
+    if (!targetPL) {
+      result.errors.push(`Target PolicyList ${targetPolicyListUuid} not found on controller`);
+    } else {
+      const existingPolicies = asArray(targetPL['policies']);
+      const builtNewPolicies = (newPolicies as DcfPolicy[]).filter((p) => p.protocol !== 'any').map((p) => {
+        if (p.protocol === 'any') return null; // filtered above, but for safety
+        return {
+          name: p.name,
+          priority: p.priority,
+          action: p.action === 'allow' ? 'PERMIT' : 'DENY',
+          src_ads: [mapBackId(p.srcGroupId)],
+          dst_ads: [mapBackId(p.dstGroupId)],
+          port_ranges: parsePorts(p.ports),
+          protocol: p.protocol.toUpperCase(),
+          logging: p.logging,
+          enforcement: p.enforcement !== false,
+          decrypt_policy: p.decrypt ? 'DECRYPT_ALLOWED' : 'DECRYPT_NOT_ALLOWED',
+          web_filters: p.webGroupIds ?? [],
+        };
+      }).filter(Boolean);
+
+      const anySkipped = (newPolicies as DcfPolicy[]).filter((p) => p.protocol === 'any');
+      for (const p of anySkipped) {
+        result.warnings.push(`New policy "${p.name}" skipped: protocol 'any' cannot be written to this controller version (known limitation)`);
+      }
+
+      if (builtNewPolicies.length > 0) {
+        const putBody: Record<string, unknown> = {
+          policies: [...existingPolicies, ...builtNewPolicies],
+        };
+        if (typeof targetPL['name'] === 'string') putBody['name'] = targetPL['name'];
+
+        try {
+          const putR = await controllerFetch(
+            `${base}/v2.5/api/microseg/policy-list3/${targetPolicyListUuid}`,
+            {
+              method: 'PUT',
+              headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(putBody),
+            },
+            15_000,
+          );
+          if (putR.ok) {
+            result.policyListsPushed++;
+            result.policiesUpdated += builtNewPolicies.length;
+          } else {
+            const errText = await putR.text().catch(() => '');
+            result.errors.push(`New policies → PolicyList "${targetPL['name'] ?? targetPolicyListUuid}": PUT returned HTTP ${putR.status} — ${errText.slice(0, 200)}`);
+          }
+        } catch (e) {
+          result.errors.push(`New policies → PolicyList "${targetPL['name'] ?? targetPolicyListUuid}": ${e instanceof Error ? e.message : 'unknown error'}`);
+        }
+      }
+    }
+  }
+
+  // Step 6 — SmartGroup creates and updates.
+  if (hasSmartGroups) {
+    for (const sg of (smartGroups as SmartGroup[])) {
+      if (sg.id === 'sg-any' || sg.id === 'sg-internet') continue;
+      const body = buildAppDomainBody(sg);
+
+      if (isControllerUuid(sg.id)) {
+        try {
+          const putR = await controllerFetch(
+            `${base}/v2.5/api/app-domains/${sg.id}`,
+            {
+              method: 'PUT',
+              headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(body),
+            },
+            10_000,
+          );
+          if (putR.ok) {
+            result.smartGroupsUpdated++;
+          } else {
+            const errText = await putR.text().catch(() => '');
+            result.errors.push(`SmartGroup "${sg.name}": PUT returned HTTP ${putR.status} — ${errText.slice(0, 200)}`);
+          }
+        } catch (e) {
+          result.errors.push(`SmartGroup "${sg.name}": ${e instanceof Error ? e.message : 'unknown error'}`);
+        }
+      } else {
+        try {
+          const postR = await controllerFetch(
+            `${base}/v2.5/api/app-domains`,
+            {
+              method: 'POST',
+              headers: { Authorization: authHeader, 'Content-Type': 'application/json', Accept: 'application/json' },
+              body: JSON.stringify(body),
+            },
+            10_000,
+          );
+          if (postR.ok) {
+            result.smartGroupsCreated++;
+            result.warnings.push(`SmartGroup "${sg.name}" created. Re-import topology to get the controller-assigned UUID.`);
+          } else {
+            const errText = await postR.text().catch(() => '');
+            result.errors.push(`SmartGroup "${sg.name}": POST returned HTTP ${postR.status} — ${errText.slice(0, 200)}`);
+          }
+        } catch (e) {
+          result.errors.push(`SmartGroup "${sg.name}": ${e instanceof Error ? e.message : 'unknown error'}`);
+        }
+      }
+    }
+  }
+
+  // Step 7 — deploy (when at least one PolicyList or SmartGroup was updated).
+  if (result.policyListsPushed > 0 || result.smartGroupsUpdated > 0 || result.smartGroupsCreated > 0) {
     try {
       const deployBody = JSON.stringify({});
       const deployR = await controllerFetch(

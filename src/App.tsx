@@ -370,6 +370,11 @@ export default function App() {
           topology={topology}
           connection={activeApiConnection}
           onClose={modals.close}
+          onPushed={(freshTopology) => {
+            dispatch({ type: 'replace', topology: freshTopology });
+            setSelectedItem(null);
+            setSelectedCell(null);
+          }}
         />
       )}
 

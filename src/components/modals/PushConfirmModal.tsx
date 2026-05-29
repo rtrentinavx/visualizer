@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { X, Send, CheckCircle, AlertTriangle, Loader2, Info, ArrowRight, Minus } from 'lucide-react';
-import type { DcfPolicy, DcfPolicyModel } from '../../types/dcf';
+import { X, Send, CheckCircle, AlertTriangle, Loader2, Info, ArrowRight, Minus, Plus, Edit3 } from 'lucide-react';
+import type { DcfPolicy, DcfPolicyModel, SmartGroup } from '../../types/dcf';
 import type { AviatrixConnectionAPI } from '../../lib/aviatrix/types';
 import type { PushResult } from '../../../api/aviatrix/push-topology';
 import { mapTopology } from '../../lib/aviatrix/mapTopology';
@@ -9,6 +9,7 @@ interface PushConfirmModalProps {
   topology: DcfPolicyModel;
   connection: AviatrixConnectionAPI;
   onClose: () => void;
+  onPushed?: (newTopology: DcfPolicyModel) => void;
 }
 
 type Phase = 'loading' | 'diff' | 'pushing' | 'done';
@@ -22,6 +23,27 @@ interface FieldChange {
 interface PolicyDiff {
   policy: DcfPolicy;
   changes: FieldChange[];
+  willSkip?: string;
+}
+
+interface SmartGroupDiff {
+  group: SmartGroup;
+  nameChanged: boolean;
+  criteriaChanged: boolean;
+}
+
+interface PolicyListMeta {
+  uuid: string;
+  name: string;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isControllerUuid(id: string): boolean { return UUID_RE.test(id); }
+
+function serializeCriteria(sg: SmartGroup): string {
+  return JSON.stringify(
+    [...sg.criteria].sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -66,12 +88,21 @@ function computeChanges(local: DcfPolicy, ctrl: DcfPolicy, topo: DcfPolicyModel)
 // Component
 // ---------------------------------------------------------------------------
 
-export default function PushConfirmModal({ topology, connection, onClose }: PushConfirmModalProps) {
+export default function PushConfirmModal({ topology, connection, onClose, onPushed }: PushConfirmModalProps) {
   const [phase, setPhase] = useState<Phase>('loading');
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Policy diff state
   const [diffs, setDiffs] = useState<PolicyDiff[]>([]);
   const [unchangedCount, setUnchangedCount] = useState(0);
-  const [skippedCount, setSkippedCount] = useState(0);
+  const [newPolicies, setNewPolicies] = useState<DcfPolicy[]>([]);
+  const [policyLists, setPolicyLists] = useState<PolicyListMeta[]>([]);
+  const [targetPolicyListUuid, setTargetPolicyListUuid] = useState<string>('');
+
+  // SmartGroup diff state
+  const [changedGroups, setChangedGroups] = useState<SmartGroupDiff[]>([]);
+  const [newGroups, setNewGroups] = useState<SmartGroup[]>([]);
+
   const [result, setResult] = useState<PushResult | null>(null);
 
   // Fetch current controller state on open and compute diff
@@ -89,34 +120,63 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
     })
       .then(async (r) => {
         if (!r.ok) throw new Error(`Controller returned HTTP ${r.status}`);
-        return r.json() as Promise<{ raw: Parameters<typeof mapTopology>[0] }>;
+        return r.json() as Promise<{ raw: Parameters<typeof mapTopology>[0]; policyLists?: PolicyListMeta[] }>;
       })
-      .then(({ raw }) => {
+      .then(({ raw, policyLists: pl }) => {
         if (cancelled) return;
         const { topology: ctrlTopology } = mapTopology(raw);
-        const ctrlById = new Map(ctrlTopology.policies.map((p) => [p.id, p]));
 
+        // --- Policy diff ---
+        const ctrlById = new Map(ctrlTopology.policies.map((p) => [p.id, p]));
         const pushable = topology.policies.filter((p) => p.policyListUuid);
+        const localOnly = topology.policies.filter((p) => !p.policyListUuid);
         const changed: PolicyDiff[] = [];
         let unchanged = 0;
 
         for (const local of pushable) {
           const ctrl = ctrlById.get(local.id);
-          if (!ctrl) { unchanged++; continue; } // on controller but not in map (e.g. new on ctrl) — skip
+          if (!ctrl) { unchanged++; continue; }
           const changes = computeChanges(local, ctrl, topology);
-          if (changes.length > 0) changed.push({ policy: local, changes });
-          else unchanged++;
+          if (changes.length > 0) {
+            const willSkip = local.protocol === 'any' ? "protocol 'any' cannot be written to this controller version" : undefined;
+            changed.push({ policy: local, changes, willSkip });
+          } else {
+            unchanged++;
+          }
         }
 
+        // --- SmartGroup diff ---
+        const ctrlSgById = new Map(ctrlTopology.smartGroups.map((g) => [g.id, g]));
+        const changedSgs: SmartGroupDiff[] = [];
+        const newSgs: SmartGroup[] = [];
+
+        for (const local of topology.smartGroups) {
+          if (local.id === 'sg-any' || local.id === 'sg-internet') continue;
+          if (!isControllerUuid(local.id)) {
+            newSgs.push(local);
+            continue;
+          }
+          const ctrl = ctrlSgById.get(local.id);
+          if (!ctrl) continue; // UUID not on controller — skip
+          const nameChanged = local.name !== ctrl.name;
+          const criteriaChanged = serializeCriteria(local) !== serializeCriteria(ctrl);
+          if (nameChanged || criteriaChanged) changedSgs.push({ group: local, nameChanged, criteriaChanged });
+        }
+
+        const lists = pl ?? [];
         setDiffs(changed);
         setUnchangedCount(unchanged);
-        setSkippedCount(topology.policies.filter((p) => !p.policyListUuid).length);
+        setNewPolicies(localOnly);
+        setPolicyLists(lists);
+        if (lists.length > 0) setTargetPolicyListUuid(lists[0]!.uuid);
+        setChangedGroups(changedSgs);
+        setNewGroups(newSgs);
         setPhase('diff');
       })
       .catch((e) => {
         if (cancelled) return;
         setFetchError(e instanceof Error ? e.message : 'Failed to fetch current controller state');
-        setPhase('diff'); // still show the modal, just without a diff
+        setPhase('diff');
       });
 
     return () => { cancelled = true; };
@@ -124,6 +184,9 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
 
   const handlePush = async () => {
     setPhase('pushing');
+    let pushData: PushResult;
+    const hasNew = newPolicies.length > 0 && !!targetPolicyListUuid;
+    const sgsToPush = [...changedGroups.map((d) => d.group), ...newGroups];
     try {
       const resp = await fetch('/api/aviatrix/push-topology', {
         method: 'POST',
@@ -133,24 +196,55 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
           username: connection.username,
           password: connection.password,
           policies: topology.policies,
+          ...(hasNew ? { newPolicies, targetPolicyListUuid } : {}),
+          ...(sgsToPush.length > 0 ? { smartGroups: sgsToPush } : {}),
         }),
       });
-      const data = await resp.json() as PushResult;
-      setResult(data);
+      pushData = await resp.json() as PushResult;
     } catch (e) {
-      setResult({
+      pushData = {
         policyListsPushed: 0,
         policiesUpdated: 0,
+        smartGroupsUpdated: 0,
+        smartGroupsCreated: 0,
         warnings: [],
         errors: [e instanceof Error ? e.message : 'Network error'],
         deployed: false,
-      });
+      };
     }
+    setResult(pushData);
     setPhase('done');
+
+    // Re-sync: if push was successful, re-fetch from controller and replace local topology
+    if (pushData.errors.length === 0 &&
+        (pushData.policyListsPushed > 0 || pushData.smartGroupsUpdated > 0 || pushData.smartGroupsCreated > 0) &&
+        onPushed) {
+      try {
+        const r = await fetch('/api/aviatrix/topology-api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            controllerBaseUrl: connection.controllerBaseUrl,
+            username: connection.username,
+            password: connection.password,
+          }),
+        });
+        if (r.ok) {
+          const { raw } = await r.json() as { raw: Parameters<typeof mapTopology>[0] };
+          const { topology: freshTopology } = mapTopology(raw);
+          onPushed(freshTopology);
+        }
+      } catch { /* re-sync is best-effort; push already succeeded */ }
+    }
   };
 
   const hasChanges = diffs.length > 0;
+  const hasNew = newPolicies.length > 0;
+  const hasSgChanges = changedGroups.length > 0 || newGroups.length > 0;
+  const canPush = hasChanges || hasNew || hasSgChanges || !!fetchError;
   const pushSuccess = phase === 'done' && result && result.errors.length === 0;
+
+  const totalChanges = diffs.length + newPolicies.length + changedGroups.length + newGroups.length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -196,7 +290,7 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
                 </div>
               )}
 
-              {!fetchError && !hasChanges && (
+              {!fetchError && !hasChanges && !hasNew && !hasSgChanges && (
                 <div className="rounded-lg border p-3" style={{ borderColor: 'var(--color-border-subtle)', backgroundColor: 'var(--color-surface)' }}>
                   <p className="text-sm font-medium text-[var(--color-text-primary)]">No changes detected</p>
                   <p className="text-xs text-[var(--color-text-muted)] mt-1">
@@ -205,12 +299,12 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
                 </div>
               )}
 
+              {/* Modified policies diff */}
               {hasChanges && (
                 <div className="space-y-2">
                   <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
                     {diffs.length} {diffs.length === 1 ? 'policy' : 'policies'} changed
                     {unchangedCount > 0 && <span className="font-normal normal-case"> · {unchangedCount} unchanged</span>}
-                    {skippedCount > 0 && <span className="font-normal normal-case"> · {skippedCount} local-only (skipped)</span>}
                   </p>
 
                   <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-subtle)' }}>
@@ -223,7 +317,15 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
                           backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
                         }}
                       >
-                        <p className="text-xs font-semibold text-[var(--color-text-primary)]">{d.policy.name}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-semibold text-[var(--color-text-primary)]">{d.policy.name}</p>
+                          {d.willSkip && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 shrink-0">will skip</span>
+                          )}
+                        </div>
+                        {d.willSkip && (
+                          <p className="text-[10px] text-amber-400/80">{d.willSkip}</p>
+                        )}
                         <div className="space-y-0.5">
                           {d.changes.map((c) => (
                             <div key={c.field} className="flex items-center gap-1.5 text-[11px]">
@@ -234,6 +336,102 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
                             </div>
                           ))}
                         </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* New (local-only) policies */}
+              {hasNew && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                    {newPolicies.length} new {newPolicies.length === 1 ? 'policy' : 'policies'}
+                  </p>
+
+                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                    {newPolicies.map((p, i) => (
+                      <div
+                        key={p.id}
+                        className="px-3 py-2 flex items-center gap-1.5"
+                        style={{
+                          borderBottom: i < newPolicies.length - 1 ? '1px solid var(--color-border-subtle)' : undefined,
+                          backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                        }}
+                      >
+                        <Plus size={10} className="text-green-400 shrink-0" />
+                        <span className="text-xs text-[var(--color-text-primary)]">{p.name}</span>
+                        {p.protocol === 'any' && (
+                          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 shrink-0">will skip</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {policyLists.length > 0 ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">Add to PolicyList:</span>
+                      <select
+                        value={targetPolicyListUuid}
+                        onChange={(e) => setTargetPolicyListUuid(e.target.value)}
+                        className="flex-1 text-xs rounded-md border px-2 py-1 min-w-0"
+                        style={{
+                          backgroundColor: 'var(--color-surface)',
+                          borderColor: 'var(--color-border-subtle)',
+                          color: 'var(--color-text-primary)',
+                        }}
+                      >
+                        {policyLists.map((pl) => (
+                          <option key={pl.uuid} value={pl.uuid}>{pl.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-amber-400">
+                      No PolicyLists found on controller — new policies cannot be pushed (import topology first).
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* SmartGroup changes */}
+              {(changedGroups.length > 0 || newGroups.length > 0) && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">
+                    SmartGroups
+                    {changedGroups.length > 0 && <span className="font-normal normal-case"> · {changedGroups.length} changed</span>}
+                    {newGroups.length > 0 && <span className="font-normal normal-case"> · {newGroups.length} new</span>}
+                  </p>
+
+                  <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--color-border-subtle)' }}>
+                    {changedGroups.map((d, i) => (
+                      <div
+                        key={d.group.id}
+                        className="px-3 py-2 flex items-center gap-1.5"
+                        style={{
+                          borderBottom: (i < changedGroups.length - 1 || newGroups.length > 0) ? '1px solid var(--color-border-subtle)' : undefined,
+                          backgroundColor: i % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                        }}
+                      >
+                        <Edit3 size={10} className="text-blue-400 shrink-0" />
+                        <span className="text-xs text-[var(--color-text-primary)]">{d.group.name}</span>
+                        <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">
+                          {[d.nameChanged && 'name', d.criteriaChanged && 'criteria'].filter(Boolean).join(', ')}
+                        </span>
+                      </div>
+                    ))}
+                    {newGroups.map((g, i) => (
+                      <div
+                        key={g.id}
+                        className="px-3 py-2 flex items-center gap-1.5"
+                        style={{
+                          borderBottom: i < newGroups.length - 1 ? '1px solid var(--color-border-subtle)' : undefined,
+                          backgroundColor: (changedGroups.length + i) % 2 === 0 ? 'var(--color-surface)' : 'var(--color-surface-raised)',
+                        }}
+                      >
+                        <Plus size={10} className="text-green-400 shrink-0" />
+                        <span className="text-xs text-[var(--color-text-primary)]">{g.name}</span>
+                        <span className="ml-auto text-[10px] text-[var(--color-text-muted)]">{g.criteria.length} criteria</span>
                       </div>
                     ))}
                   </div>
@@ -259,9 +457,10 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
                   <div>
                     <p className="text-sm font-medium text-green-400">Push successful</p>
                     <p className="text-xs text-[var(--color-text-muted)] mt-0.5">
-                      {result.policiesUpdated} {result.policiesUpdated === 1 ? 'policy' : 'policies'} updated
-                      across {result.policyListsPushed} PolicyList{result.policyListsPushed !== 1 ? 's' : ''}.
-                      {result.deployed ? ' Deployed.' : ' Deploy step not confirmed.'}
+                      {result.policiesUpdated > 0 && `${result.policiesUpdated} ${result.policiesUpdated === 1 ? 'policy' : 'policies'} updated across ${result.policyListsPushed} PolicyList${result.policyListsPushed !== 1 ? 's' : ''}. `}
+                      {result.smartGroupsUpdated > 0 && `${result.smartGroupsUpdated} SmartGroup${result.smartGroupsUpdated !== 1 ? 's' : ''} updated. `}
+                      {result.smartGroupsCreated > 0 && `${result.smartGroupsCreated} SmartGroup${result.smartGroupsCreated !== 1 ? 's' : ''} created. `}
+                      {result.deployed ? 'Deployed.' : 'Deploy step not confirmed.'}
                     </p>
                   </div>
                 </div>
@@ -304,12 +503,12 @@ export default function PushConfirmModal({ topology, connection, onClose }: Push
           {phase === 'diff' && (
             <button
               onClick={handlePush}
-              disabled={!hasChanges && !fetchError}
+              disabled={!canPush}
               className="px-3 py-1.5 text-xs rounded-md font-medium text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               style={{ backgroundColor: 'var(--color-accent-blue)' }}
             >
-              {hasChanges
-                ? `Push ${diffs.length} ${diffs.length === 1 ? 'change' : 'changes'}`
+              {totalChanges > 0
+                ? `Push ${totalChanges} ${totalChanges === 1 ? 'change' : 'changes'}`
                 : fetchError ? 'Push anyway' : 'Nothing to push'}
             </button>
           )}

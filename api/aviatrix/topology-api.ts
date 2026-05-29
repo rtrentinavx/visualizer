@@ -168,9 +168,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Step 2 — try v2.5 REST endpoints (8.0+ auth: Authorization: cid <CID>).
-    const v25Raw = await tryFetchV25(base, cid, warnings);
-    if (v25Raw) {
-      return res.status(200).json({ raw: v25Raw, apiVersion: 'v2.5', warnings });
+    const v25Result = await tryFetchV25(base, cid, warnings);
+    if (v25Result) {
+      return res.status(200).json({ raw: v25Result.data, policyLists: v25Result.policyLists, apiVersion: 'v2.5', warnings });
     }
 
     // Step 3 — fall back to /v2/api action-scanning (older controllers or feature-gated DCF).
@@ -198,7 +198,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    return res.status(200).json({ raw, apiVersion: 'v2', warnings });
+    return res.status(200).json({ raw, policyLists: [], apiVersion: 'v2', warnings });
 
   } catch (err) {
     console.error('[aviatrix/topology-api] outer error', err);
@@ -222,7 +222,7 @@ async function tryFetchV25(
   base: string,
   cid: string,
   warnings: string[],
-): Promise<Record<EntityKey, unknown[]> | null> {
+): Promise<{ data: Record<EntityKey, unknown[]>; policyLists: { uuid: string; name: string }[] } | null> {
   const authHeader = `cid ${cid}`;
 
   // --- App domains (all groups unified) ---
@@ -268,6 +268,7 @@ async function tryFetchV25(
 
   // --- Policies ---
   let policies: unknown[] = [];
+  const policyLists: { uuid: string; name: string }[] = [];
   try {
     const r = await controllerFetch(
       `${base}/v2.5/api/microseg/policy-list3`,
@@ -276,7 +277,15 @@ async function tryFetchV25(
     );
     if (r.ok) {
       const body = await r.json() as Record<string, unknown>;
-      policies = flattenPolicies(asArray(body['dcf_policies']));
+      const rawDcfPolicies = asArray(body['dcf_policies']);
+      for (const obj of rawDcfPolicies) {
+        if (!obj || typeof obj !== 'object') continue;
+        const o = obj as Record<string, unknown>;
+        const plUuid = typeof o['uuid'] === 'string' ? o['uuid'] : undefined;
+        const plName = typeof o['name'] === 'string' ? o['name'] : undefined;
+        if (plUuid && plName) policyLists.push({ uuid: plUuid, name: plName });
+      }
+      policies = flattenPolicies(rawDcfPolicies);
     } else {
       warnings.push(`v2.5 policy-list3 returned HTTP ${r.status}`);
     }
@@ -284,7 +293,7 @@ async function tryFetchV25(
     warnings.push(`v2.5 policies error: ${e instanceof Error ? e.message : 'unknown'}`);
   }
 
-  return { smartGroups, webGroups, threatGroups, geoGroups, policies };
+  return { data: { smartGroups, webGroups, threatGroups, geoGroups, policies }, policyLists };
 }
 
 /**
