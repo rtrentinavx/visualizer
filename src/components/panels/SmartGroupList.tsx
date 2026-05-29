@@ -8,7 +8,7 @@ import ConfirmModal from '../modals/ConfirmModal';
 
 const SPECIAL_IDS = new Set(['sg-any', 'sg-internet']);
 
-type SortKey = 'name' | 'type' | 'criteria' | 'src' | 'dst' | 'total';
+type SortKey = 'name' | 'type' | 'criteria' | 'policies';
 type SortDir = 'asc' | 'desc';
 
 type CriteriaType = 'tag' | 'cidr' | 'mixed' | 'empty' | 'special';
@@ -16,9 +16,7 @@ type CriteriaType = 'tag' | 'cidr' | 'mixed' | 'empty' | 'special';
 interface GroupRow {
   group: SmartGroup;
   criteriaType: CriteriaType;
-  srcCount: number;
-  dstCount: number;
-  totalCount: number;
+  policyCount: number;
   isSpecial: boolean;
 }
 
@@ -98,32 +96,23 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Build policy usage counts per group
+  // Count how many policies reference each group (any position: src, dst, or exclusion)
   const usageMap = useMemo(() => {
-    const src = new Map<string, number>();
-    const dst = new Map<string, number>();
+    const m = new Map<string, number>();
     for (const p of topology.policies) {
-      src.set(p.srcGroupId, (src.get(p.srcGroupId) ?? 0) + 1);
-      dst.set(p.dstGroupId, (dst.get(p.dstGroupId) ?? 0) + 1);
-      for (const id of p.srcExcludeGroupIds ?? []) src.set(id, (src.get(id) ?? 0) + 1);
-      for (const id of p.dstExcludeGroupIds ?? []) dst.set(id, (dst.get(id) ?? 0) + 1);
+      const ids = [p.srcGroupId, p.dstGroupId, ...(p.srcExcludeGroupIds ?? []), ...(p.dstExcludeGroupIds ?? [])];
+      for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
     }
-    return { src, dst };
+    return m;
   }, [topology.policies]);
 
   const rows = useMemo<GroupRow[]>(() =>
-    topology.smartGroups.map((g) => {
-      const srcCount = usageMap.src.get(g.id) ?? 0;
-      const dstCount = usageMap.dst.get(g.id) ?? 0;
-      return {
-        group: g,
-        criteriaType: criteriaTypeOf(g),
-        srcCount,
-        dstCount,
-        totalCount: srcCount + dstCount,
-        isSpecial: SPECIAL_IDS.has(g.id),
-      };
-    }),
+    topology.smartGroups.map((g) => ({
+      group: g,
+      criteriaType: criteriaTypeOf(g),
+      policyCount: usageMap.get(g.id) ?? 0,
+      isSpecial: SPECIAL_IDS.has(g.id),
+    })),
   [topology.smartGroups, usageMap]);
 
   const filtered = useMemo(() => {
@@ -143,9 +132,7 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
         case 'name':     cmp = a.group.name.localeCompare(b.group.name); break;
         case 'type':     cmp = a.criteriaType.localeCompare(b.criteriaType); break;
         case 'criteria': cmp = a.group.criteria.length - b.group.criteria.length; break;
-        case 'src':      cmp = a.srcCount - b.srcCount; break;
-        case 'dst':      cmp = a.dstCount - b.dstCount; break;
-        case 'total':    cmp = a.totalCount - b.totalCount; break;
+        case 'policies': cmp = a.policyCount - b.policyCount; break;
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -164,7 +151,6 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
   const total = topology.smartGroups.length;
   const nonSpecial = total - topology.smartGroups.filter((g) => SPECIAL_IDS.has(g.id)).length;
 
-  // Only non-special rows are selectable
   const selectableIds = sorted.filter((r) => !r.isSpecial).map((r) => r.group.id);
   const allSelectableSelected = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
   const someSelectableSelected = selectableIds.some((id) => selected.has(id));
@@ -303,14 +289,8 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
                 <th onClick={() => handleSort('criteria')} className={thClass('criteria')}>
                   <span className="flex items-center gap-1">Criteria<SortIcon active={sortKey === 'criteria'} dir={sortDir} /></span>
                 </th>
-                <th onClick={() => handleSort('src')} className={thClass('src')}>
-                  <span className="flex items-center gap-1">Src policies<SortIcon active={sortKey === 'src'} dir={sortDir} /></span>
-                </th>
-                <th onClick={() => handleSort('dst')} className={thClass('dst')}>
-                  <span className="flex items-center gap-1">Dst policies<SortIcon active={sortKey === 'dst'} dir={sortDir} /></span>
-                </th>
-                <th onClick={() => handleSort('total')} className={thClass('total')}>
-                  <span className="flex items-center gap-1">Total<SortIcon active={sortKey === 'total'} dir={sortDir} /></span>
+                <th onClick={() => handleSort('policies')} className={thClass('policies')}>
+                  <span className="flex items-center gap-1">Policies<SortIcon active={sortKey === 'policies'} dir={sortDir} /></span>
                 </th>
                 <th className="px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] whitespace-nowrap">
                   Flags
@@ -319,8 +299,8 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
             </thead>
             <tbody>
               {sorted.map((row, i) => {
-                const { group: g, criteriaType, srcCount, dstCount, totalCount, isSpecial } = row;
-                const isUnused = !isSpecial && totalCount === 0;
+                const { group: g, criteriaType, policyCount, isSpecial } = row;
+                const isUnused = !isSpecial && policyCount === 0;
                 const isCidrOnly = criteriaType === 'cidr';
                 const isSelected = selected.has(g.id);
 
@@ -390,24 +370,10 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
                       )}
                     </td>
 
-                    {/* Src count */}
-                    <td className="px-3 py-2 text-center font-mono">
-                      <span className={srcCount > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-muted)] opacity-40'}>
-                        {srcCount}
-                      </span>
-                    </td>
-
-                    {/* Dst count */}
-                    <td className="px-3 py-2 text-center font-mono">
-                      <span className={dstCount > 0 ? 'text-[var(--color-text-secondary)]' : 'text-[var(--color-text-muted)] opacity-40'}>
-                        {dstCount}
-                      </span>
-                    </td>
-
-                    {/* Total */}
+                    {/* Policy count */}
                     <td className="px-3 py-2 text-center font-mono font-semibold">
-                      <span className={totalCount > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)] opacity-40'}>
-                        {isSpecial ? '—' : totalCount}
+                      <span className={policyCount > 0 ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-muted)] opacity-40'}>
+                        {isSpecial ? '—' : policyCount}
                       </span>
                     </td>
 
