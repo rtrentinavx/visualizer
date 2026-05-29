@@ -126,12 +126,28 @@ export type EvaluatorFix = z.infer<typeof EvaluatorFixSchema>;
  * Safely parse AI JSON output against a Zod schema.
  * Returns { success: true, data } or { success: false, error }.
  */
+/**
+ * AI models commonly return `null` for optional fields ("not applicable") but Zod's
+ * `.optional()` only accepts `undefined | T`, rejecting `null` with "Invalid input".
+ * Strip nulls recursively before validation so both shapes are accepted.
+ */
+function nullToUndefined(val: unknown): unknown {
+  if (val === null) return undefined;
+  if (Array.isArray(val)) return val.map(nullToUndefined);
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val as Record<string, unknown>).map(([k, v]) => [k, nullToUndefined(v)])
+    );
+  }
+  return val;
+}
+
 export function safeParseAIOutput<T>(schema: z.ZodSchema<T>, raw: string): { success: true; data: T } | { success: false; error: string } {
   try {
     // Try to extract JSON from markdown code blocks
     const jsonMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
     const cleaned = jsonMatch?.[1]?.trim() ?? raw.trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = nullToUndefined(JSON.parse(cleaned));
     const result = schema.safeParse(parsed);
     if (result.success) {
       return { success: true, data: result.data };

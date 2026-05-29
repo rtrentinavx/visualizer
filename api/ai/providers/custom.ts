@@ -29,6 +29,23 @@ export async function proxyCustom(
     return res.status(response.status).send(error);
   }
 
+  // Non-streaming: extract content + usage in the same shape every other provider returns.
+  // Without this branch the raw provider JSON ({"choices":[...]}) gets piped through as SSE,
+  // data.content is undefined on the client, and safeParseAIOutput blows up on ''.
+  if (!stream) {
+    const data = await response.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+    const content = data.choices?.[0]?.message?.content ?? '';
+    const usage = data.usage ? {
+      promptTokens: data.usage.prompt_tokens,
+      completionTokens: data.usage.completion_tokens,
+      totalTokens: data.usage.total_tokens,
+    } : undefined;
+    return res.json({ content, usage });
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
