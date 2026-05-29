@@ -78,4 +78,6 @@ export interface DcfPolicyModel {
   geoGroups: GeoGroup[];
   policies: DcfPolicy[];
   flows: TrafficFlow[];
+  /** Controller-level default action for unmatched traffic. When 'deny', explicit deny-all policies are redundant and recommendations to create one are suppressed. */
+  defaultAction?: 'allow' | 'deny';
 }

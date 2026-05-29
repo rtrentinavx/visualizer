@@ -19,6 +19,7 @@ interface EvaluatorPanelProps {
   onFixAll: () => void;
   /** Materialize an AI-suggested WebGroup split. Called from the wide-webgroup AI suggestion flow. */
   onApplySplit: (webGroupId: string, splits: WebGroupSplitSuggestion['proposedSplits']) => void;
+  onSetDefaultAction: (action: 'allow' | 'deny') => void;
 }
 
 interface SplitState {
@@ -64,7 +65,7 @@ function getScoreGrade(score: number): string {
   return 'F';
 }
 
-export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix, onFixAll, onApplySplit }: EvaluatorPanelProps) {
+export default function EvaluatorPanel({ topology, report, aiProfile, onClose, onSelectPolicy, onSelectGroup, onApplyFix, onFixAll, onApplySplit, onSetDefaultAction }: EvaluatorPanelProps) {
   const { findings, score, summary, categories } = report;
   const [activeCategory, setActiveCategory] = useState<FindingCategory | 'all'>('all');
 
@@ -213,6 +214,27 @@ export default function EvaluatorPanel({ topology, report, aiProfile, onClose, o
             <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">
               <X size={16} />
             </button>
+          </div>
+        </div>
+
+        {/* Default action toggle */}
+        <div className="px-4 pt-3 pb-0 flex items-center gap-2">
+          <span className="text-xs text-[var(--color-text-muted)]">Default action for unmatched traffic:</span>
+          <div className="flex rounded overflow-hidden border border-[var(--color-border-subtle)] text-xs">
+            <button
+              className="px-2.5 py-1 font-medium transition-colors"
+              style={topology.defaultAction !== 'deny'
+                ? { backgroundColor: 'var(--color-accent-amber)', color: '#fff' }
+                : { backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}
+              onClick={() => onSetDefaultAction('allow')}
+            >Allow</button>
+            <button
+              className="px-2.5 py-1 font-medium transition-colors"
+              style={topology.defaultAction === 'deny'
+                ? { backgroundColor: '#ef4444', color: '#fff' }
+                : { backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-muted)' }}
+              onClick={() => onSetDefaultAction('deny')}
+            >Deny</button>
           </div>
         </div>
 

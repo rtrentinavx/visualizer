@@ -485,6 +485,11 @@ export default function App() {
             dispatch({ type: 'replace', topology: result.topology });
             setEvaluatorReport(evaluateTopology(result.topology));
           }}
+          onSetDefaultAction={(action) => {
+            const next = { ...topology, defaultAction: action };
+            dispatch({ type: 'replace', topology: next });
+            setEvaluatorReport(evaluateTopology(next));
+          }}
         />
         </Suspense>
       )}

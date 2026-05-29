@@ -78,12 +78,14 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
   return findings;
 }
 
-function findMissingDenyAll(policies: DcfPolicy[]): Finding[] {
-  const hasDenyAll = policies.some(
+function findMissingDenyAll(model: DcfPolicyModel): Finding[] {
+  if (model.defaultAction === 'deny') return [];
+
+  const hasDenyAll = model.policies.some(
     (p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any'
   );
 
-  if (!hasDenyAll && policies.length > 0) {
+  if (!hasDenyAll && model.policies.length > 0) {
     return [{
       id: 'missing-deny-all',
       severity: 'error',
@@ -362,9 +364,11 @@ function findMissingLoggingOnAllow(policies: DcfPolicy[]): Finding[] {
     }));
 }
 
-function findLearnedWithoutDenyAll(policies: DcfPolicy[]): Finding[] {
-  const hasDenyAll = policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any');
-  const hasLearned = policies.some((p) => p.action === 'learned');
+function findLearnedWithoutDenyAll(model: DcfPolicyModel): Finding[] {
+  if (model.defaultAction === 'deny') return [];
+
+  const hasDenyAll = model.policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any');
+  const hasLearned = model.policies.some((p) => p.action === 'learned');
 
   if (hasLearned && !hasDenyAll) {
     return [{
@@ -725,7 +729,7 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   const findings: Finding[] = [];
 
   findings.push(...findShadowedPolicies(topology.policies));
-  findings.push(...findMissingDenyAll(topology.policies));
+  findings.push(...findMissingDenyAll(topology));
   findings.push(...findOverlyPermissive(topology.policies));
   findings.push(...findUnusedGroups(topology));
   findings.push(...findMissingLogging(topology.policies));
@@ -737,7 +741,7 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   findings.push(...findTlsDecryptPortViolation(topology.policies));
   findings.push(...findTlsDecryptProtocolViolation(topology.policies));
   findings.push(...findBroadAllowWithoutPorts(topology.policies));
-  findings.push(...findLearnedWithoutDenyAll(topology.policies));
+  findings.push(...findLearnedWithoutDenyAll(topology));
 
   // Industry best-practice checks
   findings.push(...findDuplicateNames(topology.policies));
