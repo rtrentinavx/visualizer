@@ -120,7 +120,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         case 'anthropic':
           return await proxyAnthropic(res, apiKey, model, messages, temperature, stream);
         case 'google':
-          return await proxyGoogle(res, apiKey, model, messages, temperature);
+          return await proxyGoogle(res, apiKey, model, messages, temperature, stream);
         case 'ollama':
           return await proxyOllama(res, apiBaseUrl as string, model, messages, temperature, stream);
         case 'lmstudio':

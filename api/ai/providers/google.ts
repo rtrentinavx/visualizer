@@ -7,10 +7,9 @@ export async function proxyGoogle(
   apiKey: string,
   model: string,
   messages: ChatMessage[],
-  temperature: number
+  temperature: number,
+  stream: boolean
 ) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
-
   const contents = messages
     .filter((m) => m.role !== 'system')
     .map((m) => ({
@@ -29,6 +28,33 @@ export async function proxyGoogle(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
+  // Non-streaming: use :generateContent and return { content, usage }
+  if (!stream) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      return res.status(response.status).send(error);
+    }
+    const data = await response.json() as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number };
+    };
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+    const usage = data.usageMetadata ? {
+      promptTokens: data.usageMetadata.promptTokenCount,
+      completionTokens: data.usageMetadata.candidatesTokenCount,
+      totalTokens: data.usageMetadata.totalTokenCount,
+    } : undefined;
+    return res.json({ content, usage });
+  }
+
+  // Streaming: Gemini returns NDJSON — convert to SSE
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`;
   const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -40,7 +66,6 @@ export async function proxyGoogle(
     return res.status(response.status).send(error);
   }
 
-  // Gemini returns NDJSON when streaming. We need to convert to SSE.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');

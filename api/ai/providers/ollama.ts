@@ -22,6 +22,24 @@ export async function proxyOllama(
     return res.status(response.status).send(error);
   }
 
+  // Non-streaming: Ollama returns a single JSON object when stream=false
+  if (!stream) {
+    const data = await response.json() as {
+      message?: { content?: string };
+      prompt_eval_count?: number;
+      eval_count?: number;
+    };
+    const content = data.message?.content ?? '';
+    const promptTokens = data.prompt_eval_count;
+    const completionTokens = data.eval_count;
+    const usage = promptTokens !== undefined || completionTokens !== undefined ? {
+      promptTokens,
+      completionTokens,
+      totalTokens: (promptTokens ?? 0) + (completionTokens ?? 0),
+    } : undefined;
+    return res.json({ content, usage });
+  }
+
   // Ollama returns NDJSON. Convert to SSE.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
