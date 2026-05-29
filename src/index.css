@@ -79,9 +79,13 @@ html, body, #root {
   background: var(--color-scroll-thumb-hover);
 }
 
-/* Sentry Feedback Widget — ensure visibility */
+/* Sentry Feedback Widget — top-right corner */
 #sentry-feedback {
   position: fixed;
+  top: 16px;
+  right: 16px;
+  bottom: auto !important;
+  left: auto !important;
   z-index: 100000;
   pointer-events: none;
 }

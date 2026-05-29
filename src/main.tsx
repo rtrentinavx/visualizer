@@ -31,6 +31,10 @@ if (SENTRY_DSN) {
       const existing = document.getElementById('sentry-feedback')
       if (existing) {
         existing.style.position = 'fixed'
+        existing.style.top = '16px'
+        existing.style.right = '16px'
+        existing.style.bottom = 'auto'
+        existing.style.left = 'auto'
         existing.style.zIndex = '100000'
         existing.style.pointerEvents = 'auto'
         console.log('[Sentry] Feedback widget found in DOM.')
