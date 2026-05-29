@@ -17,6 +17,7 @@ import { hasAIDataConsent } from './lib/aiDataConsent';
 const AIDataConsentModal = lazyImport(() => import('./components/modals/AIDataConsentModal'));
 import PolicyMatrix from './components/panels/PolicyMatrix';
 import PolicyList from './components/panels/PolicyList';
+import SmartGroupList from './components/panels/SmartGroupList';
 import InspectorPanel from './components/panels/InspectorPanel';
 import TrafficSimulator from './components/panels/TrafficSimulator';
 
@@ -324,6 +325,11 @@ export default function App() {
             <PolicyList
               topology={topology}
               onSelectPolicy={handleSelectPolicy}
+            />
+          ) : viewMode === 'groups' ? (
+            <SmartGroupList
+              topology={topology}
+              onSelectGroup={(groupId) => setSelectedItem({ type: 'smartGroup', id: groupId })}
             />
           ) : viewMode === 'aiSettings' ? (
             <Suspense fallback={<PanelLoader />}>

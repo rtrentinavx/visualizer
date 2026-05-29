@@ -3,14 +3,14 @@ import { createPortal } from 'react-dom';
 import {
   LayoutGrid, Sun, Moon, HelpCircle, BookOpen, FileCode, CloudUpload, CloudDownload,
   Check, X, GitGraph, ShieldAlert, Bot, Sparkles, FlaskConical, Upload, Trophy, Medal,
-  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route, History, Wand2, List,
+  RotateCcw, Lightbulb, FileText, LayoutTemplate, ListOrdered, Route, History, Wand2, List, Layers,
   Send,
 } from 'lucide-react';
 import type { DcfPolicyModel } from '../types/dcf';
 import { scoreTopology } from '../lib/policyScorer';
 import { getAllAchievements } from '../lib/achievements';
 
-export type ViewMode = 'matrix' | 'graph' | 'list' | 'trafficSimulator' | 'aiSettings';
+export type ViewMode = 'matrix' | 'graph' | 'list' | 'groups' | 'trafficSimulator' | 'aiSettings';
 
 export interface AppHeaderActions {
   openEvaluator: () => void;
@@ -249,6 +249,10 @@ export default function AppHeader({ topology, viewMode, theme, cloudSyncStatus, 
           <button onClick={() => onViewChange('list')} className={tabClass(viewMode === 'list')} aria-current={viewMode === 'list' ? 'page' : undefined}>
             <List size={14} />
             <span className="hidden sm:inline">Policies</span>
+          </button>
+          <button onClick={() => onViewChange('groups')} className={tabClass(viewMode === 'groups')} aria-current={viewMode === 'groups' ? 'page' : undefined}>
+            <Layers size={14} />
+            <span className="hidden sm:inline">Groups</span>
           </button>
           <button onClick={() => onViewChange('trafficSimulator')} className={tabClass(viewMode === 'trafficSimulator')} aria-current={viewMode === 'trafficSimulator' ? 'page' : undefined}>
             <FlaskConical size={14} />
