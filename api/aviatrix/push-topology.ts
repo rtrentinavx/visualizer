@@ -448,7 +448,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           headers: {
             Authorization: authHeader,
             'Content-Type': 'application/json',
-            'Content-Length': String(Buffer.byteLength(deployBody)),
             Accept: 'application/json',
           },
           body: deployBody,
