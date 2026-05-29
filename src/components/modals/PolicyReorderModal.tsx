@@ -165,6 +165,14 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
   // Compute L4/L7 shadow warnings for the CURRENT proposed order. Recomputes
   // on every drag. shadowedByMap maps L7-allow.id → L4-deny.id; we invert it
   // so we can also flag the offending L4 deny on its own row.
+  // Compute the priority each policy would receive if Apply were clicked now.
+  // Drives the preview badge shown next to each row (replaces the old flat ladder).
+  const proposedPriorityById = useMemo(() => {
+    const m = new Map<string, number>();
+    reorderPolicies(topology, order).policies.forEach((p) => m.set(p.id, p.priority));
+    return m;
+  }, [topology, order]);
+
   const { shadowedByMap, causesShadowMap } = useMemo(() => {
     const orderedPolicies = order
       .map((id) => policyById.get(id))
@@ -226,7 +234,7 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Reorder Policies</h2>
               <p className="text-[10px] text-[var(--color-text-muted)] mt-0.5">
-                Drag rows to reorder. Apply renumbers to a 10-step ladder starting at 100.
+                Drag rows to reorder. Apply keeps existing priority values where possible; bumps only where gap &lt; 10.
               </p>
             </div>
           </div>
@@ -299,7 +307,7 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={order} strategy={verticalListSortingStrategy}>
                 <div className="space-y-1">
-                  {order.map((id, idx) => {
+                  {order.map((id) => {
                     const p = policyById.get(id);
                     if (!p) return null;
                     const shadowedById = shadowedByMap.get(id);
@@ -310,7 +318,7 @@ export default function PolicyReorderModal({ topology, aiProfile, onApply, onClo
                         id={id}
                         policy={p}
                         topology={topology}
-                        ladderPriority={100 + idx * 10}
+                        ladderPriority={proposedPriorityById.get(id) ?? p.priority}
                         shadowedByName={shadowedById ? policyById.get(shadowedById)?.name : undefined}
                         causesShadowOf={shadowsId ? policyById.get(shadowsId)?.name : undefined}
                       />

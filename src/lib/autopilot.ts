@@ -53,9 +53,9 @@ export function proposeAutopilotPlan(topology: DcfPolicyModel): AutopilotProposa
     cards.push(fixCard(finding));
   }
 
-  // 2. Renumber card — one card that resets policy priorities to a 10-step
-  //    ladder (10, 20, 30…) in their current evaluation order. Only proposed
-  //    when the existing priorities aren't already on the ladder.
+  // 2. Renumber card — one card that spaces out priorities so consecutive
+  //    rules have a gap of at least 10 (preserving band values like 8000s).
+  //    Only proposed when at least one gap is too small.
   const renumber = renumberCard(topology);
   if (renumber) cards.push(renumber);
 
@@ -107,20 +107,32 @@ function fixCard(finding: Finding): AutopilotCard {
   };
 }
 
+const MIN_GAP = 10;
+
 function renumberCard(topology: DcfPolicyModel): AutopilotCard | null {
   if (topology.policies.length === 0) return null;
   const sorted = [...topology.policies].sort((a, b) => a.priority - b.priority);
-  const alreadyClean = sorted.every((p, i) => p.priority === (i + 1) * 10);
+  // Clean = every consecutive pair has gap ≥ MIN_GAP and first priority ≥ MIN_GAP
+  const alreadyClean = sorted.every((p, i) =>
+    i === 0 ? p.priority >= MIN_GAP : p.priority - sorted[i - 1]!.priority >= MIN_GAP
+  );
   if (alreadyClean) return null;
+  const count = topology.policies.length;
   return {
     id: 'reorder-ladder',
     category: 'reorder',
-    title: 'Renumber priorities to a 10-step ladder',
-    description: `Renumber the ${topology.policies.length} polic${topology.policies.length === 1 ? 'y' : 'ies'} to 10, 20, 30… in their current evaluation order. Keeps the same priority ordering but leaves room for inserts between rules.`,
+    title: 'Space out policy priorities',
+    description: `${count} polic${count === 1 ? 'y has' : 'ies have'} consecutive priorities with gaps smaller than ${MIN_GAP}. Bumping dense entries to ensure at least ${MIN_GAP} between rules preserves Aviatrix band values (100s, 8000s…) while leaving room for inserts.`,
     defaultEnabled: true,
     mutate: (t) => {
       const ordered = [...t.policies].sort((a, b) => a.priority - b.priority);
-      return { ...t, policies: ordered.map((p, i) => ({ ...p, priority: (i + 1) * 10 })) };
+      let prev = 0;
+      const remapped = ordered.map((p) => {
+        const priority = p.priority >= prev + MIN_GAP ? p.priority : prev + MIN_GAP;
+        prev = priority;
+        return { ...p, priority };
+      });
+      return { ...t, policies: remapped };
     },
   };
 }

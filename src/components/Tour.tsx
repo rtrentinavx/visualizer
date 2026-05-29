@@ -64,7 +64,7 @@ function getSteps(aiProfileActive: boolean): TourStep[] {
       id: 'reorder',
       target: 'reorder-btn',
       title: 'Reorder by drag',
-      body: 'Open the policy reorder modal to drag rules into priority order. Priorities renumber to a uniform 10-step ladder so there\'s always room for inserts.',
+      body: 'Open the policy reorder modal to drag rules into priority order. Existing band values (100s, 8000s…) are preserved; only tightly-packed priorities get bumped to ensure at least a 10-unit gap.',
     },
     {
       id: 'history',

@@ -59,38 +59,39 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
     expect(report.findings.some((f) => f.id === 'missing-log-pol-1')).toBe(false);
   });
 
-  it('emits a renumber card when priorities are not on a 10-step ladder', () => {
+  it('emits a renumber card when some consecutive priorities have gap < 10', () => {
     const t = blank();
-    t.policies.push(pol({ id: 'p1', priority: 47 }));
-    t.policies.push(pol({ id: 'p2', priority: 1234, srcGroupId: 'sg-internet' }));
+    // p1=100, p2=105 — gap=5 < 10 → card fires; p2 gets bumped to 110.
+    t.policies.push(pol({ id: 'p1', priority: 100 }));
+    t.policies.push(pol({ id: 'p2', priority: 105, srcGroupId: 'sg-internet' }));
     const plan = proposeAutopilotPlan(t);
     const reorder = plan.cards.find((c) => c.id === 'reorder-ladder');
     expect(reorder).toBeDefined();
     const next = reorder!.mutate(t);
-    const priorities = next.policies.map((p) => p.priority).sort((a, b) => a - b);
-    expect(priorities).toEqual([10, 20]);
+    expect(next.policies.find((p) => p.id === 'p1')!.priority).toBe(100); // kept
+    expect(next.policies.find((p) => p.id === 'p2')!.priority).toBe(110); // bumped
   });
 
-  it('does NOT emit a renumber card when priorities are already a clean ladder', () => {
+  it('does NOT emit a renumber card when all consecutive gaps are ≥ 10', () => {
     const t = blank();
-    t.policies.push(pol({ id: 'p1', priority: 10 }));
-    t.policies.push(pol({ id: 'p2', priority: 20, srcGroupId: 'sg-internet' }));
+    // Band-style priorities — gap between each is well above 10.
+    t.policies.push(pol({ id: 'p1', priority: 100 }));
+    t.policies.push(pol({ id: 'p2', priority: 8000, srcGroupId: 'sg-internet' }));
     const plan = proposeAutopilotPlan(t);
     expect(plan.cards.find((c) => c.id === 'reorder-ladder')).toBeUndefined();
   });
 
-  it('renumbering preserves the existing evaluation order (sorts by priority asc)', () => {
+  it('renumbering preserves band values and only bumps the too-small first priority', () => {
     const t = blank();
-    // Three policies, scrambled priority order — final positions should be
-    // p1 (priority 5) → 10, p2 (priority 100) → 20, p3 (priority 500) → 30.
+    // p1=5 (< 10) → bumped to 10; p2=100 (≥ 20) → kept; p3=500 (≥ 110) → kept.
     t.policies.push(pol({ id: 'p2', priority: 100, srcGroupId: 'sg-internet' }));
     t.policies.push(pol({ id: 'p3', priority: 500 }));
     t.policies.push(pol({ id: 'p1', priority: 5 }));
     const card = proposeAutopilotPlan(t).cards.find((c) => c.id === 'reorder-ladder')!;
     const next = card.mutate(t);
-    expect(next.policies.find((p) => p.id === 'p1')!.priority).toBe(10);
-    expect(next.policies.find((p) => p.id === 'p2')!.priority).toBe(20);
-    expect(next.policies.find((p) => p.id === 'p3')!.priority).toBe(30);
+    expect(next.policies.find((p) => p.id === 'p1')!.priority).toBe(10);  // bumped
+    expect(next.policies.find((p) => p.id === 'p2')!.priority).toBe(100); // kept
+    expect(next.policies.find((p) => p.id === 'p3')!.priority).toBe(500); // kept
   });
 
   it('emits a dedupe card per exact-duplicate policy (lower-priority duplicate is dropped)', () => {
@@ -157,11 +158,12 @@ describe('applyAutopilotCards — selective apply', () => {
 
   it('applies every card when all ids are enabled', () => {
     const t = blank();
-    t.policies.push(pol({ id: 'p1', priority: 47, name: '  scruffy  ', action: 'deny', logging: false }));
+    // priority=5 (< 10) → renumber card fires and bumps to 10.
+    t.policies.push(pol({ id: 'p1', priority: 5, name: '  scruffy  ', action: 'deny', logging: false }));
     const plan = proposeAutopilotPlan(t);
     const all = new Set(plan.cards.map((c) => c.id));
     const next = applyAutopilotCards(t, plan.cards, all);
-    // Priority renumbered → 10. Name trimmed. Logging on.
+    // Priority bumped to 10. Name trimmed. Logging on.
     expect(next.policies[0]!.priority).toBe(10);
     expect(next.policies[0]!.name).toBe('scruffy');
     expect(next.policies[0]!.logging).toBe(true);
@@ -169,7 +171,8 @@ describe('applyAutopilotCards — selective apply', () => {
 
   it('skips cards whose ids are not in the enabled set', () => {
     const t = blank();
-    t.policies.push(pol({ id: 'p1', priority: 47, name: '  scruffy  ', action: 'deny', logging: false }));
+    // priority=5 (< 10) → renumber card fires.
+    t.policies.push(pol({ id: 'p1', priority: 5, name: '  scruffy  ', action: 'deny', logging: false }));
     const plan = proposeAutopilotPlan(t);
     // Enable only the renumber card; leave fix + normalize off.
     const onlyRenumber = new Set(['reorder-ladder']);
@@ -183,11 +186,13 @@ describe('applyAutopilotCards — selective apply', () => {
     // The Set iteration order in JS is insertion order, but we want to be sure
     // applyAutopilotCards always uses the cards-array order, not the Set order.
     const t = blank();
-    t.policies.push(pol({ id: 'p1', priority: 100, name: '  spaced  ' }));
-    t.policies.push(pol({ id: 'p2', priority: 200, name: '  spaced  also  ', srcGroupId: 'sg-internet' }));
+    // priority=5 and 7 (gaps < 10) → renumber card fires.
+    t.policies.push(pol({ id: 'p1', priority: 5, name: '  spaced  ' }));
+    t.policies.push(pol({ id: 'p2', priority: 7, name: '  spaced  also  ', srcGroupId: 'sg-internet' }));
     const plan = proposeAutopilotPlan(t);
     const enabled = new Set(['normalize-names', 'reorder-ladder']); // reversed order
     const next = applyAutopilotCards(t, plan.cards, enabled);
+    // p1=5 bumped to 10; p2=7 bumped to 20 (prev=10, 7 < 20).
     expect(next.policies.find((p) => p.id === 'p1')!.priority).toBe(10);
     expect(next.policies.find((p) => p.id === 'p1')!.name).toBe('spaced');
   });
