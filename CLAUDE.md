@@ -70,7 +70,7 @@ When adding a new provider, you need to (1) add it to the provider list in `src/
 
 ### Policy evaluator
 
-[src/lib/policyEvaluator.ts](src/lib/policyEvaluator.ts) runs 21 independent check functions over a `DcfPolicyModel` and returns an `EvaluationReport` (findings + score + per-category counts). Each `Finding` declares `severity`, `category` (`security`/`naming`/`performance`/`compliance`/`hygiene`), tagged `frameworks` (`Aviatrix BP` / `CIS` / `NIST ZT` / `Best Practice`), and an optional `fixable` flag. `applyAutoFix` in the same file dispatches on finding ID to mutate the topology. **When adding a check**: write a function returning `Finding[]`, call it from `evaluateTopology`, and — if it's fixable — add the corresponding case to `applyAutoFix`.
+[src/lib/policyEvaluator.ts](src/lib/policyEvaluator.ts) runs 29 independent check functions over a `DcfPolicyModel` and returns an `EvaluationReport` (findings + score + per-category counts). Each `Finding` declares `severity`, `category` (`security`/`naming`/`performance`/`compliance`/`hygiene`), tagged `frameworks` (`Aviatrix BP` / `CIS` / `NIST ZT` / `Best Practice`), and an optional `fixable` flag. `applyAutoFix` in the same file dispatches on finding ID to mutate the topology. **When adding a check**: write a function returning `Finding[]`, call it from `evaluateTopology`, and — if it's fixable — add the corresponding case to `applyAutoFix`.
 
 [src/lib/policyScorer.ts](src/lib/policyScorer.ts) is a separate compliance score (0–100) used in the gauge — distinct from the evaluator's internal score field.
 

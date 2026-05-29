@@ -513,6 +513,86 @@ function findAllowInternetWithoutInspection(policies: DcfPolicy[]): Finding[] {
     }));
 }
 
+// ---------- Guideline-gap checks (from Aviatrix DCF Rule Configuration Guide) ----------
+
+/**
+ * SmartGroups that rely entirely on subnet (CIDR) criteria have static membership —
+ * new VMs aren't enrolled automatically. The guide recommends cloud tag criteria
+ * (Env, Tier, App) for dynamic auto-enrollment.
+ */
+function findStaticCidrOnlyGroups(topology: DcfPolicyModel): Finding[] {
+  const RESERVED = new Set(['sg-any', 'sg-internet']);
+  const affected = topology.smartGroups.filter((g) => {
+    if (RESERVED.has(g.id)) return false;
+    if (!g.criteria || g.criteria.length === 0) return false;
+    return g.criteria.every((c) => c.type === 'subnet');
+  });
+  if (affected.length < 3) return []; // 1–2 CIDR-only groups are normal (e.g. DMZ)
+  return [{
+    id: 'static-cidr-only-groups',
+    severity: 'info',
+    category: 'hygiene',
+    frameworks: ['Aviatrix BP'],
+    title: 'SmartGroups Use Only Static CIDRs',
+    description: `${affected.length} SmartGroups (${affected.slice(0, 3).map((g) => `"${g.name}"`).join(', ')}${affected.length > 3 ? `, +${affected.length - 3} more` : ''}) rely solely on CIDR criteria. Aviatrix Best Practice: add cloud tag criteria using standard keys — AWS: Environment/Owner/Application/Tier, Azure: env/app/tier/opsteam, GCP: environment/team/component — so new workloads auto-enroll into policies without manual rule edits.`,
+    affectedGroupIds: affected.map((g) => g.id),
+  }];
+}
+
+/**
+ * Tightly-packed priority values (average spacing < 5) leave no room to insert
+ * rules between existing ones without renumbering. The guide recommends priority
+ * bands (1x = global blacklist, 5x = whitelist, 1000s+ = app traffic).
+ */
+function findDensePriorities(policies: DcfPolicy[]): Finding[] {
+  if (policies.length < 5) return [];
+  const priorities = policies.map((p) => p.priority);
+  const min = Math.min(...priorities);
+  const max = Math.max(...priorities);
+  const range = max - min;
+  if (range === 0) return []; // duplicate-priority fires instead
+  const avgSpacing = range / (policies.length - 1);
+  if (avgSpacing >= 5) return [];
+  return [{
+    id: 'dense-priorities',
+    severity: 'info',
+    category: 'naming',
+    frameworks: ['Aviatrix BP'],
+    title: 'Priority Values Too Dense',
+    description: `Policies use tightly-packed priority values (range ${min}–${max} across ${policies.length} policies, avg spacing ${avgSpacing.toFixed(1)}). Aviatrix Best Practice: space priorities in bands of 10–100 to follow the recommended pattern (1x=Blacklist, 5x=Whitelist, 1000s=App rules) and avoid full renumbering when new rules are added.`,
+    affectedPolicyIds: policies.map((p) => p.id),
+    fixable: true,
+    fixDescription: `Renumber all ${policies.length} policies in priority order with spacing of 10. Note: if policies were imported from a live controller, the push diff will show a priority change on every policy.`,
+  }];
+}
+
+/**
+ * Non-enforced deny rules with logging match the Aviatrix Brownfield Migration Pattern:
+ * monitoring traffic before committing to a deny-all posture. When this pattern is
+ * detected without an enforced catch-all deny, surface it so the user knows the
+ * next step is to review the logs and then enforce.
+ */
+function findBrownfieldMidMigration(model: DcfPolicyModel): Finding[] {
+  if (model.defaultAction === 'deny') return [];
+  const monitorDenies = model.policies.filter(
+    (p) => p.enforcement === false && p.action === 'deny' && p.logging
+  );
+  if (monitorDenies.length === 0) return [];
+  const hasEnforcedDenyAll = model.policies.some(
+    (p) => p.enforcement !== false && p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any'
+  );
+  if (hasEnforcedDenyAll) return [];
+  return [{
+    id: 'brownfield-mid-migration',
+    severity: 'info',
+    category: 'security',
+    frameworks: ['Aviatrix BP'],
+    title: 'Brownfield Migration In Progress',
+    description: `${monitorDenies.length} non-enforced deny rule${monitorDenies.length > 1 ? 's' : ''} with logging enabled detected — this matches the Aviatrix Brownfield Migration Pattern. After reviewing logs to confirm all legitimate traffic is accounted for, enable enforcement on these rules to complete the transition to a deny-by-default posture.`,
+    affectedPolicyIds: monitorDenies.map((p) => p.id),
+  }];
+}
+
 // ---------- Scoring ----------
 
 function calculateScore(findings: Finding[]): number {
@@ -765,6 +845,11 @@ export function evaluateTopology(topology: DcfPolicyModel): EvaluationReport {
   // L4 (eBPF) / L7 (ATS) interaction
   findings.push(...findL4DenyShadowsL7Allow(topology.policies));
 
+  // Guideline-gap checks (from Aviatrix DCF Rule Configuration Guide)
+  findings.push(...findStaticCidrOnlyGroups(topology));
+  findings.push(...findDensePriorities(topology.policies));
+  findings.push(...findBrownfieldMidMigration(topology));
+
   // Sort by severity
   const severityOrder = { error: 0, warning: 1, info: 2 };
   findings.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
@@ -918,6 +1003,14 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
       });
       return next;
     }
+  }
+
+  if (finding.id === 'dense-priorities') {
+    const sorted = [...next.policies].sort((a, b) => a.priority - b.priority);
+    const idToNewPriority = new Map<string, number>();
+    sorted.forEach((p, i) => idToNewPriority.set(p.id, (i + 1) * 10));
+    next.policies = next.policies.map((p) => ({ ...p, priority: idToNewPriority.get(p.id) ?? p.priority }));
+    return next;
   }
 
   return null;

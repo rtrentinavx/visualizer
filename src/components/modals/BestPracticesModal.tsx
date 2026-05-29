@@ -211,6 +211,33 @@ const PRACTICES: Practice[] = [
     description: 'A policy has enforcement turned off (monitor mode).',
     why: 'Monitor mode is great for testing, but forgotten monitor-mode rules create gaps in your security posture. Review regularly.',
   },
+  {
+    id: 'static-cidr-only',
+    severity: 'info',
+    category: 'hygiene',
+    frameworks: ['Aviatrix BP'],
+    title: 'SmartGroups Use Only Static CIDRs',
+    description: 'Multiple SmartGroups rely solely on subnet/CIDR criteria with no cloud tag criteria. New workloads are not automatically enrolled.',
+    why: 'The core value of SmartGroups is dynamic auto-enrollment: when a VM gets a matching tag, it inherits policies immediately. Static CIDRs require manual updates on every new workload. AWS recommends: Environment, Owner, Application, Tier, CostCenter, DataClassification. Azure recommends: env, app, tier, opsteam, costcenter, criticality, confidentiality. GCP recommends: environment, team, component. Mix tag criteria with CIDRs for subnets that will never have new VMs.',
+  },
+  {
+    id: 'dense-priorities',
+    severity: 'info',
+    category: 'naming',
+    frameworks: ['Aviatrix BP'],
+    title: 'Priority Values Too Dense',
+    description: 'Policies use tightly-packed priority values with little room to insert new rules between existing ones.',
+    why: 'Aviatrix Best Practice: use priority bands with spacing of 10–100 to follow the recommended numbering pattern — 1x = Global Blacklist, 5x = Global Whitelist, 100 = Threat Feeds, 1,xxx = Noisy/Scanning, 2,xxx = Shared Services, 3,xxx = Brownfield Allow-All, 7,xxx = Internet L4, 8,xxx = Internet L7. Dense consecutive integers (1, 2, 3…) force full renumbering every time a rule needs to be inserted, which inflates push diffs and increases the risk of ordering mistakes.',
+  },
+  {
+    id: 'brownfield-mid-migration',
+    severity: 'info',
+    category: 'security',
+    frameworks: ['Aviatrix BP'],
+    title: 'Brownfield Migration In Progress',
+    description: 'Non-enforced deny rules with logging enabled are present but no enforced catch-all deny exists yet.',
+    why: 'This matches the Aviatrix Brownfield Migration Pattern: run non-enforced deny rules with logging to monitor unmatched traffic without disrupting production. After a monitoring period, review logs to confirm all legitimate flows are covered by allow rules, then enable enforcement to lock down undefined traffic. Skipping the review and enforcing immediately can black-hole production traffic.',
+  },
 ];
 
 const severityConfig = {
@@ -266,7 +293,7 @@ export default function BestPracticesModal({ onClose }: { onClose: () => void })
             <BookOpen size={18} className="text-[var(--color-accent-blue)]" />
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">Best Practices Reference</h2>
-              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">21 checks aligned to Aviatrix, CIS, and NIST Zero Trust</p>
+              <p className="text-xs text-[var(--color-text-muted)] mt-0.5">25 checks aligned to Aviatrix, CIS, and NIST Zero Trust</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-[var(--color-surface-elevated)] text-[var(--color-text-muted)] transition-colors">

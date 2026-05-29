@@ -45,11 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         models = await listOpenAICompatible(apiBaseUrl, apiKey);
         break;
       case 'bedrock':
-        // Bedrock model listing requires @aws-sdk/client-bedrock (different package
-        // from -runtime which we already have). Until that's wired, return a curated
-        // list of commonly available foundation models. Users can still type a model
-        // ID directly in the input.
-        models = bedrockCurated();
+        models = await listBedrock(requireKey(apiKey, 'bedrock'), apiBaseUrl);
         break;
       case 'ollama':
       case 'lmstudio':
@@ -124,4 +120,82 @@ function bedrockCurated(): ModelInfo[] {
     { id: 'meta.llama3-2-90b-instruct-v1:0', name: 'Llama 3.2 90B' },
     { id: 'meta.llama3-1-70b-instruct-v1:0', name: 'Llama 3.1 70B' },
   ];
+}
+
+async function listBedrock(apiKey: string, regionOrUrl?: string): Promise<ModelInfo[]> {
+  // Accept bare region ("us-east-1"), full base URL, or default to us-east-1
+  let region = 'us-east-1';
+  if (regionOrUrl) {
+    const m = regionOrUrl.match(/bedrock[.-]([a-z0-9-]+)\.amazonaws\.com/);
+    if (m) {
+      region = m[1];
+    } else if (/^[a-z]{2}-[a-z]+-\d+$/.test(regionOrUrl)) {
+      region = regionOrUrl;
+    }
+  }
+
+  const base = `https://bedrock.${region}.amazonaws.com`;
+  const headers = { Authorization: `Bearer ${apiKey}` };
+
+  // Tolerate partial failures: a key may have InvokeModel but not ListFoundationModels
+  const [fmResult, ipResult] = await Promise.allSettled([
+    fetchBedrockFoundationModels(base, headers),
+    fetchBedrockInferenceProfiles(base, headers),
+  ]);
+
+  const fmModels = fmResult.status === 'fulfilled' ? fmResult.value : [];
+  const ipModels = ipResult.status === 'fulfilled' ? ipResult.value : [];
+
+  if (fmModels.length === 0 && ipModels.length === 0) {
+    return bedrockCurated();
+  }
+
+  // Inference profiles take priority (cross-region, expose newer models like Claude 4)
+  const profileIds = new Set(ipModels.map((m) => m.id));
+  const fmFiltered = fmModels.filter((m) => !profileIds.has(m.id));
+
+  return [...ipModels, ...fmFiltered].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+async function fetchBedrockFoundationModels(base: string, headers: Record<string, string>): Promise<ModelInfo[]> {
+  const url = `${base}/foundation-models?byOutputModality=TEXT&byInferenceType=ON_DEMAND`;
+  const r = await fetchWithTimeout(url, { headers });
+  if (!r.ok) throw new Error(`Bedrock foundation-models: ${r.status}`);
+  const data = await r.json() as {
+    modelSummaries?: Array<{
+      modelId: string;
+      modelName?: string;
+      providerName?: string;
+      inputModalities?: string[];
+    }>;
+  };
+  return (data.modelSummaries ?? [])
+    .filter((m) => {
+      if (!(m.inputModalities ?? []).some((mod) => /text/i.test(mod))) return false;
+      if (/embed/i.test(m.modelId)) return false;
+      if (m.providerName?.toLowerCase().includes('stability')) return false;
+      return true;
+    })
+    .map((m) => ({ id: m.modelId, name: m.modelName }));
+}
+
+async function fetchBedrockInferenceProfiles(base: string, headers: Record<string, string>): Promise<ModelInfo[]> {
+  const results: ModelInfo[] = [];
+  let nextToken: string | undefined;
+  do {
+    const qs = nextToken
+      ? `typeEquals=SYSTEM_DEFINED&maxResults=100&nextToken=${encodeURIComponent(nextToken)}`
+      : `typeEquals=SYSTEM_DEFINED&maxResults=100`;
+    const r = await fetchWithTimeout(`${base}/inference-profiles?${qs}`, { headers });
+    if (!r.ok) throw new Error(`Bedrock inference-profiles: ${r.status}`);
+    const data = await r.json() as {
+      inferenceProfileSummaries?: Array<{ inferenceProfileId: string; inferenceProfileName?: string }>;
+      nextToken?: string;
+    };
+    for (const p of data.inferenceProfileSummaries ?? []) {
+      results.push({ id: p.inferenceProfileId, name: p.inferenceProfileName });
+    }
+    nextToken = data.nextToken;
+  } while (nextToken);
+  return results;
 }
