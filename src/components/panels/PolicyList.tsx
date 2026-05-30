@@ -254,10 +254,11 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
                     }}
                   >
                     {onBulkDeletePolicies && (
-                      <td className="px-3 py-2 w-8" onClick={(e) => { e.stopPropagation(); toggleRow(p.id); }}>
+                      <td className="px-3 py-2 w-8">
                         <input
                           type="checkbox"
                           checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
                           onChange={() => toggleRow(p.id)}
                           className="cursor-pointer accent-[var(--color-aviatrix)]"
                           aria-label={`Select policy ${p.name}`}
