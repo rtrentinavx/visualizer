@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -303,11 +303,19 @@ function PolicyGraphInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges);
 
-  // Keep React Flow state in sync when topology or graph state changes
-  useEffect(() => { setNodes(rfNodes); }, [rfNodes, setNodes]);
+  // Keep React Flow state in sync when topology or graph state changes.
+  // Also re-fit the view whenever the node count changes (groups added/removed).
+  const prevNodeCount = useRef(rfNodes.length);
+  useEffect(() => {
+    setNodes(rfNodes);
+    if (rfNodes.length !== prevNodeCount.current) {
+      prevNodeCount.current = rfNodes.length;
+      setHasFit(false); // trigger re-fit on next nodesInitialized tick
+    }
+  }, [rfNodes, setNodes, setHasFit]);
   useEffect(() => { setEdges(rfEdges); }, [rfEdges, setEdges]);
 
-  // Fit view once nodes are measured
+  // Fit view once nodes are measured (and again when node count changes)
   if (nodesInitialized && !hasFit) {
     setHasFit(true);
     fitView({ padding: 0.2, duration: 400 });
