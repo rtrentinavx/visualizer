@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -9,8 +9,11 @@ import {
   useNodesInitialized,
   useReactFlow,
   ReactFlowProvider,
+  BaseEdge,
+  getStraightPath,
   type Node,
   type Edge,
+  type EdgeProps,
   type NodeMouseHandler,
   type EdgeMouseHandler,
   BackgroundVariant,
@@ -32,6 +35,33 @@ interface PolicyGraphProps {
   onSelectPolicy: (policyId: string) => void;
   onCreatePolicy: (srcId: string, dstId: string) => void;
   onSelectGroup: (groupId: string) => void;
+}
+
+// ---------------------------------------------------------------------------
+// Custom edge — wide invisible hit zone so thin lines are easy to click
+// ---------------------------------------------------------------------------
+
+function PolicyEdge({ id, sourceX, sourceY, targetX, targetY, style, markerEnd, label, labelStyle, labelBgStyle, labelBgPadding, labelBgBorderRadius }: EdgeProps) {
+  const [edgePath, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
+  return (
+    <>
+      {/* invisible wide hit zone */}
+      <path d={edgePath} fill="none" stroke="transparent" strokeWidth={16} />
+      <BaseEdge
+        id={id}
+        path={edgePath}
+        style={style}
+        markerEnd={markerEnd}
+        label={label}
+        labelX={labelX}
+        labelY={labelY}
+        labelStyle={labelStyle}
+        labelBgStyle={labelBgStyle}
+        labelBgPadding={labelBgPadding}
+        labelBgBorderRadius={labelBgBorderRadius}
+      />
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +90,7 @@ const SPECIAL_ANY: SmartGroup = {
 };
 
 const NODE_TYPES = { groupNode: GroupNode };
+const EDGE_TYPES = { policy: PolicyEdge };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -174,7 +205,7 @@ function buildReactFlowEdges(
         id: ge.id,
         source: ge.source,
         target: ge.target,
-        type: 'default',
+        type: 'policy',
         style,
         markerEnd: {
           type: 'arrowclosed' as const,
@@ -269,8 +300,12 @@ function PolicyGraphInner({
     [groupedEdges, graphState.filterAction, graphState.filterHasWebGroup, graphState.filterHasThreatGroup, graphState.isolatedNodeId],
   );
 
-  const [nodes, , onNodesChange] = useNodesState(rfNodes);
-  const [edges, , onEdgesChange] = useEdgesState(rfEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(rfNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(rfEdges);
+
+  // Keep React Flow state in sync when topology or graph state changes
+  useEffect(() => { setNodes(rfNodes); }, [rfNodes, setNodes]);
+  useEffect(() => { setEdges(rfEdges); }, [rfEdges, setEdges]);
 
   // Fit view once nodes are measured
   if (nodesInitialized && !hasFit) {
@@ -395,6 +430,7 @@ function PolicyGraphInner({
           nodes={nodes}
           edges={edges}
           nodeTypes={NODE_TYPES}
+          edgeTypes={EDGE_TYPES}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
