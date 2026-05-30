@@ -197,7 +197,7 @@ function FilterCombobox({
 // Main component
 // ---------------------------------------------------------------------------
 
-export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onSelectGroup, onSelectPolicy }: PolicyMatrixProps) {
+export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onSelectGroup }: PolicyMatrixProps) {
   const [sourceFilter, setSourceFilter] = useState('');
   const [destFilter, setDestFilter] = useState('');
   const [showAllGroups, setShowAllGroups] = useState(false);
@@ -239,9 +239,8 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
   const anyFilterActive = sourceFilter !== '' || destFilter !== '';
   const isFiltered = filteredRows.length !== groups.length || filteredCols.length !== groups.length;
 
-  const handleCellClick = (srcId: string, dstId: string, hasPolicies: boolean) => {
+  const handleCellClick = (srcId: string, dstId: string) => {
     onSelectCell(srcId, dstId);
-    if (!hasPolicies) onSelectPolicy('__new__', srcId, dstId);
   };
 
   return (
@@ -415,7 +414,7 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
                       return (
                         <div
                           key={`${src.id}-${dst.id}`}
-                          onClick={() => handleCellClick(src.id, dst.id, !isEmpty)}
+                          onClick={() => handleCellClick(src.id, dst.id)}
                           className={`group relative flex flex-col gap-0.5 p-1.5 rounded border cursor-pointer transition-colors ${isSelected ? 'ring-2 ring-[var(--color-accent-blue)]' : ''} ${
                             effective
                               ? effective.action === 'allow'
