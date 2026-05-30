@@ -88,10 +88,9 @@
 ## Backlog
 
 ### Data & Integration
-- [ ] **Live flow ingestion** — Ingest real NetFlow/sFlow/pcap data to populate flows automatically
-- [ ] **Aviatrix Controller API import** — Pull live SmartGroups and policies from a real controller
 - [ ] **CSV/Excel import/export** — Bulk policy editing in spreadsheets
-- [ ] **Version history / diff view** — Show what changed between saves
+- [x] **Aviatrix Controller API import** — Pull live SmartGroups and policies from a real controller (shipped)
+- [x] **Version history / diff view** — Show what changed between saves (shipped: `historyStorage.ts` ring buffer, `topologyDiff.ts`, `HistoryModal`, `TopologyDiffView`)
 
 ### Simulation & Analysis
 - [ ] **Batch simulation** — Test multiple flows at once (e.g. from a packet capture)
