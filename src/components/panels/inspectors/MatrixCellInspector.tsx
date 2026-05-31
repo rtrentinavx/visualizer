@@ -8,7 +8,6 @@ interface MatrixCellInspectorProps {
   topology: DcfPolicyModel;
   selectedCell: { srcId: string; dstId: string } | null;
   onCreateItem: (itemType: string, data: Record<string, unknown>) => void;
-  onUpdateItem: (itemType: string, itemId: string, data: Record<string, unknown>) => void;
   onSelectPolicy: (policyId: string | null, srcId?: string, dstId?: string) => void;
 }
 
@@ -99,7 +98,7 @@ function AssignExistingPicker({
         )}
       </div>
       <p className="text-[9px] text-[var(--color-text-muted)]">
-        The selected policy's source and destination will be updated to this cell.
+        Opens the selected policy in the inspector. Src/dst are unchanged.
       </p>
     </div>
   );
@@ -107,7 +106,7 @@ function AssignExistingPicker({
 
 // ---------------------------------------------------------------------------
 
-export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onUpdateItem, onSelectPolicy }: MatrixCellInspectorProps) {
+export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onSelectPolicy }: MatrixCellInspectorProps) {
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [showAssignPicker, setShowAssignPicker] = useState(false);
 
@@ -208,10 +207,7 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
             srcId={selectedCell.srcId}
             dstId={selectedCell.dstId}
             onAssign={(p) => {
-              onUpdateItem('policy', p.id, {
-                srcGroupId: selectedCell.srcId,
-                dstGroupId: selectedCell.dstId,
-              });
+              onSelectPolicy(p.id);
               setShowAssignPicker(false);
             }}
             onCancel={() => setShowAssignPicker(false)}
