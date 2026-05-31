@@ -98,7 +98,7 @@ function AssignExistingPicker({
         )}
       </div>
       <p className="text-[9px] text-[var(--color-text-muted)]">
-        Opens the selected policy in the inspector. Src/dst are unchanged.
+        Creates a new policy with this cell's src/dst using the selected policy's config.
       </p>
     </div>
   );
@@ -207,7 +207,20 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
             srcId={selectedCell.srcId}
             dstId={selectedCell.dstId}
             onAssign={(p) => {
-              onSelectPolicy(p.id);
+              onCreateItem('policy', {
+                name: p.name,
+                srcGroupId: selectedCell.srcId,
+                dstGroupId: selectedCell.dstId,
+                action: p.action,
+                protocol: p.protocol,
+                ports: p.ports,
+                logging: p.logging,
+                enforcement: p.enforcement,
+                decrypt: p.decrypt,
+                threatGroup: p.threatGroup,
+                geoGroup: p.geoGroup,
+                webGroupIds: p.webGroupIds,
+              });
               setShowAssignPicker(false);
             }}
             onCancel={() => setShowAssignPicker(false)}
