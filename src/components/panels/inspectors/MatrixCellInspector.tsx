@@ -219,7 +219,8 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
                 decrypt: p.decrypt,
                 threatGroup: p.threatGroup,
                 geoGroup: p.geoGroup,
-                webGroupIds: p.webGroupIds,
+                // webGroupIds, srcExcludeGroupIds, dstExcludeGroupIds intentionally
+                // omitted — they are specific to the original policy's src/dst context
               });
               setShowAssignPicker(false);
             }}
