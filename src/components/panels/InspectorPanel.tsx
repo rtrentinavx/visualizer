@@ -58,6 +58,7 @@ export default function InspectorPanel({
         topology={topology}
         selectedCell={selectedCell}
         onCreateItem={onCreateItem}
+        onUpdateItem={onUpdateItem}
         onSelectPolicy={onSelectPolicy}
       />
     );

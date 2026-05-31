@@ -8,6 +8,7 @@ interface MatrixCellInspectorProps {
   topology: DcfPolicyModel;
   selectedCell: { srcId: string; dstId: string } | null;
   onCreateItem: (itemType: string, data: Record<string, unknown>) => void;
+  onUpdateItem: (itemType: string, itemId: string, data: Record<string, unknown>) => void;
   onSelectPolicy: (policyId: string | null, srcId?: string, dstId?: string) => void;
 }
 
@@ -98,7 +99,7 @@ function AssignExistingPicker({
         )}
       </div>
       <p className="text-[9px] text-[var(--color-text-muted)]">
-        Creates a new policy with this cell's src/dst using the selected policy's config.
+        Updates the selected policy's src/dst to this cell. All other config is preserved.
       </p>
     </div>
   );
@@ -106,7 +107,7 @@ function AssignExistingPicker({
 
 // ---------------------------------------------------------------------------
 
-export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onSelectPolicy }: MatrixCellInspectorProps) {
+export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onUpdateItem, onSelectPolicy }: MatrixCellInspectorProps) {
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [showAssignPicker, setShowAssignPicker] = useState(false);
 
@@ -207,19 +208,9 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
             srcId={selectedCell.srcId}
             dstId={selectedCell.dstId}
             onAssign={(p) => {
-              onCreateItem('policy', {
-                name: p.name,
+              onUpdateItem('policy', p.id, {
                 srcGroupId: selectedCell.srcId,
                 dstGroupId: selectedCell.dstId,
-                action: p.action,
-                protocol: p.protocol,
-                ports: p.ports,
-                logging: p.logging,
-                enforcement: p.enforcement,
-                decrypt: p.decrypt,
-                threatGroup: p.threatGroup,
-                geoGroup: p.geoGroup,
-                webGroupIds: p.webGroupIds,
               });
               setShowAssignPicker(false);
             }}
