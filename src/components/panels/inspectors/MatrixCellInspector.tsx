@@ -49,7 +49,7 @@ function AssignExistingPicker({
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Copy from existing</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)]">Use existing policy</span>
         <button type="button" onClick={onCancel} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)]">
           <X size={12} />
         </button>
@@ -197,7 +197,7 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
               title="Copy an existing policy to this src/dst pair"
             >
               <Copy size={13} />
-              Copy Existing
+              Use Existing
             </button>
           </div>
         )}
