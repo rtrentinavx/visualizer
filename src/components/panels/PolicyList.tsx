@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Plus, Search, X, ChevronUp, ChevronDown, ChevronsUpDown,
   ShieldCheck, ShieldX, Lock, Globe, Ban, List, Trash2,
@@ -57,8 +57,8 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
     return m;
   }, [topology.smartGroups]);
 
-  const gName = (id: string) => groupMap.get(id) ?? id;
-  const gNames = (ids: string[]) => ids.map(gName).join(', ');
+  const gName = useCallback((id: string) => groupMap.get(id) ?? id, [groupMap]);
+  const gNames = useCallback((ids: string[]) => ids.map(gName).join(', '), [gName]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -71,7 +71,7 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
       p.protocol.toLowerCase().includes(q) ||
       (p.ports ?? '').toLowerCase().includes(q)
     );
-  }, [topology.policies, groupMap, search]);
+  }, [topology.policies, search, gName]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -86,7 +86,7 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
       }
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [filtered, sortKey, sortDir, groupMap]);
+  }, [filtered, sortKey, sortDir, gNames]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));

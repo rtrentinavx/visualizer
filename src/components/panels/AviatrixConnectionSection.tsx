@@ -131,6 +131,7 @@ export default function AviatrixConnectionSection() {
       const data = await r.json() as { apiVersion?: string; egressIp?: string; error?: string };
       if (!r.ok) throw new Error(data.error ?? `HTTP ${r.status}`);
       // Test passed — mark connectedAt + persist the proxy's egress IP so we can show the correct allow-list IP.
+      // eslint-disable-next-line react-hooks/purity
       const updated: AviatrixConnectionAPI = { ...c, connectedAt: Date.now(), egressIp: data.egressIp ?? c.egressIp };
       await persist({
         ...settings,
