@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { ArrowRight, Boxes, Globe, ShieldAlert, MapPin, ShieldCheck, ShieldX, Lock, Plus, Library, Copy, Search, X } from 'lucide-react';
+import { ArrowRight, Boxes, Globe, ShieldAlert, MapPin, ShieldCheck, ShieldX, Lock, Plus, Library, Copy, Search, X, Trash2 } from 'lucide-react';
 import WebGroupPresetModal from '../../modals/WebGroupPresetModal';
 import type { WebGroupPreset } from '../../../data/webGroupPresets';
 import type { DcfPolicy, DcfPolicyModel } from '../../../types/dcf';
@@ -9,6 +9,7 @@ interface MatrixCellInspectorProps {
   selectedCell: { srcId: string; dstId: string } | null;
   onCreateItem: (itemType: string, data: Record<string, unknown>) => void;
   onUpdateItem: (itemType: string, itemId: string, data: Record<string, unknown>) => void;
+  onDeleteItem: (itemType: string, itemId: string) => void;
   onSelectPolicy: (policyId: string | null, srcId?: string, dstId?: string) => void;
 }
 
@@ -107,7 +108,7 @@ function AssignExistingPicker({
 
 // ---------------------------------------------------------------------------
 
-export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onUpdateItem, onSelectPolicy }: MatrixCellInspectorProps) {
+export default function MatrixCellInspector({ topology, selectedCell, onCreateItem, onUpdateItem, onDeleteItem, onSelectPolicy }: MatrixCellInspectorProps) {
   const [showPresetModal, setShowPresetModal] = useState(false);
   const [showAssignPicker, setShowAssignPicker] = useState(false);
 
@@ -149,12 +150,16 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
             ) : (
               <div className="space-y-1.5">
                 {cellPolicies.map((p) => (
-                  <button
+                  <div
                     key={p.id}
-                    onClick={() => onSelectPolicy(p.id)}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded text-xs text-left transition-colors"
-                    style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border-subtle)' }}
+                    className="flex items-center gap-1 rounded text-xs"
+                    style={{ border: '1px solid var(--color-border-subtle)' }}
                   >
+                    <button
+                      onClick={() => onSelectPolicy(p.id)}
+                      className="flex-1 flex items-center gap-2 px-2.5 py-2 text-left transition-colors min-w-0"
+                      style={{ backgroundColor: 'var(--color-surface)' }}
+                    >
                     {p.action === 'allow' ? (
                       <ShieldCheck size={14} className="text-green-400 shrink-0" />
                     ) : (
@@ -173,7 +178,15 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
                       </div>
                     </div>
                     <span className="text-[10px] text-[var(--color-accent-blue)] shrink-0">Edit</span>
-                  </button>
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onDeleteItem('policy', p.id); }}
+                      className="px-2 py-2 text-[var(--color-text-muted)] hover:text-red-400 transition-colors shrink-0"
+                      title="Delete policy"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

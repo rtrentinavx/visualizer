@@ -59,6 +59,7 @@ export default function InspectorPanel({
         selectedCell={selectedCell}
         onCreateItem={onCreateItem}
         onUpdateItem={onUpdateItem}
+        onDeleteItem={onDeleteItem}
         onSelectPolicy={onSelectPolicy}
       />
     );
