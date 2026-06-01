@@ -156,6 +156,12 @@ function applyUpdateItem(state: DcfPolicyModel, itemType: ItemType, itemId: stri
       if ('dstGroupId' in data) {
         normalizedData.dstGroupId = toStringArray(data.dstGroupId);
       }
+      // If the update explicitly passes empty arrays, treat as delete
+      const srcEmpty = Array.isArray(data.srcGroupId) && (data.srcGroupId as string[]).length === 0;
+      const dstEmpty = Array.isArray(data.dstGroupId) && (data.dstGroupId as string[]).length === 0;
+      if (srcEmpty || dstEmpty) {
+        return { ...state, policies: state.policies.filter((p) => p.id !== itemId) };
+      }
       return { ...state, policies: state.policies.map((p) => (p.id === itemId ? { ...p, ...normalizedData } as DcfPolicy : p)) };
     }
   }
