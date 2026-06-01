@@ -289,12 +289,12 @@ export default function GraphToolbar({
       <div className="flex items-center gap-2.5 min-w-0 shrink-0">
         <div className="flex items-center gap-1.5 shrink-0">
           <GitGraph size={15} style={{ color: 'var(--color-aviatrix)' }} />
-          <span
-            className="text-sm font-semibold tracking-tight"
+          <h2
+            className="text-sm font-semibold tracking-tight m-0"
             style={{ color: 'var(--color-text-primary)' }}
           >
             Policy Graph
-          </span>
+          </h2>
         </div>
 
         <span
