@@ -30,8 +30,8 @@ describe('applyPolicyTemplate', () => {
     expect(result.added.policies).toHaveLength(1);
     expect(result.added.smartGroups).toHaveLength(0);
     expect(result.added.policies[0]!.action).toBe('deny');
-    expect(result.added.policies[0]!.srcGroupId).toBe('sg-any');
-    expect(result.added.policies[0]!.dstGroupId).toBe('sg-any');
+    expect(result.added.policies[0]!.srcGroupId).toStrictEqual(['sg-any']);
+    expect(result.added.policies[0]!.dstGroupId).toStrictEqual(['sg-any']);
     expect(result.added.policies[0]!.priority).toBe(9999);
     expect(result.topology.policies).toHaveLength(1);
   });

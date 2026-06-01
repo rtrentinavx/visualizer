@@ -255,8 +255,8 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
       const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
       const web = topology.smartGroups.find((g) => g.name === 'Web')!;
       const app = topology.smartGroups.find((g) => g.name === 'App')!;
-      expect(topology.policies[0]!.srcGroupId).toBe(web.id);
-      expect(topology.policies[0]!.dstGroupId).toBe(app.id);
+      expect(topology.policies[0]!.srcGroupId).toStrictEqual([web.id]);
+      expect(topology.policies[0]!.dstGroupId).toStrictEqual([app.id]);
       expect(unresolvedRefs).toEqual([]);
     });
 
@@ -275,8 +275,8 @@ describe('Terraform HCL import — real Aviatrix provider shapes', () => {
         }
       `;
       const { topology, unresolvedRefs } = importTerraformHCLWithReport(hcl);
-      expect(topology.policies[0]!.srcGroupId).toBe('sg-any');
-      expect(topology.policies[0]!.dstGroupId).toBe('sg-any');
+      expect(topology.policies[0]!.srcGroupId).toStrictEqual(['sg-any']);
+      expect(topology.policies[0]!.dstGroupId).toStrictEqual(['sg-any']);
       // Deduped by Set — same uuid would only appear once even if used in many policies.
       expect(unresolvedRefs).toEqual(expect.arrayContaining(['unknown-uuid-1', 'unknown-uuid-2']));
       expect(unresolvedRefs).toHaveLength(2);

@@ -624,7 +624,7 @@ describe('applyAutoFix', () => {
     const before = evaluateTopology(t).findings.find((f) => f.id === 'webgroup-egress-wgrule');
     expect(before).toBeDefined();
     const fixed = applyAutoFix(t, before!)!;
-    expect(fixed.policies.find((p) => p.id === 'wgrule')!.dstGroupId).toBe('sg-internet');
+    expect(fixed.policies.find((p) => p.id === 'wgrule')!.dstGroupId).toStrictEqual(['sg-internet']);
   });
 
   it('tls-decrypt-port-<id> → sets ports to 443', () => {

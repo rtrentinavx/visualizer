@@ -63,7 +63,7 @@ describe('importPanPolicy — vsys XML', () => {
 
   it('maps "any" destination to sg-any', () => {
     const { topology } = importPanPolicy(BASIC_XML);
-    expect(topology.policies[0]!.dstGroupId).toBe('sg-any');
+    expect(topology.policies[0]!.dstGroupId).toStrictEqual(['sg-any']);
   });
 
   it('fans out application-default with multiple App-IDs into N policies', () => {

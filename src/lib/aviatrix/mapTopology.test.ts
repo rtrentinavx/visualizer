@@ -83,8 +83,8 @@ describe('mapTopology', () => {
     };
     const { topology } = mapTopology(raw);
     const policy = topology.policies[0]!;
-    expect(policy.srcGroupId).toBe('sg-src');
-    expect(policy.dstGroupId).toBe('sg-dst');
+    expect(policy.srcGroupId).toStrictEqual(['sg-src']);
+    expect(policy.dstGroupId).toStrictEqual(['sg-dst']);
     expect(policy.webGroupIds).toEqual(['wg-sfdc']);
     expect(policy.ports).toBe('443');
     expect(policy.action).toBe('allow');
@@ -220,8 +220,8 @@ describe('mapTopology', () => {
     };
     const { topology } = mapTopology(raw);
     const policy = topology.policies[0]!;
-    expect(policy.srcGroupId).toBe('sg-src');
-    expect(policy.dstGroupId).toBe('sg-dst');
+    expect(policy.srcGroupId).toStrictEqual(['sg-src']);
+    expect(policy.dstGroupId).toStrictEqual(['sg-dst']);
     expect(policy.webGroupIds).toEqual(['wg-sfdc']);
     expect(policy.ports).toBe('443,8080-8090');
     expect(policy.action).toBe('allow');
@@ -250,8 +250,8 @@ describe('mapTopology', () => {
     const { topology } = mapTopology(raw);
     expect(topology.smartGroups.find(g => g.id === 'sg-any')).toBeDefined();
     expect(topology.smartGroups.find(g => g.id === 'sg-internet')).toBeDefined();
-    expect(topology.policies[0]!.srcGroupId).toBe('sg-any');
-    expect(topology.policies[0]!.dstGroupId).toBe('sg-internet');
+    expect(topology.policies[0]!.srcGroupId).toStrictEqual(['sg-any']);
+    expect(topology.policies[0]!.dstGroupId).toStrictEqual(['sg-internet']);
     expect(topology.policies[0]!.protocol).toBe('any');
   });
 });

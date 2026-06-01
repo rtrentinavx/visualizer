@@ -117,8 +117,8 @@ config firewall policy
 end
 `;
     const { topology } = importFortiPolicy(conf);
-    expect(topology.policies[0]!.srcGroupId).toBe('sg-any');
-    expect(topology.policies[0]!.dstGroupId).toBe('sg-any');
+    expect(topology.policies[0]!.srcGroupId).toStrictEqual(['sg-any']);
+    expect(topology.policies[0]!.dstGroupId).toStrictEqual(['sg-any']);
   });
 
   it('always seeds sg-any and sg-internet', () => {
@@ -385,7 +385,7 @@ describe('importFortiPolicy — XML (FortiManager format)', () => {
   it('maps "all" dstaddr to sg-any in XML', () => {
     const { topology } = importFortiPolicy(BASIC_XML);
     const pol = topology.policies.find((p) => p.name.includes('allow-corp-web'))!;
-    expect(pol.dstGroupId).toBe('sg-any');
+    expect(pol.dstGroupId).toStrictEqual(['sg-any']);
   });
 
   it('seeds sg-any and sg-internet regardless of XML content', () => {
@@ -426,7 +426,7 @@ describe('buildDcfModel', () => {
     const { topology } = buildDcfModel(addresses, new Map(), new Map(), new Map(), policies);
     const netA = topology.smartGroups.filter((g) => g.name === 'NET-A');
     expect(netA).toHaveLength(1);
-    expect(topology.policies[0]!.srcGroupId).toBe(topology.policies[1]!.srcGroupId);
+    expect(topology.policies[0]!.srcGroupId).toStrictEqual(topology.policies[1]!.srcGroupId);
   });
 
   it('produces geography warning and no criteria', () => {
