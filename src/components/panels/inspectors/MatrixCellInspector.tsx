@@ -180,9 +180,19 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
                     <span className="text-[10px] text-[var(--color-accent-blue)] shrink-0">Edit</span>
                     </button>
                     <button
-                      onClick={(e) => { e.stopPropagation(); onDeleteItem('policy', p.id); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!selectedCell) return;
+                        const newSrc = p.srcGroupId.filter((id) => id !== selectedCell.srcId);
+                        const newDst = p.dstGroupId.filter((id) => id !== selectedCell.dstId);
+                        if (newSrc.length === 0 || newDst.length === 0) {
+                          onDeleteItem('policy', p.id);
+                        } else {
+                          onUpdateItem('policy', p.id, { srcGroupId: newSrc, dstGroupId: newDst });
+                        }
+                      }}
                       className="px-2 py-2 text-[var(--color-text-muted)] hover:text-red-400 transition-colors shrink-0"
-                      title="Delete policy"
+                      title="Remove this src/dst association from the policy"
                     >
                       <Trash2 size={13} />
                     </button>
