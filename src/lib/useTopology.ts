@@ -1,5 +1,6 @@
 import { useReducer, useEffect, useRef, useState } from 'react';
 import type { DcfPolicyModel } from '../types/dcf';
+import { normalizePolicyGroupIds } from '../types/dcf';
 import { decryptTopology, saveTopologyStorage } from './cryptoStorage';
 import { demoTopology } from '../data/demoTopology';
 import { topologyReducer, type TopologyAction } from './topologyReducer';
@@ -10,6 +11,11 @@ export interface UseTopologyResult {
   dispatch: React.Dispatch<TopologyAction>;
   isReady: boolean;
   isFreshLoad: boolean;
+}
+
+function migrateTopology(t: DcfPolicyModel): DcfPolicyModel {
+  t.policies.forEach((p) => normalizePolicyGroupIds(p as unknown as Record<string, unknown>));
+  return t;
 }
 
 export function useTopology(): UseTopologyResult {
@@ -24,12 +30,13 @@ export function useTopology(): UseTopologyResult {
     decryptTopology<DcfPolicyModel>().then((saved) => {
       if (cancelled) return;
       if (saved) {
-        dispatch({ type: 'replace', topology: saved });
+        dispatch({ type: 'replace', topology: migrateTopology(saved) });
       } else {
         try {
           const plain = localStorage.getItem('dcf-topology-v1');
           if (plain) {
             const parsed = JSON.parse(plain);
+            migrateTopology(parsed);
             dispatch({ type: 'replace', topology: parsed });
             saveTopologyStorage(parsed).catch(() => {});
           } else {
