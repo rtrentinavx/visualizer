@@ -205,7 +205,7 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
 
   const { allGroups, groups, matrix } = useMemo(() => {
     const allGroups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
-    const policyGroupIds = new Set(topology.policies.flatMap((p) => [p.srcGroupId, p.dstGroupId]).filter(Boolean));
+    const policyGroupIds = new Set(topology.policies.flatMap((p) => [...p.srcGroupId, ...p.dstGroupId]).filter(Boolean));
     const groups = showAllGroups ? allGroups : allGroups.filter((g) => policyGroupIds.has(g.id));
 
     const matrix: Record<string, Record<string, DcfPolicy[]>> = {};
@@ -213,7 +213,7 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
       matrix[src.id] = {};
       for (const dst of groups) {
         matrix[src.id]![dst.id] = topology.policies.filter(
-          (p) => (p.srcGroupId === src.id || p.srcGroupId === 'sg-any') && (p.dstGroupId === dst.id || p.dstGroupId === 'sg-any')
+          (p) => (p.srcGroupId.includes(src.id) || p.srcGroupId.includes('sg-any')) && (p.dstGroupId.includes(dst.id) || p.dstGroupId.includes('sg-any'))
         );
       }
     }

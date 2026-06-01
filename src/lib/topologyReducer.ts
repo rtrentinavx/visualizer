@@ -27,6 +27,12 @@ const EMPTY_TOPOLOGY: DcfPolicyModel = {
   flows: [],
 };
 
+function toStringArray(value: unknown, fallback = 'sg-any'): string[] {
+  if (Array.isArray(value)) return value as string[];
+  if (typeof value === 'string' && value.length > 0) return [value];
+  return [fallback];
+}
+
 export function topologyReducer(state: DcfPolicyModel, action: TopologyAction): DcfPolicyModel {
   switch (action.type) {
     case 'replace':
@@ -56,7 +62,9 @@ export function topologyReducer(state: DcfPolicyModel, action: TopologyAction): 
       return {
         ...state,
         smartGroups: state.smartGroups.filter((g) => !ids.has(g.id)),
-        policies: state.policies.filter((p) => !ids.has(p.srcGroupId) && !ids.has(p.dstGroupId)),
+        policies: state.policies.filter(
+          (p) => !p.srcGroupId.some((id) => ids.has(id)) && !p.dstGroupId.some((id) => ids.has(id))
+        ),
       };
     }
 
@@ -117,8 +125,8 @@ function applyNewItem(state: DcfPolicyModel, itemType: ItemType, data: Record<st
         id: `pol-${Date.now()}`,
         name: 'New Policy',
         priority: maxPriority + 10,
-        srcGroupId: (data.srcGroupId as string) || 'sg-any',
-        dstGroupId: (data.dstGroupId as string) || 'sg-any',
+        srcGroupId: toStringArray(data.srcGroupId),
+        dstGroupId: toStringArray(data.dstGroupId),
         action: 'allow',
         protocol: 'tcp',
         logging: false,
@@ -140,8 +148,16 @@ function applyUpdateItem(state: DcfPolicyModel, itemType: ItemType, itemId: stri
       return { ...state, threatGroups: state.threatGroups.map((g) => (g.id === itemId ? { ...g, ...data } as ThreatGroup : g)) };
     case 'geoGroup':
       return { ...state, geoGroups: state.geoGroups.map((g) => (g.id === itemId ? { ...g, ...data } as GeoGroup : g)) };
-    case 'policy':
-      return { ...state, policies: state.policies.map((p) => (p.id === itemId ? { ...p, ...data } as DcfPolicy : p)) };
+    case 'policy': {
+      const normalizedData: Record<string, unknown> = { ...data };
+      if ('srcGroupId' in data) {
+        normalizedData.srcGroupId = toStringArray(data.srcGroupId);
+      }
+      if ('dstGroupId' in data) {
+        normalizedData.dstGroupId = toStringArray(data.dstGroupId);
+      }
+      return { ...state, policies: state.policies.map((p) => (p.id === itemId ? { ...p, ...normalizedData } as DcfPolicy : p)) };
+    }
   }
 }
 
@@ -151,7 +167,9 @@ function applyDeleteItem(state: DcfPolicyModel, itemType: ItemType, itemId: stri
       return {
         ...state,
         smartGroups: state.smartGroups.filter((g) => g.id !== itemId),
-        policies: state.policies.filter((p) => p.srcGroupId !== itemId && p.dstGroupId !== itemId),
+        policies: state.policies.filter(
+          (p) => !p.srcGroupId.some((id) => id === itemId) && !p.dstGroupId.some((id) => id === itemId)
+        ),
       };
     case 'webGroup':
       return {

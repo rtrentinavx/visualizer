@@ -35,16 +35,22 @@ function deriveEffectiveAction(sorted: DcfPolicy[]): PolicyAction | 'mixed' {
 }
 
 export function groupPoliciesIntoEdges(policies: DcfPolicy[]): GroupedEdge[] {
-  // Pass 1: bucket into directed (src, dst) map
+  // Pass 1: bucket into directed (src, dst) map — Cartesian product of srcGroupId × dstGroupId
   const edgeMap = new Map<string, DcfPolicy[]>();
   for (const policy of policies) {
-    const key = `edge::${policy.srcGroupId}::${policy.dstGroupId}`;
-    let bucket = edgeMap.get(key);
-    if (!bucket) {
-      bucket = [];
-      edgeMap.set(key, bucket);
+    const srcs = Array.isArray(policy.srcGroupId) ? policy.srcGroupId : [policy.srcGroupId];
+    const dsts = Array.isArray(policy.dstGroupId) ? policy.dstGroupId : [policy.dstGroupId];
+    for (const src of srcs) {
+      for (const dst of dsts) {
+        const key = `edge::${src}::${dst}`;
+        let bucket = edgeMap.get(key);
+        if (!bucket) {
+          bucket = [];
+          edgeMap.set(key, bucket);
+        }
+        bucket.push(policy);
+      }
     }
-    bucket.push(policy);
   }
 
   for (const bucket of edgeMap.values()) {

@@ -16,7 +16,7 @@ function topologyWith(policies: DcfPolicy[]): DcfPolicyModel {
 function policy(id: string, priority: number): DcfPolicy {
   return {
     id, name: id, priority,
-    srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+    srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
     action: 'allow', protocol: 'tcp', logging: false,
   };
 }

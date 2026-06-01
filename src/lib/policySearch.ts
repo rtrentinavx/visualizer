@@ -16,13 +16,6 @@ export interface ResolvedPolicySearchFilter {
   unresolvedNames: string[];
 }
 
-/**
- * Resolve AI-supplied group names to live ids. Names that don't match are
- * collected in `unresolvedNames` — the caller decides whether to surface a
- * warning or proceed with the partial filter. (We don't fail outright on
- * unresolved names because the user may have intended a filter with
- * non-group fields — e.g. "all policies that decrypt".)
- */
 export function resolveSearchFilter(topology: DcfPolicyModel, raw: PolicySearchFilter): ResolvedPolicySearchFilter {
   const unresolved: string[] = [];
   const result: ResolvedPolicySearchFilter = { unresolvedNames: unresolved };
@@ -70,14 +63,10 @@ export function resolveSearchFilter(topology: DcfPolicyModel, raw: PolicySearchF
   return result;
 }
 
-/**
- * Filter the policies array. AND semantics across every set filter field — a
- * policy must satisfy ALL provided constraints to be returned.
- */
 export function searchPolicies(topology: DcfPolicyModel, filter: ResolvedPolicySearchFilter): DcfPolicy[] {
   return topology.policies.filter((p) => {
-    if (filter.srcGroupId && p.srcGroupId !== filter.srcGroupId && filter.srcGroupId !== 'sg-any') return false;
-    if (filter.dstGroupId && p.dstGroupId !== filter.dstGroupId && filter.dstGroupId !== 'sg-any') return false;
+    if (filter.srcGroupId && !p.srcGroupId.includes(filter.srcGroupId) && filter.srcGroupId !== 'sg-any') return false;
+    if (filter.dstGroupId && !p.dstGroupId.includes(filter.dstGroupId) && filter.dstGroupId !== 'sg-any') return false;
     if (filter.dstWebGroupId && !(p.webGroupIds?.includes(filter.dstWebGroupId))) return false;
     if (filter.actions && !filter.actions.includes(p.action)) return false;
     if (filter.protocols && !filter.protocols.includes(p.protocol)) return false;

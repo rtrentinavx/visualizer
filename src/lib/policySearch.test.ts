@@ -20,7 +20,7 @@ function topology(policies: DcfPolicy[] = []): DcfPolicyModel {
 
 function p(overrides: Partial<DcfPolicy> & { id: string }): DcfPolicy {
   return {
-    name: overrides.id, priority: 100, srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+    name: overrides.id, priority: 100, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
     action: 'allow', protocol: 'tcp', logging: true,
     ...overrides,
   };
@@ -53,9 +53,9 @@ describe('resolveSearchFilter', () => {
 describe('searchPolicies', () => {
   it('filters by src + dst group ids', () => {
     const t = topology([
-      p({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-db', action: 'allow' }),
-      p({ id: 'b', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow' }),
-      p({ id: 'c', srcGroupId: 'sg-any', dstGroupId: 'sg-db', action: 'deny' }),
+      p({ id: 'a', srcGroupId: ['sg-web'], dstGroupId: ['sg-db'], action: 'allow' }),
+      p({ id: 'b', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow' }),
+      p({ id: 'c', srcGroupId: ['sg-any'], dstGroupId: ['sg-db'], action: 'deny' }),
     ]);
     const r = resolveSearchFilter(t, { canAnswer: true, srcGroupName: 'Web Tier', dstGroupName: 'Database Tier' });
     expect(searchPolicies(t, r).map((x) => x.id)).toEqual(['a']);
@@ -116,9 +116,9 @@ describe('searchPolicies', () => {
 
   it('combines filters with AND semantics', () => {
     const t = topology([
-      p({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-db', action: 'allow', protocol: 'tcp', ports: '443' }),
-      p({ id: 'b', srcGroupId: 'sg-web', dstGroupId: 'sg-db', action: 'deny', protocol: 'tcp', ports: '443' }),
-      p({ id: 'c', srcGroupId: 'sg-web', dstGroupId: 'sg-db', action: 'allow', protocol: 'tcp', ports: '8080' }),
+      p({ id: 'a', srcGroupId: ['sg-web'], dstGroupId: ['sg-db'], action: 'allow', protocol: 'tcp', ports: '443' }),
+      p({ id: 'b', srcGroupId: ['sg-web'], dstGroupId: ['sg-db'], action: 'deny', protocol: 'tcp', ports: '443' }),
+      p({ id: 'c', srcGroupId: ['sg-web'], dstGroupId: ['sg-db'], action: 'allow', protocol: 'tcp', ports: '8080' }),
     ]);
     const filter = resolveSearchFilter(t, {
       canAnswer: true,

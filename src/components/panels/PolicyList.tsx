@@ -58,14 +58,15 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
   }, [topology.smartGroups]);
 
   const gName = (id: string) => groupMap.get(id) ?? id;
+  const gNames = (ids: string[]) => ids.map(gName).join(', ');
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
     if (!q) return topology.policies;
     return topology.policies.filter((p) =>
       p.name.toLowerCase().includes(q) ||
-      gName(p.srcGroupId).toLowerCase().includes(q) ||
-      gName(p.dstGroupId).toLowerCase().includes(q) ||
+      p.srcGroupId.some((id) => gName(id).toLowerCase().includes(q)) ||
+      p.dstGroupId.some((id) => gName(id).toLowerCase().includes(q)) ||
       p.action.toLowerCase().includes(q) ||
       p.protocol.toLowerCase().includes(q) ||
       (p.ports ?? '').toLowerCase().includes(q)
@@ -78,8 +79,8 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
       switch (sortKey) {
         case 'priority':  cmp = a.priority - b.priority; break;
         case 'name':      cmp = a.name.localeCompare(b.name); break;
-        case 'src':       cmp = gName(a.srcGroupId).localeCompare(gName(b.srcGroupId)); break;
-        case 'dst':       cmp = gName(a.dstGroupId).localeCompare(gName(b.dstGroupId)); break;
+        case 'src':       cmp = gNames(a.srcGroupId).localeCompare(gNames(b.srcGroupId)); break;
+        case 'dst':       cmp = gNames(a.dstGroupId).localeCompare(gNames(b.dstGroupId)); break;
         case 'action':    cmp = a.action.localeCompare(b.action); break;
         case 'protocol':  cmp = a.protocol.localeCompare(b.protocol); break;
       }
@@ -245,7 +246,7 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
                 return (
                   <tr
                     key={p.id}
-                    onClick={() => onSelectPolicy(p.id, p.srcGroupId, p.dstGroupId)}
+                    onClick={() => onSelectPolicy(p.id, p.srcGroupId[0], p.dstGroupId[0])}
                     className="border-b border-[var(--color-border-subtle)] cursor-pointer transition-colors hover:bg-[var(--color-surface-elevated)]"
                     style={{
                       backgroundColor: isSelected
@@ -277,7 +278,7 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
 
                     {/* Source */}
                     <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
-                      <span className="block truncate">{gName(p.srcGroupId)}</span>
+                      <span className="block truncate">{gNames(p.srcGroupId)}</span>
                       {p.srcExcludeGroupIds && p.srcExcludeGroupIds.length > 0 && (
                         <span className="text-[9px] text-[var(--color-accent-red)]">
                           excl. {p.srcExcludeGroupIds.map(gName).join(', ')}
@@ -287,7 +288,7 @@ export default function PolicyList({ topology, onSelectPolicy, onBulkDeletePolic
 
                     {/* Destination */}
                     <td className="px-3 py-2 text-[var(--color-text-secondary)] max-w-[160px]">
-                      <span className="block truncate">{gName(p.dstGroupId)}</span>
+                      <span className="block truncate">{gNames(p.dstGroupId)}</span>
                       {p.dstExcludeGroupIds && p.dstExcludeGroupIds.length > 0 && (
                         <span className="text-[9px] text-[var(--color-accent-red)]">
                           excl. {p.dstExcludeGroupIds.map(gName).join(', ')}

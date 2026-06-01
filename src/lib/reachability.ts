@@ -104,7 +104,7 @@ export function resolveIntent(
 }
 
 function matchesSrc(p: DcfPolicy, srcId: string): boolean {
-  if (p.srcGroupId !== srcId && p.srcGroupId !== 'sg-any') return false;
+  if (!p.srcGroupId.includes(srcId) && !p.srcGroupId.includes('sg-any')) return false;
   if (p.srcExcludeGroupIds?.includes(srcId)) return false;
   return true;
 }
@@ -115,12 +115,12 @@ function matchesDst(p: DcfPolicy, intent: ResolvedReachabilityIntent): boolean {
     // policy attaches WebGroups, the target webgroup must be among them; if
     // it attaches none, the policy is a broader internet allow that still
     // covers this destination.
-    if (p.dstGroupId !== 'sg-internet' && p.dstGroupId !== 'sg-any') return false;
+    if (!p.dstGroupId.includes('sg-internet') && !p.dstGroupId.includes('sg-any')) return false;
     if (p.webGroupIds && p.webGroupIds.length > 0 && !p.webGroupIds.includes(intent.dstWebGroup.id)) return false;
     return true;
   }
   if (intent.dstGroup) {
-    if (p.dstGroupId !== intent.dstGroup.id && p.dstGroupId !== 'sg-any') return false;
+    if (!p.dstGroupId.includes(intent.dstGroup.id) && !p.dstGroupId.includes('sg-any')) return false;
     if (p.dstExcludeGroupIds?.includes(intent.dstGroup.id)) return false;
     return true;
   }

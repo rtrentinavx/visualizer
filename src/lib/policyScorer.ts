@@ -28,10 +28,6 @@ function getGrade(total: number): { grade: PolicyScore['grade']; color: string }
   return { grade: 'F', color: '#dc2626' };
 }
 
-/**
- * Score an individual policy (0-100) based on Aviatrix DCF best practices.
- * Reference: Aviatrix DCF Rule Configuration Guide
- */
 export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): PolicyScore {
   const tips: string[] = [];
 
@@ -52,8 +48,8 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
 
   // ---- Specificity (0-25) ----
   let specificity = 0;
-  const usesSpecificSrc = policy.srcGroupId !== 'sg-any';
-  const usesSpecificDst = policy.dstGroupId !== 'sg-any';
+  const usesSpecificSrc = !policy.srcGroupId.includes('sg-any');
+  const usesSpecificDst = !policy.dstGroupId.includes('sg-any');
   const usesSpecificProto = policy.protocol !== 'any';
   const usesSpecificPorts = policy.ports && policy.ports !== 'any';
 
@@ -68,7 +64,6 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
 
   if (usesSpecificPorts) specificity += 5;
   else if (policy.webGroupIds && policy.webGroupIds.length > 0) {
-    // WebGroup rules don't need explicit ports since they target HTTPS implicitly
     specificity += 5;
   } else {
     tips.push('No specific ports defined. Aviatrix guide: explicitly set ports and protocols.');
@@ -94,8 +89,8 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   let security = 0;
   const isDeny = policy.action === 'deny';
   const isAllow = policy.action === 'allow';
-  const isOverlyPermissive = isAllow && policy.srcGroupId === 'sg-any' && policy.dstGroupId === 'sg-any';
-  const isInternetFacing = isAllow && (policy.srcGroupId === 'sg-internet' || policy.dstGroupId === 'sg-internet');
+  const isOverlyPermissive = isAllow && policy.srcGroupId.every((id) => id === 'sg-any') && policy.dstGroupId.every((id) => id === 'sg-any');
+  const isInternetFacing = isAllow && (policy.srcGroupId.includes('sg-internet') || policy.dstGroupId.includes('sg-internet'));
   const hasThreatOrGeo = !!policy.threatGroup || !!policy.geoGroup;
 
   if (isDeny) {
@@ -120,7 +115,6 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
       }
     }
   } else {
-    // learned
     security = 12;
   }
 
@@ -129,8 +123,8 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   const shadows = topology.policies.filter((p) => {
     if (p.id === policy.id) return false;
     if (p.priority >= policy.priority) return false;
-    const sameSrc = p.srcGroupId === policy.srcGroupId || p.srcGroupId === 'sg-any' || policy.srcGroupId === 'sg-any';
-    const sameDst = p.dstGroupId === policy.dstGroupId || p.dstGroupId === 'sg-any' || policy.dstGroupId === 'sg-any';
+    const sameSrc = p.srcGroupId.some((id) => policy.srcGroupId.includes(id)) || p.srcGroupId.includes('sg-any') || policy.srcGroupId.includes('sg-any');
+    const sameDst = p.dstGroupId.some((id) => policy.dstGroupId.includes(id)) || p.dstGroupId.includes('sg-any') || policy.dstGroupId.includes('sg-any');
     const sameProto = p.protocol === policy.protocol || p.protocol === 'any' || policy.protocol === 'any';
     return sameSrc && sameDst && sameProto;
   });
@@ -142,14 +136,13 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   // ---- Logging (0-10) ----
   let logging = policy.logging ? 10 : 0;
   if (!policy.logging && isAllow) {
-    logging = 3; // partial credit for allow without logging
+    logging = 3;
     tips.push('Enable logging for visibility. Aviatrix guide: configure SIEM as destination for logs.');
   } else if (!policy.logging && isDeny) {
     logging = 0;
     tips.push('CRITICAL: Deny policies must have logging enabled for auditability (Aviatrix Best Practice).');
   }
 
-  // Sum up with L7 compliance included in security bucket for display
   const total = naming + specificity + Math.min(security + l7Compliance, 30) + priority + logging;
   const { grade, color } = getGrade(total);
 
@@ -166,9 +159,6 @@ export function scorePolicy(policy: DcfPolicy, topology: DcfPolicyModel): Policy
   };
 }
 
-/**
- * Score the entire topology (average of policy scores, plus bonuses).
- */
 export function scoreTopology(topology: DcfPolicyModel): {
   average: number;
   totalPolicies: number;

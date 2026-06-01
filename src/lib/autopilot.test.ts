@@ -21,8 +21,8 @@ function pol(overrides: Partial<DcfPolicy> & { id: string }): DcfPolicy {
   return {
     name: overrides.id,
     priority: 100,
-    srcGroupId: 'sg-any',
-    dstGroupId: 'sg-any',
+    srcGroupId: ['sg-any'],
+    dstGroupId: ['sg-any'],
     action: 'allow',
     protocol: 'tcp',
     logging: true,
@@ -63,7 +63,7 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
     const t = blank();
     // p1=100, p2=105 — gap=5 < 10 → card fires; p2 gets bumped to 110.
     t.policies.push(pol({ id: 'p1', priority: 100 }));
-    t.policies.push(pol({ id: 'p2', priority: 105, srcGroupId: 'sg-internet' }));
+    t.policies.push(pol({ id: 'p2', priority: 105, srcGroupId: ['sg-internet'] }));
     const plan = proposeAutopilotPlan(t);
     const reorder = plan.cards.find((c) => c.id === 'reorder-ladder');
     expect(reorder).toBeDefined();
@@ -76,7 +76,7 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
     const t = blank();
     // Band-style priorities — gap between each is well above 10.
     t.policies.push(pol({ id: 'p1', priority: 100 }));
-    t.policies.push(pol({ id: 'p2', priority: 8000, srcGroupId: 'sg-internet' }));
+    t.policies.push(pol({ id: 'p2', priority: 8000, srcGroupId: ['sg-internet'] }));
     const plan = proposeAutopilotPlan(t);
     expect(plan.cards.find((c) => c.id === 'reorder-ladder')).toBeUndefined();
   });
@@ -84,7 +84,7 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
   it('renumbering preserves band values and only bumps the too-small first priority', () => {
     const t = blank();
     // p1=5 (< 10) → bumped to 10; p2=100 (≥ 20) → kept; p3=500 (≥ 110) → kept.
-    t.policies.push(pol({ id: 'p2', priority: 100, srcGroupId: 'sg-internet' }));
+    t.policies.push(pol({ id: 'p2', priority: 100, srcGroupId: ['sg-internet'] }));
     t.policies.push(pol({ id: 'p3', priority: 500 }));
     t.policies.push(pol({ id: 'p1', priority: 5 }));
     const card = proposeAutopilotPlan(t).cards.find((c) => c.id === 'reorder-ladder')!;
@@ -98,7 +98,7 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
     const t = blank();
     t.policies.push(pol({ id: 'p1', name: 'Allow A', priority: 100 }));
     t.policies.push(pol({ id: 'p2', name: 'Allow A copy', priority: 200 })); // same key, lower priority
-    t.policies.push(pol({ id: 'p3', name: 'Allow B', priority: 300, srcGroupId: 'sg-internet' }));
+    t.policies.push(pol({ id: 'p3', name: 'Allow B', priority: 300, srcGroupId: ['sg-internet'] }));
     const plan = proposeAutopilotPlan(t);
     const dedupeCards = plan.cards.filter((c) => c.category === 'dedupe');
     expect(dedupeCards).toHaveLength(1);
@@ -111,8 +111,8 @@ describe('proposeAutopilotPlan — deterministic engine', () => {
     const t = blank();
     // Same src/dst/proto/ports/action, different webGroupIds → distinct rules
     // at L7, must keep both.
-    t.policies.push(pol({ id: 'p1', srcGroupId: 'sg-any', dstGroupId: 'sg-internet', webGroupIds: ['wg-1'], priority: 100 }));
-    t.policies.push(pol({ id: 'p2', srcGroupId: 'sg-any', dstGroupId: 'sg-internet', webGroupIds: ['wg-2'], priority: 200 }));
+    t.policies.push(pol({ id: 'p1', srcGroupId: ['sg-any'], dstGroupId: ['sg-internet'], webGroupIds: ['wg-1'], priority: 100 }));
+    t.policies.push(pol({ id: 'p2', srcGroupId: ['sg-any'], dstGroupId: ['sg-internet'], webGroupIds: ['wg-2'], priority: 200 }));
     const plan = proposeAutopilotPlan(t);
     expect(plan.cards.filter((c) => c.category === 'dedupe')).toHaveLength(0);
   });
@@ -188,7 +188,7 @@ describe('applyAutopilotCards — selective apply', () => {
     const t = blank();
     // priority=5 and 7 (gaps < 10) → renumber card fires.
     t.policies.push(pol({ id: 'p1', priority: 5, name: '  spaced  ' }));
-    t.policies.push(pol({ id: 'p2', priority: 7, name: '  spaced  also  ', srcGroupId: 'sg-internet' }));
+    t.policies.push(pol({ id: 'p2', priority: 7, name: '  spaced  also  ', srcGroupId: ['sg-internet'] }));
     const plan = proposeAutopilotPlan(t);
     const enabled = new Set(['normalize-names', 'reorder-ladder']); // reversed order
     const next = applyAutopilotCards(t, plan.cards, enabled);

@@ -36,7 +36,7 @@ function AssignExistingPicker({
   const candidates = useMemo(() => {
     const q = query.toLowerCase();
     return topology.policies
-      .filter((p) => p.srcGroupId !== srcId || p.dstGroupId !== dstId)
+      .filter((p) => !(p.srcGroupId.length === 1 && p.srcGroupId[0] === srcId && p.dstGroupId.length === 1 && p.dstGroupId[0] === dstId))
       .filter((p) =>
         !q ||
         p.name.toLowerCase().includes(q) ||
@@ -73,8 +73,8 @@ function AssignExistingPicker({
           <div className="text-[10px] text-[var(--color-text-muted)] italic py-2 text-center">No other policies found</div>
         ) : (
           candidates.map((p) => {
-            const src = topology.smartGroups.find((g) => g.id === p.srcGroupId);
-            const dst = topology.smartGroups.find((g) => g.id === p.dstGroupId);
+            const srcNames = p.srcGroupId.map((id) => topology.smartGroups.find((g) => g.id === id)?.name ?? id).join(', ');
+            const dstNames = p.dstGroupId.map((id) => topology.smartGroups.find((g) => g.id === id)?.name ?? id).join(', ');
             return (
               <button
                 key={p.id}
@@ -89,7 +89,7 @@ function AssignExistingPicker({
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-[var(--color-text-primary)] truncate">{p.name}</div>
                   <div className="text-[9px] text-[var(--color-text-muted)] truncate">
-                    {src?.name ?? p.srcGroupId} → {dst?.name ?? p.dstGroupId} · #{p.priority} · {p.protocol}/{p.ports || 'any'}
+                    {srcNames} → {dstNames} · #{p.priority} · {p.protocol}/{p.ports || 'any'}
                   </div>
                 </div>
                 <Copy size={10} className="text-[var(--color-text-muted)] shrink-0" />
@@ -116,8 +116,8 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
     return topology.policies
       .filter(
         (p) =>
-          (p.srcGroupId === selectedCell.srcId || p.srcGroupId === 'sg-any') &&
-          (p.dstGroupId === selectedCell.dstId || p.dstGroupId === 'sg-any')
+          (p.srcGroupId.includes(selectedCell.srcId) || p.srcGroupId.includes('sg-any')) &&
+          (p.dstGroupId.includes(selectedCell.dstId) || p.dstGroupId.includes('sg-any'))
       )
       .sort((a, b) => a.priority - b.priority);
   }, [topology.policies, selectedCell]);
@@ -209,8 +209,8 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
             dstId={selectedCell.dstId}
             onAssign={(p) => {
               onUpdateItem('policy', p.id, {
-                srcGroupId: selectedCell.srcId,
-                dstGroupId: selectedCell.dstId,
+                srcGroupId: [selectedCell.srcId],
+                dstGroupId: [selectedCell.dstId],
               });
               setShowAssignPicker(false);
             }}

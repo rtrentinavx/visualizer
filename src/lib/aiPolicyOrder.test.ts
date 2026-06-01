@@ -8,7 +8,7 @@ const { validateOrderedIds } = _internals;
 function policy(id: string, priority = 100): DcfPolicy {
   return {
     id, name: id, priority,
-    srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+    srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
     action: 'allow', protocol: 'tcp', logging: true,
   };
 }

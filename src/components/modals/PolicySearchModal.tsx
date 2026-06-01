@@ -48,7 +48,7 @@ function PolicyRow({ policy, topology, onClick }: { policy: DcfPolicy; topology:
       <div className="flex-1 min-w-0">
         <div className="text-xs font-medium text-[var(--color-text-primary)] truncate">{policy.name}</div>
         <div className="text-[10px] text-[var(--color-text-muted)] truncate">
-          {nameOf(topology, policy.srcGroupId)} → {nameOf(topology, policy.dstGroupId)} · {policy.protocol}/{policy.ports || 'any'}
+          {policy.srcGroupId.map((id) => nameOf(topology, id)).join(', ')} → {policy.dstGroupId.map((id) => nameOf(topology, id)).join(', ')} · {policy.protocol}/{policy.ports || 'any'}
           {policy.threatGroup ? ' · threat' : ''}{policy.geoGroup ? ' · geo' : ''}{policy.webGroupIds?.length ? ' · webgroup' : ''}{policy.decrypt ? ' · decrypt' : ''}
         </div>
       </div>

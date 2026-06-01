@@ -47,8 +47,8 @@ function findShadowedPolicies(policies: DcfPolicy[]): Finding[] {
       const high = sorted[i]!;
       const low = sorted[j]!;
 
-      const sameSrc = high.srcGroupId === low.srcGroupId || high.srcGroupId === 'sg-any' || low.srcGroupId === 'sg-any';
-      const sameDst = high.dstGroupId === low.dstGroupId || high.dstGroupId === 'sg-any' || low.dstGroupId === 'sg-any';
+      const sameSrc = high.srcGroupId.some(id => low.srcGroupId.includes(id)) || high.srcGroupId.includes('sg-any') || low.srcGroupId.includes('sg-any');
+      const sameDst = high.dstGroupId.some(id => low.dstGroupId.includes(id)) || high.dstGroupId.includes('sg-any') || low.dstGroupId.includes('sg-any');
       const sameProto = high.protocol === low.protocol || high.protocol === 'any' || low.protocol === 'any';
       const portOverlap = (() => {
         if (high.ports === undefined || high.ports === 'any' || low.ports === undefined || low.ports === 'any') {
@@ -82,7 +82,7 @@ function findMissingDenyAll(model: DcfPolicyModel): Finding[] {
   if (model.defaultAction === 'deny') return [];
 
   const hasDenyAll = model.policies.some(
-    (p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any'
+    (p) => p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any')
   );
 
   if (!hasDenyAll && model.policies.length > 0) {
@@ -103,7 +103,7 @@ function findMissingDenyAll(model: DcfPolicyModel): Finding[] {
 
 function findOverlyPermissive(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.action === 'allow' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')
+    .filter((p) => p.action === 'allow' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'))
     .map((p) => ({
       id: `overly-permissive-${p.id}`,
       severity: 'error',
@@ -118,8 +118,8 @@ function findOverlyPermissive(policies: DcfPolicy[]): Finding[] {
 function findUnusedGroups(topology: DcfPolicyModel): Finding[] {
   const usedGroupIds = new Set<string>();
   topology.policies.forEach((p) => {
-    usedGroupIds.add(p.srcGroupId);
-    usedGroupIds.add(p.dstGroupId);
+    p.srcGroupId.forEach((id) => usedGroupIds.add(id));
+    p.dstGroupId.forEach((id) => usedGroupIds.add(id));
     p.srcExcludeGroupIds?.forEach((id) => usedGroupIds.add(id));
     p.dstExcludeGroupIds?.forEach((id) => usedGroupIds.add(id));
   });
@@ -156,10 +156,10 @@ function findMissingLogging(policies: DcfPolicy[]): Finding[] {
 function findMissingThreatProtection(topology: DcfPolicyModel): Finding[] {
   const internetPolicies = topology.policies.filter(
     (p) =>
-      p.srcGroupId === 'sg-internet' ||
-      p.dstGroupId === 'sg-internet' ||
-      p.srcGroupId === 'sg-any' ||
-      p.dstGroupId === 'sg-any'
+      p.srcGroupId.includes('sg-internet') ||
+      p.dstGroupId.includes('sg-internet') ||
+      p.srcGroupId.includes('sg-any') ||
+      p.dstGroupId.includes('sg-any')
   );
 
   const findings: Finding[] = [];
@@ -186,7 +186,7 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
   const byPair = new Map<string, DcfPolicy[]>();
 
   policies.forEach((p) => {
-    const key = `${p.srcGroupId}|${p.dstGroupId}|${p.protocol}|${p.ports || 'any'}`;
+    const key = `${[...p.srcGroupId].sort().join('++')}|${[...p.dstGroupId].sort().join('++')}|${p.protocol}|${p.ports || 'any'}`;
     if (!byPair.has(key)) byPair.set(key, []);
     byPair.get(key)!.push(p);
   });
@@ -205,7 +205,7 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
           category: 'security',
           frameworks: ['Aviatrix BP', 'Best Practice'],
           title: 'Conflicting Actions',
-          description: `Multiple policies between ${first.srcGroupId} → ${first.dstGroupId} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
+          description: `Multiple policies between ${first.srcGroupId.join(', ')} → ${first.dstGroupId.join(', ')} have conflicting actions. Priority order determines the winner. Aviatrix guide: rules are first-enforced-match.`,
           affectedPolicyIds: group.map((p) => p.id),
         });
       }
@@ -217,7 +217,7 @@ function findConflictingActions(policies: DcfPolicy[]): Finding[] {
 
 function findWebGroupEgressViolation(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && p.dstGroupId !== 'sg-internet')
+    .filter((p) => p.webGroupIds && p.webGroupIds.length > 0 && !p.dstGroupId.includes('sg-internet'))
     .map((p) => ({
       id: `webgroup-egress-${p.id}`,
       severity: 'error',
@@ -310,7 +310,7 @@ function findDuplicateNames(policies: DcfPolicy[]): Finding[] {
 
 function findSelfToSelfPolicies(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.srcGroupId === p.dstGroupId && p.srcGroupId !== 'sg-any')
+    .filter((p) => p.srcGroupId.some(id => p.dstGroupId.includes(id)) && !p.srcGroupId.includes('sg-any'))
     .map((p) => ({
       id: `self-to-self-${p.id}`,
       severity: 'info',
@@ -367,7 +367,7 @@ function findMissingLoggingOnAllow(policies: DcfPolicy[]): Finding[] {
 function findLearnedWithoutDenyAll(model: DcfPolicyModel): Finding[] {
   if (model.defaultAction === 'deny') return [];
 
-  const hasDenyAll = model.policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any');
+  const hasDenyAll = model.policies.some((p) => p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'));
   const hasLearned = model.policies.some((p) => p.action === 'learned');
 
   if (hasLearned && !hasDenyAll) {
@@ -403,7 +403,7 @@ function findPoliciesWithoutEnforcement(policies: DcfPolicy[]): Finding[] {
 
 function findHighPriorityBroadRules(policies: DcfPolicy[]): Finding[] {
   return policies
-    .filter((p) => p.priority <= 50 && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')
+    .filter((p) => p.priority <= 50 && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'))
     .map((p) => ({
       id: `high-priority-broad-${p.id}`,
       severity: 'warning',
@@ -497,7 +497,7 @@ function findAllowInternetWithoutInspection(policies: DcfPolicy[]): Finding[] {
   return policies
     .filter((p) =>
       p.action === 'allow' &&
-      (p.dstGroupId === 'sg-internet' || p.dstGroupId === 'sg-any') &&
+      (p.dstGroupId.includes('sg-internet') || p.dstGroupId.includes('sg-any')) &&
       !p.decrypt &&
       p.protocol === 'tcp' &&
       (p.ports?.includes('443') || p.ports === 'any')
@@ -579,7 +579,7 @@ function findBrownfieldMidMigration(model: DcfPolicyModel): Finding[] {
   );
   if (monitorDenies.length === 0) return [];
   const hasEnforcedDenyAll = model.policies.some(
-    (p) => p.enforcement !== false && p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any'
+    (p) => p.enforcement !== false && p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any')
   );
   if (hasEnforcedDenyAll) return [];
   return [{
@@ -627,8 +627,8 @@ function portsCoverAll(broader: string | undefined, narrower: string | undefined
 /** Two policies have identical match conditions except ports (mergeable iff they do). */
 function mergeKey(p: DcfPolicy): string {
   return [
-    p.srcGroupId,
-    p.dstGroupId,
+    [...p.srcGroupId].sort().join('++'),
+    [...p.dstGroupId].sort().join('++'),
     p.action,
     p.protocol,
     p.threatGroup ?? '',
@@ -657,8 +657,8 @@ function findRedundantPolicies(policies: DcfPolicy[]): Finding[] {
       if (b.priority <= a.priority) continue; // b must be later in match order
       if (a.action !== b.action) continue;
 
-      const srcCovers = b.srcGroupId === a.srcGroupId || b.srcGroupId === 'sg-any';
-      const dstCovers = b.dstGroupId === a.dstGroupId || b.dstGroupId === 'sg-any';
+      const srcCovers = b.srcGroupId.some(id => a.srcGroupId.includes(id)) || b.srcGroupId.includes('sg-any');
+      const dstCovers = b.dstGroupId.some(id => a.dstGroupId.includes(id)) || b.dstGroupId.includes('sg-any');
       const protoCovers = b.protocol === a.protocol || b.protocol === 'any';
       const portCovers = portsCoverAll(b.ports, a.ports);
       if (!srcCovers || !dstCovers || !protoCovers || !portCovers) continue;
@@ -736,16 +736,16 @@ function isL7Policy(p: DcfPolicy): boolean {
  * the exclude path — no shadowing.
  */
 function l4SelectorCoversL7(broader: DcfPolicy, narrower: DcfPolicy): boolean {
-  const srcCovers = broader.srcGroupId === narrower.srcGroupId || broader.srcGroupId === 'sg-any';
-  const dstCovers = broader.dstGroupId === narrower.dstGroupId || broader.dstGroupId === 'sg-any';
+  const srcCovers = broader.srcGroupId.some(id => narrower.srcGroupId.includes(id)) || broader.srcGroupId.includes('sg-any');
+  const dstCovers = broader.dstGroupId.some(id => narrower.dstGroupId.includes(id)) || broader.dstGroupId.includes('sg-any');
   const protoCovers = broader.protocol === narrower.protocol || broader.protocol === 'any';
   const portCovers = portsCoverAll(broader.ports, narrower.ports);
   if (!srcCovers || !dstCovers || !protoCovers || !portCovers) return false;
 
   // If the broader policy excludes the narrower's src or dst, the narrower's
   // traffic escapes the deny — not shadowed.
-  if (broader.srcExcludeGroupIds?.includes(narrower.srcGroupId)) return false;
-  if (broader.dstExcludeGroupIds?.includes(narrower.dstGroupId)) return false;
+  if (narrower.srcGroupId.some(id => broader.srcExcludeGroupIds?.includes(id))) return false;
+  if (narrower.dstGroupId.some(id => broader.dstExcludeGroupIds?.includes(id))) return false;
 
   return true;
 }
@@ -894,8 +894,8 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
         id: `pol-deny-all-${Date.now()}`,
         name: 'Default Deny All',
         priority: Math.max(maxPriority + 10, 9999),
-        srcGroupId: 'sg-any',
-        dstGroupId: 'sg-any',
+        srcGroupId: ['sg-any'],
+        dstGroupId: ['sg-any'],
         action: 'deny',
         protocol: 'any',
         logging: true,
@@ -942,7 +942,7 @@ export function applyAutoFix(topology: DcfPolicyModel, finding: Finding): DcfPol
 
     if (finding.id.startsWith('webgroup-egress-')) {
       next.policies = next.policies.map((p) =>
-        p.id === policyId ? { ...p, dstGroupId: 'sg-internet' } : p
+        p.id === policyId ? { ...p, dstGroupId: ['sg-internet'] } : p
       );
       return next;
     }

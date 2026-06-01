@@ -25,14 +25,6 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/**
- * Build a refId → groupId map for one entity type. Reuses an existing group
- * (matched by exact name) when one is present; creates a new one otherwise
- * and adds it to `addedAccumulator`.
- *
- * Special refIds `sg-any` and `sg-internet` are passed through unchanged for
- * SmartGroups and are not resolvable for other entity types.
- */
 function resolveRefs<T extends { refId: string; name: string }, R extends { id: string; name: string }>(
   templateEntities: readonly T[],
   existingEntities: readonly R[],
@@ -55,8 +47,10 @@ function resolveRefs<T extends { refId: string; name: string }, R extends { id: 
   return refMap;
 }
 
-function policyMatchKey(p: { name: string; srcGroupId: string; dstGroupId: string; action: string }): string {
-  return `${p.name}|${p.srcGroupId}|${p.dstGroupId}|${p.action}`;
+function policyMatchKey(p: { name: string; srcGroupId: string | string[]; dstGroupId: string | string[]; action: string }): string {
+  const src = Array.isArray(p.srcGroupId) ? p.srcGroupId.slice().sort().join(',') : p.srcGroupId;
+  const dst = Array.isArray(p.dstGroupId) ? p.dstGroupId.slice().sort().join(',') : p.dstGroupId;
+  return `${p.name}|${src}|${dst}|${p.action}`;
 }
 
 function bumpPriorityIfTaken(target: number, taken: Set<number>): number {
@@ -82,7 +76,6 @@ export function applyPolicyTemplate(topology: DcfPolicyModel, template: PolicyTe
   };
   const skipped: ApplyTemplateResult['skipped'] = { duplicatePolicies: [] };
 
-  // SmartGroup refs — pre-seed with the two special pseudo-groups.
   const sgRefMap: Record<string, string> = { 'sg-any': 'sg-any', 'sg-internet': 'sg-internet' };
   Object.assign(
     sgRefMap,
@@ -125,15 +118,13 @@ export function applyPolicyTemplate(topology: DcfPolicyModel, template: PolicyTe
     reused.geoGroupNames,
   );
 
-  // Policies — skip exact duplicates (same name + src + dst + action). Bump
-  // priorities that collide with existing or already-bumped values.
   const takenPriorities = new Set<number>(topology.policies.map((p) => p.priority));
   const existingPolicyKeys = new Set(topology.policies.map(policyMatchKey));
 
   for (const tplPolicy of template.policies) {
     const srcId = sgRefMap[tplPolicy.srcGroupRef];
     const dstId = sgRefMap[tplPolicy.dstGroupRef];
-    if (!srcId || !dstId) continue; // unresolved ref — skip silently
+    if (!srcId || !dstId) continue;
 
     const key = policyMatchKey({ name: tplPolicy.name, srcGroupId: srcId, dstGroupId: dstId, action: tplPolicy.action });
     if (existingPolicyKeys.has(key)) {
@@ -145,8 +136,8 @@ export function applyPolicyTemplate(topology: DcfPolicyModel, template: PolicyTe
       id: newId('pol'),
       name: tplPolicy.name,
       priority: bumpPriorityIfTaken(tplPolicy.priority, takenPriorities),
-      srcGroupId: srcId,
-      dstGroupId: dstId,
+      srcGroupId: [srcId],
+      dstGroupId: [dstId],
       action: tplPolicy.action,
       protocol: tplPolicy.protocol,
       ports: tplPolicy.ports,
@@ -188,10 +179,6 @@ export function applyPolicyTemplate(topology: DcfPolicyModel, template: PolicyTe
   };
 }
 
-/**
- * Compute, without mutating, what would happen if the template were applied.
- * Used to render the Preview pane in the modal.
- */
 export function previewPolicyTemplate(topology: DcfPolicyModel, template: PolicyTemplate): ApplyTemplateResult {
   return applyPolicyTemplate(topology, template);
 }

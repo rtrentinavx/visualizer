@@ -34,7 +34,7 @@ describe('evaluateFlow', () => {
   it('returns the matching policy when one applies', () => {
     const allow: DcfPolicy = {
       id: 'p-allow', name: 'allow', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', ports: '443', logging: true,
     };
     const t = topologyWith([allow]);
@@ -46,12 +46,12 @@ describe('evaluateFlow', () => {
   it('first-match-wins by priority', () => {
     const denyFirst: DcfPolicy = {
       id: 'p-deny-first', name: 'deny first', priority: 50,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'deny',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'deny',
       protocol: 'any', logging: true,
     };
     const allowLater: DcfPolicy = {
       id: 'p-allow-later', name: 'allow later', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', ports: '443', logging: true,
     };
     const t = topologyWith([denyFirst, allowLater]);
@@ -63,12 +63,12 @@ describe('evaluateFlow', () => {
   it('skips policies with enforcement disabled', () => {
     const off: DcfPolicy = {
       id: 'p-off', name: 'off', priority: 50,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'deny',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'deny',
       protocol: 'any', logging: true, enforcement: false,
     };
     const allow: DcfPolicy = {
       id: 'p-allow', name: 'allow', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', ports: '443', logging: true,
     };
     const t = topologyWith([off, allow]);
@@ -79,7 +79,7 @@ describe('evaluateFlow', () => {
   it('honors exclude groups', () => {
     const allow: DcfPolicy = {
       id: 'p-allow', name: 'allow', priority: 100,
-      srcGroupId: 'sg-any', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-any'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'any', logging: true,
       srcExcludeGroupIds: ['sg-web'],
     };
@@ -94,7 +94,7 @@ describe('compareImpact', () => {
   it('flags flows whose outcome changes between two topologies', () => {
     const baseAllow: DcfPolicy = {
       id: 'p1', name: 'allow', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', ports: '443', logging: true,
     };
     const before = topologyWith([baseAllow], [flowWebToApp443]);
@@ -112,12 +112,12 @@ describe('compareImpact', () => {
   it('flags matchChanged when a different policy starts matching after edits', () => {
     const p1: DcfPolicy = {
       id: 'p1', name: 'web→app 443', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', ports: '443', logging: true,
     };
     const p2: DcfPolicy = {
       id: 'p2', name: 'fallback allow any', priority: 9000,
-      srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'allow',
+      srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'allow',
       protocol: 'any', logging: true,
     };
     const before = topologyWith([p1, p2], [flowWebToApp443]);
@@ -135,7 +135,7 @@ describe('withPolicyChange', () => {
   it('upsert replaces an existing policy by id', () => {
     const p: DcfPolicy = {
       id: 'p1', name: 'allow', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', logging: true,
     };
     const t = topologyWith([p]);
@@ -149,7 +149,7 @@ describe('withPolicyChange', () => {
     const t = topologyWith([]);
     const p: DcfPolicy = {
       id: 'new', name: 'new', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', logging: true,
     };
     const next = withPolicyChange(t, p, 'upsert');
@@ -160,7 +160,7 @@ describe('withPolicyChange', () => {
   it('delete removes the policy by id', () => {
     const p: DcfPolicy = {
       id: 'p1', name: 'allow', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow',
       protocol: 'tcp', logging: true,
     };
     const t = topologyWith([p]);

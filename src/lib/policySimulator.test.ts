@@ -134,8 +134,8 @@ describe('simulateTraffic', () => {
         id: 'pol-low',
         name: 'Low priority allow',
         priority: 200,
-        srcGroupId: 'sg-web',
-        dstGroupId: 'sg-app',
+        srcGroupId: ['sg-web'],
+        dstGroupId: ['sg-app'],
         action: 'allow',
         protocol: 'tcp',
         ports: '443',
@@ -145,8 +145,8 @@ describe('simulateTraffic', () => {
         id: 'pol-high',
         name: 'High priority deny',
         priority: 50,
-        srcGroupId: 'sg-web',
-        dstGroupId: 'sg-app',
+        srcGroupId: ['sg-web'],
+        dstGroupId: ['sg-app'],
         action: 'deny',
         protocol: 'tcp',
         ports: '443',
@@ -174,8 +174,8 @@ describe('simulateTraffic', () => {
         id: 'pol-1',
         name: 'TCP 443 only',
         priority: 100,
-        srcGroupId: 'sg-web',
-        dstGroupId: 'sg-app',
+        srcGroupId: ['sg-web'],
+        dstGroupId: ['sg-app'],
         action: 'allow',
         protocol: 'tcp',
         ports: '443',
@@ -207,8 +207,8 @@ describe('simulateTraffic', () => {
         id: 'pol-1',
         name: 'UDP only',
         priority: 100,
-        srcGroupId: 'sg-web',
-        dstGroupId: 'sg-app',
+        srcGroupId: ['sg-web'],
+        dstGroupId: ['sg-app'],
         action: 'allow',
         protocol: 'udp',
         logging: false,
@@ -230,8 +230,8 @@ describe('simulateTraffic', () => {
         id: 'pol-1',
         name: 'Web → App except untrusted',
         priority: 100,
-        srcGroupId: 'sg-web',
-        dstGroupId: 'sg-app',
+        srcGroupId: ['sg-web'],
+        dstGroupId: ['sg-app'],
         srcExcludeGroupIds: ['sg-untrusted'],
         action: 'allow',
         protocol: 'tcp',
@@ -281,8 +281,8 @@ describe('simulateTraffic', () => {
         id: 'pol-any',
         name: 'Allow any → any',
         priority: 100,
-        srcGroupId: 'sg-any',
-        dstGroupId: 'sg-any',
+        srcGroupId: ['sg-any'],
+        dstGroupId: ['sg-any'],
         action: 'allow',
         protocol: 'any',
         logging: false,
@@ -336,7 +336,7 @@ describe('simulateTraffic — WebGroup destination (dstFqdn)', () => {
     topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
     topology.policies.push({
       id: 'pol-saas', name: 'Allow SaaS', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'],
       action: 'allow', protocol: 'tcp', ports: '443', logging: true,
       webGroupIds: ['wg-saas'],
     });
@@ -356,7 +356,7 @@ describe('simulateTraffic — WebGroup destination (dstFqdn)', () => {
     topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
     topology.policies.push({
       id: 'pol-dev', name: 'Allow Dev', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'],
       action: 'allow', protocol: 'tcp', ports: '443', logging: true,
       webGroupIds: ['wg-dev'],
     });
@@ -373,7 +373,7 @@ describe('simulateTraffic — WebGroup destination (dstFqdn)', () => {
     topology.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
     topology.policies.push({
       id: 'pol-saas', name: 'Allow SaaS', priority: 100,
-      srcGroupId: 'sg-web', dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'],
       action: 'allow', protocol: 'tcp', ports: '443', logging: true,
       webGroupIds: ['wg-saas'],
     });
@@ -392,19 +392,19 @@ describe('simulateTraffic — Threat / Geo overrides', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [{ type: 'subnet', cidr: '10.0.0.0/24' }], matchType: 'any' });
     t.policies.push({
       id: 'pol-block-malware', name: 'Block Malware', priority: 50,
-      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
       action: 'deny', protocol: 'any', logging: true,
       threatGroup: 'tg-malware',
     });
     t.policies.push({
       id: 'pol-block-cn', name: 'Block China', priority: 60,
-      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
       action: 'deny', protocol: 'any', logging: true,
       geoGroup: 'gg-cn',
     });
     t.policies.push({
       id: 'pol-allow-all', name: 'Allow All', priority: 100,
-      srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
       action: 'allow', protocol: 'any', logging: false,
     });
     return t;
@@ -446,8 +446,8 @@ describe('simulateTraffic — CIDR / SmartGroup / WebGroup endpoints', () => {
     );
     t.webGroups.push({ id: 'wg-salesforce', name: 'Salesforce', fqdns: ['*.salesforce.com'] });
     t.policies = [
-      { id: 'pol-web-to-app', name: 'web→app', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443', logging: true },
-      { id: 'pol-web-to-sfdc', name: 'web→sfdc', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', logging: true, webGroupIds: ['wg-salesforce'] },
+      { id: 'pol-web-to-app', name: 'web→app', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '443', logging: true },
+      { id: 'pol-web-to-sfdc', name: 'web→sfdc', priority: 110, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', logging: true, webGroupIds: ['wg-salesforce'] },
     ];
     return t;
   }

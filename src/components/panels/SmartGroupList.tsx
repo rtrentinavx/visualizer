@@ -100,7 +100,7 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
   const usageMap = useMemo(() => {
     const m = new Map<string, number>();
     for (const p of topology.policies) {
-      const ids = [p.srcGroupId, p.dstGroupId, ...(p.srcExcludeGroupIds ?? []), ...(p.dstExcludeGroupIds ?? [])];
+      const ids = [...p.srcGroupId, ...p.dstGroupId, ...(p.srcExcludeGroupIds ?? []), ...(p.dstExcludeGroupIds ?? [])];
       for (const id of ids) m.set(id, (m.get(id) ?? 0) + 1);
     }
     return m;
@@ -179,7 +179,7 @@ export default function SmartGroupList({ topology, onSelectGroup, onNewGroup, on
   const cascadePolicyCount = useMemo(() => {
     if (selected.size === 0) return 0;
     return topology.policies.filter(
-      (p) => selected.has(p.srcGroupId) || selected.has(p.dstGroupId)
+      (p) => p.srcGroupId.some((id) => selected.has(id)) || p.dstGroupId.some((id) => selected.has(id))
     ).length;
   }, [selected, topology.policies]);
 

@@ -54,16 +54,10 @@ export function checkAchievements(
     }
   }
 
-  // first-policy
   if (topology.policies.length > 0) unlock('first-policy');
-
-  // first-group
-  if (topology.smartGroups.length > 1) unlock('first-group'); // >1 because sg-internet is default
-
-  // deny-master
+  if (topology.smartGroups.length > 1) unlock('first-group');
   if (topology.policies.some((p) => p.action === 'deny' && p.logging)) unlock('deny-master');
 
-  // specificity-king
   for (const [, score] of scores) {
     if (score >= 90) {
       unlock('specificity-king');
@@ -71,38 +65,31 @@ export function checkAchievements(
     }
   }
 
-  // full-coverage
   const uniquePairs = new Set(topology.policies.map((p) => `${p.srcGroupId}|${p.dstGroupId}`));
   if (uniquePairs.size >= 5) unlock('full-coverage');
 
-  // deny-all
-  if (topology.policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')) {
+  if (topology.policies.some((p) => p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'))) {
     unlock('deny-all');
   }
 
-  // zero-shadow
   const hasShadow = topology.policies.some((p) => {
     return topology.policies.some((other) => {
       if (other.id === p.id) return false;
       if (other.priority >= p.priority) return false;
-      const sameSrc = other.srcGroupId === p.srcGroupId || other.srcGroupId === 'sg-any' || p.srcGroupId === 'sg-any';
-      const sameDst = other.dstGroupId === p.dstGroupId || other.dstGroupId === 'sg-any' || p.dstGroupId === 'sg-any';
+      const sameSrc = other.srcGroupId.some((id) => p.srcGroupId.includes(id)) || other.srcGroupId.includes('sg-any') || p.srcGroupId.includes('sg-any');
+      const sameDst = other.dstGroupId.some((id) => p.dstGroupId.includes(id)) || other.dstGroupId.includes('sg-any') || p.dstGroupId.includes('sg-any');
       const sameProto = other.protocol === p.protocol || other.protocol === 'any' || p.protocol === 'any';
       return sameSrc && sameDst && sameProto;
     });
   });
   if (!hasShadow && topology.policies.length > 0) unlock('zero-shadow');
 
-  // high-performer
   if (scores.size > 0) {
     const avg = Math.round([...scores.values()].reduce((a, b) => a + b, 0) / scores.size);
     if (avg >= 80) unlock('high-performer');
   }
 
-  // ten-policies
   if (topology.policies.length >= 10) unlock('ten-policies');
-
-  // simulator-pro
   if (simCount >= 5) unlock('simulator-pro');
 
   if (newlyUnlocked.length > 0) {

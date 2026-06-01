@@ -159,8 +159,12 @@ export function generateTerraform(topology: DcfPolicyModel): string {
   lines.push('');
 
   topology.policies.forEach((pol) => {
-    const srcName = getSmartGroupName(topology, pol.srcGroupId);
-    const dstName = getSmartGroupName(topology, pol.dstGroupId);
+    const srcNames = pol.srcGroupId
+      .map((id) => getSmartGroupName(topology, id))
+      .filter((n): n is string => n !== null);
+    const dstNames = pol.dstGroupId
+      .map((id) => getSmartGroupName(topology, id))
+      .filter((n): n is string => n !== null);
 
     const srcExcludeNames = (pol.srcExcludeGroupIds || [])
       .map((id) => getSmartGroupName(topology, id))
@@ -190,14 +194,14 @@ export function generateTerraform(topology: DcfPolicyModel): string {
       lines.push(`    decrypt = true`);
     }
 
-    if (srcName) {
-      lines.push(`    src_smart_groups = [aviatrix_smart_group.${sanitizeName(srcName)}.name]`);
+    if (srcNames.length > 0) {
+      lines.push(`    src_smart_groups = [${srcNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`);
     } else {
       lines.push(`    src_smart_groups = []`);
     }
 
-    if (dstName) {
-      lines.push(`    dst_smart_groups = [aviatrix_smart_group.${sanitizeName(dstName)}.name]`);
+    if (dstNames.length > 0) {
+      lines.push(`    dst_smart_groups = [${dstNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`);
     } else {
       lines.push(`    dst_smart_groups = []`);
     }
@@ -411,18 +415,21 @@ export function generateTerraformModule(topology: DcfPolicyModel): string {
 }
 
 /**
- * Render a ruleset's smart-group reference (single id) into the module's
- * `list(string)` shape. Special cases:
- *   - sg-any → ["any"]  (the module recognizes "any" as a wildcard)
- *   - sg-internet → ["internet"]  (controller built-in)
- *   - everything else → ["<mapKey>"], or fall back to the raw id (UUID) if
+ * Render a ruleset's smart-group reference (one or more ids) into the module's
+ * `list(string)` shape. Special cases per id:
+ *   - sg-any → "any"  (the module recognizes "any" as a wildcard)
+ *   - sg-internet → "internet"  (controller built-in)
+ *   - everything else → "<mapKey>", or fall back to the raw id (UUID) if
  *     not in our local map — the module handles unresolved values as raw UUIDs.
  */
-function ruleGroupRef(groupId: string, keyMap: Map<string, string>): string {
-  if (groupId === 'sg-any') return '["any"]';
-  if (groupId === 'sg-internet') return '["internet"]';
-  const k = keyMap.get(groupId);
-  return `["${k ?? groupId}"]`;
+function ruleGroupRef(groupIds: string[], keyMap: Map<string, string>): string {
+  const refs = groupIds.map((groupId) => {
+    if (groupId === 'sg-any') return '"any"';
+    if (groupId === 'sg-internet') return '"internet"';
+    const k = keyMap.get(groupId);
+    return `"${k ?? groupId}"`;
+  });
+  return `[${refs.join(', ')}]`;
 }
 
 /**

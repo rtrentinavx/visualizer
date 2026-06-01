@@ -23,8 +23,8 @@ function policy(overrides: Partial<DcfPolicy>): DcfPolicy {
     id: 'p1',
     name: 'Default Test Policy',
     priority: 100,
-    srcGroupId: 'sg-web',
-    dstGroupId: 'sg-app',
+    srcGroupId: ['sg-web'],
+    dstGroupId: ['sg-app'],
     action: 'allow',
     protocol: 'tcp',
     ports: '443',
@@ -47,8 +47,8 @@ function cleanTopology(): DcfPolicyModel {
       id: 'p1',
       name: 'Allow Web to App HTTPS',
       priority: 100,
-      srcGroupId: 'sg-web',
-      dstGroupId: 'sg-app',
+      srcGroupId: ['sg-web'],
+      dstGroupId: ['sg-app'],
       action: 'allow',
       protocol: 'tcp',
       ports: '443',
@@ -58,8 +58,8 @@ function cleanTopology(): DcfPolicyModel {
       id: 'p-deny-all',
       name: 'Default Deny All Catch-All',
       priority: 9999,
-      srcGroupId: 'sg-any',
-      dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'],
+      dstGroupId: ['sg-any'],
       action: 'deny',
       protocol: 'any',
       ports: undefined,
@@ -81,10 +81,10 @@ describe('findShadowedPolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'high', name: 'High', priority: 10, srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'low', name: 'Low', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'high', name: 'High', priority: 10, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], protocol: 'tcp', ports: '443' }),
+      policy({ id: 'low', name: 'Low', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], protocol: 'tcp', ports: '443' }),
       // satisfy missing-deny-all (silence unrelated finding)
-      policy({ id: 'p-deny', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'p-deny', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'shadow-low')).toHaveLength(1);
   });
@@ -95,7 +95,7 @@ describe('findShadowedPolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'only', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'only', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], protocol: 'tcp', ports: '443' }),
     ];
     expect(findingsWithIdPrefix(t, 'shadow-')).toHaveLength(0);
   });
@@ -105,7 +105,7 @@ describe('findMissingDenyAll', () => {
   it('positive: topology with policies but no any→any deny fires', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
-    t.policies = [policy({ srcGroupId: 'sg-web', dstGroupId: 'sg-web' })];
+    t.policies = [policy({ srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] })];
     expect(findingsWithIdPrefix(t, 'missing-deny-all')).toHaveLength(1);
   });
 
@@ -118,8 +118,8 @@ describe('findOverlyPermissive', () => {
   it('positive: an allow any→any policy is flagged', () => {
     const t = emptyTopology();
     t.policies = [
-      policy({ id: 'too-broad', name: 'Wide open', srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'allow', protocol: 'any', ports: undefined }),
-      policy({ id: 'p-deny', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'too-broad', name: 'Wide open', srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'p-deny', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'overly-permissive-too-broad')).toHaveLength(1);
   });
@@ -146,8 +146,8 @@ describe('findMissingLogging (deny without logging)', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'silent-deny', action: 'deny', logging: false, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'silent-deny', action: 'deny', logging: false, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'missing-log-silent-deny')).toHaveLength(1);
   });
@@ -162,8 +162,8 @@ describe('findMissingThreatProtection', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'inet', name: 'Inet allow', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'inet', name: 'Inet allow', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'missing-threat-inet')).toHaveLength(1);
   });
@@ -173,8 +173,8 @@ describe('findMissingThreatProtection', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.threatGroups.push({ id: 'tg-1', name: 'Malware', category: 'malware', entryCount: 1 });
     t.policies = [
-      policy({ id: 'inet', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', threatGroup: 'tg-1' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'inet', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', threatGroup: 'tg-1' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'missing-threat-')).toHaveLength(0);
   });
@@ -186,9 +186,9 @@ describe('findConflictingActions', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', priority: 100, action: 'allow', protocol: 'tcp', ports: '443', srcGroupId: 'sg-web', dstGroupId: 'sg-app' }),
-      policy({ id: 'b', priority: 110, action: 'deny', protocol: 'tcp', ports: '443', srcGroupId: 'sg-web', dstGroupId: 'sg-app' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', priority: 100, action: 'allow', protocol: 'tcp', ports: '443', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'] }),
+      policy({ id: 'b', priority: 110, action: 'deny', protocol: 'tcp', ports: '443', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'conflict-').length).toBeGreaterThanOrEqual(1);
   });
@@ -205,8 +205,8 @@ describe('findWebGroupEgressViolation', () => {
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.webGroups.push({ id: 'wg-1', name: 'SaaS', fqdns: ['*.example.com'] });
     t.policies = [
-      policy({ id: 'wgrule', srcGroupId: 'sg-web', dstGroupId: 'sg-app', webGroupIds: ['wg-1'] }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'wgrule', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], webGroupIds: ['wg-1'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'webgroup-egress-wgrule')).toHaveLength(1);
   });
@@ -216,8 +216,8 @@ describe('findWebGroupEgressViolation', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.webGroups.push({ id: 'wg-1', name: 'SaaS', fqdns: ['*.example.com'] });
     t.policies = [
-      policy({ id: 'wgrule', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', webGroupIds: ['wg-1'] }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'wgrule', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], webGroupIds: ['wg-1'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'webgroup-egress-')).toHaveLength(0);
   });
@@ -228,8 +228,8 @@ describe('findTlsDecryptPortViolation', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'tcp', ports: '8443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'tcp', ports: '8443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'tls-decrypt-port-d1')).toHaveLength(1);
   });
@@ -238,8 +238,8 @@ describe('findTlsDecryptPortViolation', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'tcp', ports: '443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'tcp', ports: '443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'tls-decrypt-port-')).toHaveLength(0);
   });
@@ -250,8 +250,8 @@ describe('findTlsDecryptProtocolViolation', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'udp', ports: '443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'udp', ports: '443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'tls-decrypt-proto-d1')).toHaveLength(1);
   });
@@ -260,8 +260,8 @@ describe('findTlsDecryptProtocolViolation', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'tcp', ports: '443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'tcp', ports: '443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'tls-decrypt-proto-')).toHaveLength(0);
   });
@@ -273,8 +273,8 @@ describe('findBroadAllowWithoutPorts', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'broad', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'any', ports: undefined }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'broad', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'broad-allow-broad')).toHaveLength(1);
   });
@@ -289,9 +289,9 @@ describe('findDuplicateNames', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', name: 'Same name', srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'b', name: 'Same name', srcGroupId: 'sg-web', dstGroupId: 'sg-web', priority: 101 }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', name: 'Same name', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'b', name: 'Same name', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], priority: 101 }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'duplicate-name-Same name')).toHaveLength(1);
   });
@@ -306,8 +306,8 @@ describe('findSelfToSelfPolicies', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'self', srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'self', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'self-to-self-self')).toHaveLength(1);
   });
@@ -322,9 +322,9 @@ describe('findDuplicatePriorities', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', name: 'A', priority: 500, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'b', name: 'B', priority: 500, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', name: 'A', priority: 500, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'b', name: 'B', priority: 500, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'duplicate-priority-500')).toHaveLength(1);
   });
@@ -339,8 +339,8 @@ describe('findMissingLoggingOnAllow', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'quiet', action: 'allow', logging: false, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'quiet', action: 'allow', logging: false, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'missing-log-allow-quiet')).toHaveLength(1);
   });
@@ -355,7 +355,7 @@ describe('findLearnedWithoutDenyAll', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'l1', action: 'learned', srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
+      policy({ id: 'l1', action: 'learned', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
     ];
     expect(findingsWithIdPrefix(t, 'learned-without-deny-all')).toHaveLength(1);
   });
@@ -364,8 +364,8 @@ describe('findLearnedWithoutDenyAll', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'l1', action: 'learned', srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'l1', action: 'learned', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'learned-without-deny-all')).toHaveLength(0);
   });
@@ -387,8 +387,8 @@ describe('findHighPriorityBroadRules', () => {
   it('positive: a priority ≤ 50 any→any rule fires', () => {
     const t = emptyTopology();
     t.policies = [
-      policy({ id: 'top', priority: 10, srcGroupId: 'sg-any', dstGroupId: 'sg-any' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'top', priority: 10, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'high-priority-broad-top')).toHaveLength(1);
   });
@@ -408,7 +408,7 @@ describe('findUnusedWebGroups', () => {
   it('negative: all WebGroups referenced → no finding', () => {
     const t = cleanTopology();
     t.webGroups.push({ id: 'wg-1', name: 'WG One', fqdns: ['*.x.com'] });
-    t.policies[0] = { ...t.policies[0]!, webGroupIds: ['wg-1'], dstGroupId: 'sg-internet' };
+    t.policies[0] = { ...t.policies[0]!, webGroupIds: ['wg-1'], dstGroupId: ['sg-internet'] };
     expect(findingsWithIdPrefix(t, 'unused-webgroup-')).toHaveLength(0);
   });
 });
@@ -448,8 +448,8 @@ describe('findAllowInternetWithoutInspection', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'noins', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', decrypt: false }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'noins', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', decrypt: false }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'no-inspection-noins')).toHaveLength(1);
   });
@@ -458,8 +458,8 @@ describe('findAllowInternetWithoutInspection', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'noins', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'noins', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'no-inspection-')).toHaveLength(0);
   });
@@ -471,9 +471,9 @@ describe('findRedundantPolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'narrow', name: 'Web→App 443', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'broad', name: 'Web→App any', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'any', ports: undefined }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'narrow', name: 'Web→App 443', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'broad', name: 'Web→App any', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'redundant-narrow')).toHaveLength(1);
   });
@@ -486,8 +486,8 @@ describe('findRedundantPolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'allow443', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'denyany', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'deny', protocol: 'any', ports: undefined }),
+      policy({ id: 'allow443', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'denyany', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'deny', protocol: 'any', ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'redundant-')).toHaveLength(0);
   });
@@ -497,9 +497,9 @@ describe('findRedundantPolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'broadFirst', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'any', ports: undefined }),
-      policy({ id: 'narrowLater', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'broadFirst', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'any', ports: undefined }),
+      policy({ id: 'narrowLater', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     // narrowLater is shadowed by broadFirst (existing check), not redundant in the new sense.
     expect(findingsWithIdPrefix(t, 'redundant-')).toHaveLength(0);
@@ -512,9 +512,9 @@ describe('findMergeablePolicies', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'p8080', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8080' }),
-      policy({ id: 'p8443', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'p8080', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'p8443', priority: 110, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'mergeable-p8080')).toHaveLength(1);
   });
@@ -523,9 +523,9 @@ describe('findMergeablePolicies', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: '8080' }),
-      policy({ id: 'b', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'deny', protocol: 'tcp', ports: '8443' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'b', priority: 110, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], action: 'deny', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'mergeable-')).toHaveLength(0);
   });
@@ -534,9 +534,9 @@ describe('findMergeablePolicies', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: 'any' }),
-      policy({ id: 'b', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-web', action: 'allow', protocol: 'tcp', ports: 'any' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], action: 'allow', protocol: 'tcp', ports: 'any' }),
+      policy({ id: 'b', priority: 110, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], action: 'allow', protocol: 'tcp', ports: 'any' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     expect(findingsWithIdPrefix(t, 'mergeable-')).toHaveLength(0);
   });
@@ -548,25 +548,25 @@ describe('applyAutoFix', () => {
   it('missing-deny-all → adds a catch-all deny policy', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
-    t.policies = [policy({ id: 'p1', srcGroupId: 'sg-web', dstGroupId: 'sg-web' })];
+    t.policies = [policy({ id: 'p1', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] })];
 
     const before = evaluateTopology(t).findings.find((f) => f.id === 'missing-deny-all');
     expect(before).toBeDefined();
     const fixed = applyAutoFix(t, before!)!;
     expect(fixed).not.toBeNull();
-    expect(fixed.policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')).toBe(true);
+    expect(fixed.policies.some((p) => p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'))).toBe(true);
     expect(evaluateTopology(fixed).findings.some((f) => f.id === 'missing-deny-all')).toBe(false);
   });
 
   it('learned-without-deny-all → adds a catch-all deny policy', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
-    t.policies = [policy({ id: 'l1', action: 'learned', srcGroupId: 'sg-web', dstGroupId: 'sg-web' })];
+    t.policies = [policy({ id: 'l1', action: 'learned', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] })];
 
     const before = evaluateTopology(t).findings.find((f) => f.id === 'learned-without-deny-all');
     expect(before).toBeDefined();
     const fixed = applyAutoFix(t, before!)!;
-    expect(fixed.policies.some((p) => p.action === 'deny' && p.srcGroupId === 'sg-any' && p.dstGroupId === 'sg-any')).toBe(true);
+    expect(fixed.policies.some((p) => p.action === 'deny' && p.srcGroupId.includes('sg-any') && p.dstGroupId.includes('sg-any'))).toBe(true);
     expect(evaluateTopology(fixed).findings.some((f) => f.id === 'learned-without-deny-all')).toBe(false);
   });
 
@@ -575,9 +575,9 @@ describe('applyAutoFix', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'high', priority: 10, srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'low', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'high', priority: 10, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], protocol: 'tcp', ports: '443' }),
+      policy({ id: 'low', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'shadow-low');
     expect(before).toBeDefined();
@@ -590,8 +590,8 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'silent', action: 'deny', logging: false, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'silent', action: 'deny', logging: false, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'missing-log-silent');
     expect(before).toBeDefined();
@@ -603,8 +603,8 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'quiet', action: 'allow', logging: false, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'quiet', action: 'allow', logging: false, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'missing-log-allow-quiet');
     expect(before).toBeDefined();
@@ -618,8 +618,8 @@ describe('applyAutoFix', () => {
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.webGroups.push({ id: 'wg-1', name: 'SaaS', fqdns: ['*.example.com'] });
     t.policies = [
-      policy({ id: 'wgrule', srcGroupId: 'sg-web', dstGroupId: 'sg-app', webGroupIds: ['wg-1'] }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'wgrule', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], webGroupIds: ['wg-1'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'webgroup-egress-wgrule');
     expect(before).toBeDefined();
@@ -631,8 +631,8 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'tcp', ports: '8443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'tcp', ports: '8443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'tls-decrypt-port-d1');
     expect(before).toBeDefined();
@@ -644,8 +644,8 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'd1', srcGroupId: 'sg-web', dstGroupId: 'sg-internet', protocol: 'udp', ports: '443', decrypt: true }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'd1', srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], protocol: 'udp', ports: '443', decrypt: true }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'tls-decrypt-proto-d1');
     expect(before).toBeDefined();
@@ -657,9 +657,9 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', name: 'Dupe', srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'b', name: 'Dupe', srcGroupId: 'sg-web', dstGroupId: 'sg-web', priority: 101 }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', name: 'Dupe', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'b', name: 'Dupe', srcGroupId: ['sg-web'], dstGroupId: ['sg-web'], priority: 101 }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'duplicate-name-Dupe');
     expect(before).toBeDefined();
@@ -674,9 +674,9 @@ describe('applyAutoFix', () => {
     const t = emptyTopology();
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'a', name: 'A', priority: 500, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'b', name: 'B', priority: 500, srcGroupId: 'sg-web', dstGroupId: 'sg-web' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'a', name: 'A', priority: 500, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'b', name: 'B', priority: 500, srcGroupId: ['sg-web'], dstGroupId: ['sg-web'] }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'duplicate-priority-500');
     expect(before).toBeDefined();
@@ -690,9 +690,9 @@ describe('applyAutoFix', () => {
     t.smartGroups.push({ id: 'sg-web', name: 'Web', color: '#3b82f6', criteria: [], matchType: 'any' });
     t.smartGroups.push({ id: 'sg-app', name: 'App', color: '#10b981', criteria: [], matchType: 'any' });
     t.policies = [
-      policy({ id: 'p8080', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8080' }),
-      policy({ id: 'p8443', priority: 110, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }),
-      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: 'sg-any', dstGroupId: 'sg-any', action: 'deny', protocol: 'any', logging: true, ports: undefined }),
+      policy({ id: 'p8080', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8080' }),
+      policy({ id: 'p8443', priority: 110, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443' }),
+      policy({ id: 'p-deny-all', name: 'Deny All', priority: 9999, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'], action: 'deny', protocol: 'any', logging: true, ports: undefined }),
     ];
     const before = evaluateTopology(t).findings.find((f) => f.id === 'mergeable-p8080');
     expect(before).toBeDefined();
@@ -735,8 +735,8 @@ describe('findL4DenyShadowsL7Allow', () => {
   it('flags an L7 allow when an earlier pure-L4 deny covers its selector', () => {
     const t = topoWithSGs();
     t.policies = [
-      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
     ];
     const findings = findingsWithIdPrefix(t, 'l4-shadows-l7-');
     expect(findings).toHaveLength(1);
@@ -748,8 +748,8 @@ describe('findL4DenyShadowsL7Allow', () => {
   it('does NOT flag when the L7 allow has a LOWER priority number (evaluated first)', () => {
     const t = topoWithSGs();
     t.policies = [
-      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
-      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 50, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443' }),
     ];
     expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
   });
@@ -758,8 +758,8 @@ describe('findL4DenyShadowsL7Allow', () => {
     const t = topoWithSGs();
     t.policies = [
       // Earlier deny is L7 (decrypt=true) → doesn't short-circuit at L4.
-      policy({ id: 'p-l7-deny', name: 'L7 Block', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', decrypt: true }),
-      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l7-deny', name: 'L7 Block', priority: 50, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443', decrypt: true }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
     ];
     expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
   });
@@ -767,8 +767,8 @@ describe('findL4DenyShadowsL7Allow', () => {
   it('does NOT flag when the L4 deny excludes the L7 allow\'s src group', () => {
     const t = topoWithSGs();
     t.policies = [
-      policy({ id: 'p-l4-deny', name: 'Block Egress (Web excluded)', priority: 50, srcGroupId: 'sg-any', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', srcExcludeGroupIds: ['sg-web'] }),
-      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l4-deny', name: 'Block Egress (Web excluded)', priority: 50, srcGroupId: ['sg-any'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443', srcExcludeGroupIds: ['sg-web'] }),
+      policy({ id: 'p-l7-allow', name: 'Allow Web → Salesforce', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
     ];
     expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
   });
@@ -778,16 +778,16 @@ describe('findL4DenyShadowsL7Allow', () => {
     // problem — the FQDN is denied either way. Only L7 ALLOWS matter here.
     const t = topoWithSGs();
     t.policies = [
-      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' }),
-      policy({ id: 'p-l7-deny', name: 'Block Web → Salesforce', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
+      policy({ id: 'p-l4-deny', name: 'Block Web Egress', priority: 50, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443' }),
+      policy({ id: 'p-l7-deny', name: 'Block Web → Salesforce', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] }),
     ];
     expect(findingsWithIdPrefix(t, 'l4-shadows-l7-')).toHaveLength(0);
   });
 
   it('findL4ShadowingInOrder operates on the given order, not policy.priority', () => {
     const t = topoWithSGs();
-    const l4Deny = policy({ id: 'p-l4', name: 'L4 Deny', priority: 999, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'deny', protocol: 'tcp', ports: '443' });
-    const l7Allow = policy({ id: 'p-l7', name: 'L7 Allow', priority: 1, srcGroupId: 'sg-web', dstGroupId: 'sg-internet', action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] });
+    const l4Deny = policy({ id: 'p-l4', name: 'L4 Deny', priority: 999, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'deny', protocol: 'tcp', ports: '443' });
+    const l7Allow = policy({ id: 'p-l7', name: 'L7 Allow', priority: 1, srcGroupId: ['sg-web'], dstGroupId: ['sg-internet'], action: 'allow', protocol: 'tcp', ports: '443', webGroupIds: ['wg-sfdc'] });
     t.policies = [l4Deny, l7Allow];
 
     // By saved priority: L7 allow (1) comes first → not shadowed.

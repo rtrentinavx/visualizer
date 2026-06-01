@@ -41,8 +41,8 @@ export interface DcfPolicy {
   id: string;
   name: string;
   priority: number;
-  srcGroupId: string;
-  dstGroupId: string;
+  srcGroupId: string[];
+  dstGroupId: string[];
   srcExcludeGroupIds?: string[];
   dstExcludeGroupIds?: string[];
   action: PolicyAction;
@@ -54,7 +54,6 @@ export interface DcfPolicy {
   threatGroup?: string;
   geoGroup?: string;
   webGroupIds?: string[];
-  /** UUID of the parent PolicyList on the controller. Only present when imported via live API. */
   policyListUuid?: string;
 }
 
@@ -78,6 +77,10 @@ export interface DcfPolicyModel {
   geoGroups: GeoGroup[];
   policies: DcfPolicy[];
   flows: TrafficFlow[];
-  /** Controller-level default action for unmatched traffic. When 'deny', explicit deny-all policies are redundant and recommendations to create one are suppressed. */
   defaultAction?: 'allow' | 'deny';
+}
+
+export function normalizePolicyGroupIds(policy: Record<string, unknown>): void {
+  if (typeof policy.srcGroupId === 'string') policy.srcGroupId = [policy.srcGroupId];
+  if (typeof policy.dstGroupId === 'string') policy.dstGroupId = [policy.dstGroupId];
 }

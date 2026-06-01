@@ -81,8 +81,8 @@ describe('diffTopologies', () => {
       id: 'pol-1',
       name: 'A',
       priority: 100,
-      srcGroupId: 'sg-any',
-      dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'],
+      dstGroupId: ['sg-any'],
       action: 'allow',
       protocol: 'tcp',
       logging: true,
@@ -94,8 +94,8 @@ describe('diffTopologies', () => {
       protocol: 'tcp',
       logging: true,
       id: 'pol-1',
-      dstGroupId: 'sg-any',
-      srcGroupId: 'sg-any',
+      dstGroupId: ['sg-any'],
+      srcGroupId: ['sg-any'],
       priority: 100,
       name: 'A',
     });
@@ -108,8 +108,8 @@ describe('diffTopologies', () => {
       id: 'pol-1',
       name: 'A',
       priority: 100,
-      srcGroupId: 'sg-any',
-      dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'],
+      dstGroupId: ['sg-any'],
       action: 'allow' as const,
       protocol: 'tcp' as const,
       logging: true,
@@ -124,7 +124,7 @@ describe('diffTopologies', () => {
   it('detects added + removed + modified in the same call (totals roll up)', () => {
     const base = blank();
     const p1 = {
-      id: 'pol-1', name: 'A', priority: 100, srcGroupId: 'sg-any', dstGroupId: 'sg-any',
+      id: 'pol-1', name: 'A', priority: 100, srcGroupId: ['sg-any'], dstGroupId: ['sg-any'],
       action: 'allow' as const, protocol: 'tcp' as const, logging: true,
     };
     const p2 = { ...p1, id: 'pol-2', name: 'B' };

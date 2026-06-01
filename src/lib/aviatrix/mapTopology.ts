@@ -76,11 +76,6 @@ function pickArray(obj: Record<string, unknown>, ...keys: string[]): unknown[] |
   return undefined;
 }
 
-function firstString(arr: unknown[] | undefined): string | undefined {
-  if (!arr) return undefined;
-  for (const v of arr) if (typeof v === 'string') return v;
-  return undefined;
-}
 
 function stableId(prefix: string, obj: Record<string, unknown>, fallbackIndex: number): string {
   const id = pickString(obj, 'uuid', 'id', 'ID', 'Uuid');
@@ -302,8 +297,15 @@ function mapPolicy(raw: unknown, index: number): DcfPolicy | null {
   // Source / destination — v2.5 uses src_ads/dst_ads; legacy uses srcSmartGroups/etc.
   const srcAds = pickArray(o, 'src_ads', 'srcAds', 'src_smart_groups', 'srcSmartGroups') ?? [];
   const dstAds = pickArray(o, 'dst_ads', 'dstAds', 'dst_smart_groups', 'dstSmartGroups') ?? [];
-  const src = remapGroupId(firstString(srcAds as unknown[]));
-  const dst = remapGroupId(firstString(dstAds as unknown[]));
+
+  const srcIds = (srcAds as unknown[])
+    .filter((s): s is string => typeof s === 'string')
+    .map(remapGroupId)
+    .filter((s): s is string => s !== undefined);
+  const dstIds = (dstAds as unknown[])
+    .filter((s): s is string => typeof s === 'string')
+    .map(remapGroupId)
+    .filter((s): s is string => s !== undefined);
 
   // Exclude groups (legacy only — not exposed in v2.5 individually)
   const srcExcl = (pickArray(o, 'srcExcludeSmartGroups', 'src_exclude_smart_groups') ?? [])
@@ -343,8 +345,8 @@ function mapPolicy(raw: unknown, index: number): DcfPolicy | null {
     id: stableId('pol', o, index),
     name: pickString(o, 'name') ?? `Policy ${index + 1}`,
     priority: asNumber(o['priority']) ?? 100 + index,
-    srcGroupId: src ?? 'sg-any',
-    dstGroupId: dst ?? 'sg-any',
+    srcGroupId: srcIds.length > 0 ? srcIds : ['sg-any'],
+    dstGroupId: dstIds.length > 0 ? dstIds : ['sg-any'],
     srcExcludeGroupIds: srcExcl.length > 0 ? srcExcl : undefined,
     dstExcludeGroupIds: dstExcl.length > 0 ? dstExcl : undefined,
     webGroupIds: webGroupIds.length > 0 ? webGroupIds : undefined,

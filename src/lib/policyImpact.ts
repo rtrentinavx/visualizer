@@ -20,8 +20,8 @@ export function evaluateFlow(topology: DcfPolicyModel, flow: TrafficFlow): FlowE
 
   const candidates = topology.policies.filter((p) => {
     if (p.enforcement === false) return false;
-    if (!srcGroupIds.includes(p.srcGroupId)) return false;
-    if (!dstGroupIds.includes(p.dstGroupId)) return false;
+    if (!p.srcGroupId.some((id) => srcGroupIds.includes(id))) return false;
+    if (!p.dstGroupId.some((id) => dstGroupIds.includes(id))) return false;
     if (!(p.protocol === flow.protocol || p.protocol === 'any')) return false;
     if (p.ports && p.ports !== 'any') {
       const policyPorts = p.ports.split(',').map((s) => s.trim());

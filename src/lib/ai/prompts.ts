@@ -137,8 +137,8 @@ ${GUARDRAILS}`;
 export function buildContextPrompt(topology: DcfPolicyModel): string {
   const groups = topology.smartGroups.map((g) => `- ${g.name}`).join('\n');
   const policies = topology.policies.map((p) => {
-    const src = topology.smartGroups.find((g) => g.id === p.srcGroupId)?.name || p.srcGroupId;
-    const dst = topology.smartGroups.find((g) => g.id === p.dstGroupId)?.name || p.dstGroupId;
+    const src = p.srcGroupId.map((id) => topology.smartGroups.find((g) => g.id === id)?.name || id).join(', ');
+    const dst = p.dstGroupId.map((id) => topology.smartGroups.find((g) => g.id === id)?.name || id).join(', ');
     return `- ${p.name}: ${src} → ${dst} | ${p.action} | ${p.protocol}/${p.ports || 'any'} | priority ${p.priority}`;
   }).join('\n');
 
@@ -206,8 +206,8 @@ export function buildAutoDocsContext(topology: DcfPolicyModel): string {
       const parts = [
         `priority=${p.priority}`,
         `name="${p.name}"`,
-        `src="${nameOf(p.srcGroupId)}"`,
-        `dst="${nameOf(p.dstGroupId)}"`,
+        `src="${p.srcGroupId.map(nameOf).join(', ')}"`,
+        `dst="${p.dstGroupId.map(nameOf).join(', ')}"`,
         `action=${p.action}`,
         `protocol=${p.protocol}`,
         `ports=${p.ports ?? 'any'}`,

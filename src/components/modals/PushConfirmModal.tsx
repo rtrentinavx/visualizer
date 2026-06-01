@@ -72,10 +72,10 @@ function computeChanges(local: DcfPolicy, ctrl: DcfPolicy, topo: DcfPolicyModel)
     changes.push({ field: 'protocol', from: ctrl.protocol, to: local.protocol });
   if ((local.ports ?? '') !== (ctrl.ports ?? ''))
     changes.push({ field: 'ports', from: ctrl.ports ?? 'any', to: local.ports ?? 'any' });
-  if (local.srcGroupId !== ctrl.srcGroupId)
-    changes.push({ field: 'src', from: gn(ctrl.srcGroupId), to: gn(local.srcGroupId) });
-  if (local.dstGroupId !== ctrl.dstGroupId)
-    changes.push({ field: 'dst', from: gn(ctrl.dstGroupId), to: gn(local.dstGroupId) });
+  if (JSON.stringify(local.srcGroupId) !== JSON.stringify(ctrl.srcGroupId))
+    changes.push({ field: 'src', from: ctrl.srcGroupId.map(gn).join(', '), to: local.srcGroupId.map(gn).join(', ') });
+  if (JSON.stringify(local.dstGroupId) !== JSON.stringify(ctrl.dstGroupId))
+    changes.push({ field: 'dst', from: ctrl.dstGroupId.map(gn).join(', '), to: local.dstGroupId.map(gn).join(', ') });
   if (!!local.decrypt !== !!ctrl.decrypt)
     changes.push({ field: 'decrypt', from: ctrl.decrypt ? 'on' : 'off', to: local.decrypt ? 'on' : 'off' });
   if (local.logging !== ctrl.logging)

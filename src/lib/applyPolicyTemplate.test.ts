@@ -58,7 +58,7 @@ describe('applyPolicyTemplate', () => {
     expect(result.added.smartGroups.map((g) => g.name)).toEqual(['Internal Servers']);
     expect(result.reused.smartGroupNames).toContain('Bastion Hosts');
     // Policies should reference the *existing* Bastion group id, not a new one.
-    const bastionPolicies = result.added.policies.filter((p) => p.srcGroupId === 'sg-existing-bastion');
+    const bastionPolicies = result.added.policies.filter((p) => p.srcGroupId.includes('sg-existing-bastion'));
     expect(bastionPolicies).toHaveLength(2);
   });
 
@@ -80,8 +80,8 @@ describe('applyPolicyTemplate', () => {
       id: 'pol-existing-200',
       name: 'Existing',
       priority: 200,
-      srcGroupId: 'sg-x',
-      dstGroupId: 'sg-x',
+      srcGroupId: ['sg-x'],
+      dstGroupId: ['sg-x'],
       action: 'allow',
       protocol: 'tcp',
       logging: true,

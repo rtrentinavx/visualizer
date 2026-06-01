@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trophy, Wand2, Activity, ArrowRight, ShieldCheck, ShieldX } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Loader2, Sparkles, Trophy, Wand2, Activity, ArrowRight, ShieldCheck, ShieldX, X, Plus } from 'lucide-react';
 import type { DcfPolicy, DcfPolicyModel } from '../../../types/dcf';
 import type { AIProfile, AIMessage } from '../../../lib/ai/types';
 import { streamChat } from '../../../lib/ai/client';
@@ -20,6 +20,13 @@ function parseExplanation(raw: string): ExplanationResult | null {
     if (match?.[1]) return JSON.parse(match[1]) as ExplanationResult;
   } catch { /* noop */ }
   return null;
+}
+
+/** Normalize srcGroupId / dstGroupId to string[] regardless of legacy shape */
+function toStringArray(v: unknown, fallback = 'sg-any'): string[] {
+  if (Array.isArray(v)) return v.length > 0 ? (v as string[]) : [fallback];
+  if (typeof v === 'string' && v.length > 0) return [v];
+  return [fallback];
 }
 
 interface PolicyInspectorProps {
@@ -172,6 +179,100 @@ function PolicyImpactCard({ topology, draft, isNew }: { topology: DcfPolicyModel
   );
 }
 
+// ---------- GroupMultiPicker: pill list + add-from-dropdown ----------
+
+interface GroupMultiPickerProps {
+  label: string;
+  selected: string[];
+  options: { value: string; label: string }[];
+  onChange: (v: string[]) => void;
+}
+
+function GroupMultiPicker({ label, selected, options, onChange }: GroupMultiPickerProps) {
+  const [addOpen, setAddOpen] = useState(false);
+
+  const remove = (id: string) => {
+    if (selected.length <= 1) return; // enforce minimum 1
+    onChange(selected.filter((s) => s !== id));
+  };
+
+  const add = (id: string) => {
+    if (!selected.includes(id)) onChange([...selected, id]);
+    setAddOpen(false);
+  };
+
+  const available = options.filter((o) => !selected.includes(o.value));
+
+  const labelFor = (id: string) => options.find((o) => o.value === id)?.label ?? id;
+
+  return (
+    <div className="mb-3">
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] mb-1">
+        {label}
+      </label>
+
+      {/* Pill list */}
+      <div className="flex flex-wrap gap-1 mb-1">
+        {selected.map((id) => (
+          <span
+            key={id}
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
+            style={{
+              backgroundColor: 'var(--color-accent-blue)20',
+              color: 'var(--color-accent-blue)',
+              border: '1px solid var(--color-accent-blue)40',
+            }}
+          >
+            {labelFor(id)}
+            {selected.length > 1 && (
+              <button
+                onClick={() => remove(id)}
+                className="opacity-60 hover:opacity-100 transition-opacity"
+                title="Remove"
+              >
+                <X size={9} />
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
+
+      {/* Add button + dropdown */}
+      <div className="relative">
+        <button
+          onClick={() => setAddOpen((v) => !v)}
+          disabled={available.length === 0}
+          className="flex items-center gap-1 text-[10px] text-[var(--color-accent-blue)] hover:underline disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          <Plus size={10} /> Add group
+        </button>
+        {addOpen && available.length > 0 && (
+          <div
+            className="absolute z-20 mt-1 w-full max-h-40 overflow-y-auto rounded border shadow-lg"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              borderColor: 'var(--color-border-subtle)',
+            }}
+          >
+            {available.map((o) => (
+              <button
+                key={o.value}
+                onClick={() => add(o.value)}
+                className="w-full text-left px-2 py-1 text-xs hover:bg-[var(--color-button-hover)] transition-colors"
+                style={{ color: 'var(--color-text-primary)' }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Main inspector ----------
+
 export default function PolicyInspector({ topology, selectedItem, aiProfile, onBack, onSave, onDelete }: PolicyInspectorProps) {
   const isNew = selectedItem.id === '__new__';
 
@@ -183,15 +284,21 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
       return {
         name: 'New Policy',
         priority: maxPriority + 10,
-        srcGroupId: selectedItem.srcId || 'sg-any',
-        dstGroupId: selectedItem.dstId || 'sg-any',
+        srcGroupId: toStringArray(selectedItem.srcId, 'sg-any'),
+        dstGroupId: toStringArray(selectedItem.dstId, 'sg-any'),
         action: 'allow',
         protocol: 'tcp',
         logging: false,
       };
     }
     const p = topology.policies.find((x) => x.id === selectedItem.id);
-    return p ? { ...p } : {};
+    if (!p) return {};
+    // Normalize legacy string shapes to arrays
+    return {
+      ...p,
+      srcGroupId: toStringArray(p.srcGroupId, 'sg-any'),
+      dstGroupId: toStringArray(p.dstGroupId, 'sg-any'),
+    };
   }, [topology, selectedItem, isNew]);
 
   const [form, setForm] = useState<Record<string, unknown>>(initialForm);
@@ -211,13 +318,17 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
 
   const p = form;
 
+  // Normalized arrays for current form values
+  const srcGroupIds = toStringArray(p.srcGroupId, 'sg-any');
+  const dstGroupIds = toStringArray(p.dstGroupId, 'sg-any');
+
   const policyScore: PolicyScore = useMemo(() => {
-    const draftPolicy = {
+    const draftPolicy: DcfPolicy = {
       id: selectedItem.id,
       name: String(p.name ?? ''),
       priority: Number(p.priority ?? 100),
-      srcGroupId: String(p.srcGroupId ?? 'sg-any'),
-      dstGroupId: String(p.dstGroupId ?? 'sg-any'),
+      srcGroupId: srcGroupIds,
+      dstGroupId: dstGroupIds,
       action: String(p.action ?? 'allow') as 'allow' | 'deny' | 'learned',
       protocol: String(p.protocol ?? 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any',
       ports: p.ports ? String(p.ports) : undefined,
@@ -230,7 +341,7 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
       dstExcludeGroupIds: (p.dstExcludeGroupIds as string[]) || undefined,
     };
     return scorePolicy(draftPolicy, topology);
-  }, [selectedItem.id, p, topology]);
+  }, [selectedItem.id, p, topology, srcGroupIds, dstGroupIds]);
 
   const handleExplain = async () => {
     if (!aiProfile) return;
@@ -255,12 +366,15 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
   };
 
   const handleAutoName = () => {
-    const src = smartGroupOptions.find((o) => o.value === (p.srcGroupId || 'sg-any'))?.label || 'Any';
-    const dst = smartGroupOptions.find((o) => o.value === (p.dstGroupId || 'sg-any'))?.label || 'Any';
+    // Use the first group name for each side for a concise label
+    const srcLabel = smartGroupOptions.find((o) => o.value === srcGroupIds[0])?.label ?? 'Any';
+    const dstLabel = smartGroupOptions.find((o) => o.value === dstGroupIds[0])?.label ?? 'Any';
+    const srcSuffix = srcGroupIds.length > 1 ? ` +${srcGroupIds.length - 1}` : '';
+    const dstSuffix = dstGroupIds.length > 1 ? ` +${dstGroupIds.length - 1}` : '';
     const action = String(p.action ?? 'allow');
     const proto = String(p.protocol ?? 'tcp').toUpperCase();
     const port = String(p.ports || '').trim();
-    let name = `${action === 'allow' ? 'Allow' : 'Deny'} ${src} to ${dst}`;
+    let name = `${action === 'allow' ? 'Allow' : 'Deny'} ${srcLabel}${srcSuffix} to ${dstLabel}${dstSuffix}`;
     if (proto !== 'ANY') {
       name += ` ${proto}`;
       if (port && port !== 'any') name += `/${port}`;
@@ -290,8 +404,8 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
               id: isNew ? `__draft_${selectedItem.id}` : selectedItem.id,
               name: String(p.name ?? ''),
               priority: Number(p.priority ?? 100),
-              srcGroupId: String(p.srcGroupId ?? 'sg-any'),
-              dstGroupId: String(p.dstGroupId ?? 'sg-any'),
+              srcGroupId: srcGroupIds,
+              dstGroupId: dstGroupIds,
               action: String(p.action ?? 'allow') as 'allow' | 'deny' | 'learned',
               protocol: String(p.protocol ?? 'tcp') as 'tcp' | 'udp' | 'icmp' | 'any',
               ports: p.ports ? String(p.ports) : undefined,
@@ -328,9 +442,23 @@ export default function PolicyInspector({ topology, selectedItem, aiProfile, onB
               onBlur={(e) => (e.currentTarget.style.borderColor = 'var(--color-input-border)')}
             />
           </div>
+
           <Input label="Priority" value={String(p.priority ?? 100)} onChange={(v) => updateField('priority', Number(v))} type="number" />
-          <Select label="Source Group" value={String(p.srcGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('srcGroupId', v)} />
-          <Select label="Destination Group" value={String(p.dstGroupId ?? 'sg-any')} options={smartGroupOptions} onChange={(v) => updateField('dstGroupId', v)} />
+
+          <GroupMultiPicker
+            label="Source Groups"
+            selected={srcGroupIds}
+            options={smartGroupOptions}
+            onChange={(v) => updateField('srcGroupId', v)}
+          />
+
+          <GroupMultiPicker
+            label="Destination Groups"
+            selected={dstGroupIds}
+            options={smartGroupOptions}
+            onChange={(v) => updateField('dstGroupId', v)}
+          />
+
           <Select label="Action" value={String(p.action ?? 'allow')} options={[{ value: 'allow', label: 'Allow' }, { value: 'deny', label: 'Deny' }]} onChange={(v) => updateField('action', v)} />
           <Toggle label="Enforcement" checked={p.enforcement !== false} onChange={(v) => updateField('enforcement', v)} />
           <Select label="Protocol" value={String(p.protocol ?? 'tcp')} options={[{ value: 'tcp', label: 'TCP' }, { value: 'udp', label: 'UDP' }, { value: 'icmp', label: 'ICMP' }, { value: 'any', label: 'Any' }]} onChange={(v) => updateField('protocol', v)} />

@@ -186,8 +186,11 @@ export function simulateTraffic(topology: DcfPolicyModel, request: SimulationReq
     if (p.enforcement === false) return false;
 
     // Source / destination SmartGroup match
-    if (!srcGroupIds.includes(p.srcGroupId)) return false;
-    if (!dstGroupIds.includes(p.dstGroupId)) return false;
+    // p.srcGroupId / p.dstGroupId are now string[] — the policy matches if any
+    // of its listed group ids appears in the flow's resolved group set (which
+    // always includes 'sg-any' as a fallback).
+    if (!p.srcGroupId.some((id) => srcGroupIds.includes(id))) return false;
+    if (!p.dstGroupId.some((id) => dstGroupIds.includes(id))) return false;
 
     // Protocol match
     if (!(p.protocol === protocol || p.protocol === 'any')) return false;

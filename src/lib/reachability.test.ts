@@ -67,8 +67,8 @@ describe('checkReachability', () => {
     return {
       name: o.id,
       priority: 100,
-      srcGroupId: 'sg-any',
-      dstGroupId: 'sg-any',
+      srcGroupId: ['sg-any'],
+      dstGroupId: ['sg-any'],
       action: 'allow',
       protocol: 'tcp',
       logging: false,
@@ -87,7 +87,7 @@ describe('checkReachability', () => {
 
   it('returns the winning policy for a matching allow', () => {
     const t = baseTopology();
-    t.policies.push(policy({ id: 'allow-web-app', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }));
+    t.policies.push(policy({ id: 'allow-web-app', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443' }));
     const intent = resolveIntent(t, { srcGroupName: 'Web Tier', dstGroupName: 'App Tier', protocol: 'tcp', port: 8443 });
     if ('reason' in intent) throw new Error('unexpected');
     const v = checkReachability(t, intent);
@@ -97,8 +97,8 @@ describe('checkReachability', () => {
 
   it('priority order — lower number wins even when higher-number policy matches', () => {
     const t = baseTopology();
-    t.policies.push(policy({ id: 'deny-broad', priority: 100, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'deny', protocol: 'any' }));
-    t.policies.push(policy({ id: 'allow-narrow', priority: 200, srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }));
+    t.policies.push(policy({ id: 'deny-broad', priority: 100, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'deny', protocol: 'any' }));
+    t.policies.push(policy({ id: 'allow-narrow', priority: 200, srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443' }));
     const intent = resolveIntent(t, { srcGroupName: 'Web Tier', dstGroupName: 'App Tier', protocol: 'tcp', port: 8443 });
     if ('reason' in intent) throw new Error('unexpected');
     const v = checkReachability(t, intent);
@@ -110,8 +110,8 @@ describe('checkReachability', () => {
     const t = baseTopology();
     t.policies.push(policy({
       id: 'allow-saas',
-      srcGroupId: 'sg-web',
-      dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'],
+      dstGroupId: ['sg-internet'],
       action: 'allow',
       protocol: 'tcp',
       ports: '443',
@@ -129,8 +129,8 @@ describe('checkReachability', () => {
     t.webGroups.push({ id: 'wg-dev', name: 'Dev Tools', fqdns: ['*.github.com'] });
     t.policies.push(policy({
       id: 'allow-dev',
-      srcGroupId: 'sg-web',
-      dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'],
+      dstGroupId: ['sg-internet'],
       action: 'allow',
       protocol: 'tcp',
       ports: '443',
@@ -146,8 +146,8 @@ describe('checkReachability', () => {
     const t = baseTopology();
     t.policies.push(policy({
       id: 'allow-internet-broad',
-      srcGroupId: 'sg-web',
-      dstGroupId: 'sg-internet',
+      srcGroupId: ['sg-web'],
+      dstGroupId: ['sg-internet'],
       action: 'allow',
       protocol: 'tcp',
       ports: '443',
@@ -161,7 +161,7 @@ describe('checkReachability', () => {
 
   it('policies with enforcement=false are skipped', () => {
     const t = baseTopology();
-    t.policies.push(policy({ id: 'off', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443', enforcement: false }));
+    t.policies.push(policy({ id: 'off', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443', enforcement: false }));
     const intent = resolveIntent(t, { srcGroupName: 'Web Tier', dstGroupName: 'App Tier', protocol: 'tcp', port: 8443 });
     if ('reason' in intent) throw new Error('unexpected');
     const v = checkReachability(t, intent);
@@ -170,7 +170,7 @@ describe('checkReachability', () => {
 
   it('port=undefined excludes policies that require a specific port', () => {
     const t = baseTopology();
-    t.policies.push(policy({ id: 'narrow', srcGroupId: 'sg-web', dstGroupId: 'sg-app', action: 'allow', protocol: 'tcp', ports: '8443' }));
+    t.policies.push(policy({ id: 'narrow', srcGroupId: ['sg-web'], dstGroupId: ['sg-app'], action: 'allow', protocol: 'tcp', ports: '8443' }));
     const intent = resolveIntent(t, { srcGroupName: 'Web Tier', dstGroupName: 'App Tier', protocol: 'tcp' });
     if ('reason' in intent) throw new Error('unexpected');
     const v = checkReachability(t, intent);
