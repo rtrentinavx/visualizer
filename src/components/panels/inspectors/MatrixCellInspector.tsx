@@ -180,7 +180,11 @@ export default function MatrixCellInspector({ topology, selectedCell, onCreateIt
                     <span className="text-[10px] text-[var(--color-accent-blue)] shrink-0">Edit</span>
                     </button>
                     <button
-                      onClick={(e) => {
+                      type="button"
+                      onMouseDown={(e) => {
+                        // Use onMouseDown + preventDefault to fire before the Edit button's
+                        // onClick can switch the inspector view and unmount this component.
+                        e.preventDefault();
                         e.stopPropagation();
                         if (!selectedCell) return;
                         const newSrc = p.srcGroupId.filter((id) => id !== selectedCell.srcId);
