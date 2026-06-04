@@ -11,8 +11,8 @@ test.describe('draw policy in Graph view', () => {
     // Button should now read "Cancel".
     await expect(page.getByRole('button', { name: /cancel/i })).toBeVisible();
 
-    // React Flow renders nodes as .react-flow__node divs.
-    const nodes = page.locator('.react-flow__node');
+    // Enter connect mode first, then the DOM overlay appears
+    const nodes = page.locator('[data-testid^="fg-node-"]');
     await expect(nodes.first()).toBeVisible({ timeout: 5000 });
     const count = await nodes.count();
     if (count < 2) {
@@ -36,7 +36,8 @@ test.describe('draw policy in Graph view', () => {
     await page.getByRole('button', { name: /draw policy/i }).click();
     await expect(page.getByRole('button', { name: /cancel/i })).toBeVisible();
 
-    const nodes = page.locator('.react-flow__node');
+    // Enter connect mode first, then the DOM overlay appears
+    const nodes = page.locator('[data-testid^="fg-node-"]');
     await expect(nodes.first()).toBeVisible({ timeout: 5000 });
     const count = await nodes.count();
     if (count < 2) {

@@ -25,7 +25,7 @@ import TrafficSimulator from './components/panels/TrafficSimulator';
 // modals out of the initial bundle. lazyImport wraps React.lazy with a
 // one-shot stale-chunk reload so a hashed filename change after a new deploy
 // doesn't strand users with an open tab on a 404.
-const PolicyGraph = lazyImport(() => import('./components/panels/PolicyGraph'));
+const PolicyGraph = lazyImport(() => import('./components/panels/PolicyForceGraph'));
 const AISettingsPanel = lazyImport(() => import('./components/panels/AISettingsPanel'));
 const AIChatPanel = lazyImport(() => import('./components/panels/AIChatPanel'));
 const ImportPanel = lazyImport(() => import('./components/panels/ImportPanel'));

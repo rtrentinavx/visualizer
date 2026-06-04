@@ -10,6 +10,8 @@
     <title>visualizer</title>
   </head>
   <body>
+    <!-- Stub A-Frame global so react-force-graph's VR component doesn't crash on load -->
+    <script>window.AFRAME=window.AFRAME||{registerComponent:function(){},registerGeometry:function(){},registerMaterial:function(){},registerShader:function(){},registerSystem:function(){},components:{},systems:{},shaders:{},geometries:{}};</script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
