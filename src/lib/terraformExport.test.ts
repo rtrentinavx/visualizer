@@ -104,15 +104,38 @@ resource "aviatrix_smart_group" "dev_workloads" {
 # ============================================
 # Web Groups
 # ============================================
-# NOTE: Aviatrix provider does not have a native "aviatrix_web_group" resource.
-#       Configure web groups via Controller UI or use aviatrix_fqdn if applicable.
-# TODO: Map these web groups to appropriate Terraform resources or data sources.
 
-# WebGroup: SaaS Allowlist
-#   FQDNs: *.salesforce.com, *.slack.com, *.github.com
+resource "aviatrix_web_group" "saas_allowlist" {
+  name = "SaaS Allowlist"
 
-# WebGroup: OS Updates
-#   FQDNs: *.windowsupdate.com, *.ubuntu.com, *.amazonaws.com
+  selector {
+    match_expressions {
+      snifilter = "*.salesforce.com"
+    }
+    match_expressions {
+      snifilter = "*.slack.com"
+    }
+    match_expressions {
+      snifilter = "*.github.com"
+    }
+  }
+}
+
+resource "aviatrix_web_group" "os_updates" {
+  name = "OS Updates"
+
+  selector {
+    match_expressions {
+      snifilter = "*.windowsupdate.com"
+    }
+    match_expressions {
+      snifilter = "*.ubuntu.com"
+    }
+    match_expressions {
+      snifilter = "*.amazonaws.com"
+    }
+  }
+}
 
 # ============================================
 # Threat Groups (External Groups)
@@ -133,127 +156,146 @@ resource "aviatrix_distributed_firewalling_policy_list" "dcf_policies" {
 
   policies {
     # Allow Web to App (Priority: 100)
-    name     = "Allow Web to App"
-    priority = 100
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["8080", "8443"]
+    name        = "Allow Web to App"
+    priority    = 100
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 8080
+    }
+    port_ranges {
+      lo = 8443
+    }
     logging = true
-    src_smart_groups = [aviatrix_smart_group.web_tier.name]
-    dst_smart_groups = [aviatrix_smart_group.app_tier.name]
+    src_smart_groups = [aviatrix_smart_group.web_tier.uuid]
+    dst_smart_groups = [aviatrix_smart_group.app_tier.uuid]
   }
 
   policies {
     # Allow App to DB (Priority: 110)
-    name     = "Allow App to DB"
-    priority = 110
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["3306", "5432"]
+    name        = "Allow App to DB"
+    priority    = 110
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 3306
+    }
+    port_ranges {
+      lo = 5432
+    }
     logging = true
-    src_smart_groups = [aviatrix_smart_group.app_tier.name]
-    dst_smart_groups = [aviatrix_smart_group.database_tier.name]
+    src_smart_groups = [aviatrix_smart_group.app_tier.uuid]
+    dst_smart_groups = [aviatrix_smart_group.database_tier.uuid]
   }
 
   policies {
     # Deny Web to DB (Priority: 120)
-    name     = "Deny Web to DB"
-    priority = 120
-    action   = "DENY"
-    enforce  = true
-    protocol = "ANY"
+    name        = "Deny Web to DB"
+    priority    = 120
+    action      = "DENY"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = true
-    src_smart_groups = [aviatrix_smart_group.web_tier.name]
-    dst_smart_groups = [aviatrix_smart_group.database_tier.name]
+    src_smart_groups = [aviatrix_smart_group.web_tier.uuid]
+    dst_smart_groups = [aviatrix_smart_group.database_tier.uuid]
   }
 
   policies {
     # Allow Bastion to All (Priority: 90)
-    name     = "Allow Bastion to All"
-    priority = 90
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["22", "3389"]
+    name        = "Allow Bastion to All"
+    priority    = 90
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 22
+    }
+    port_ranges {
+      lo = 3389
+    }
     logging = true
-    src_smart_groups = [aviatrix_smart_group.bastion_hosts.name]
+    src_smart_groups = [aviatrix_smart_group.bastion_hosts.uuid]
     dst_smart_groups = []
   }
 
   policies {
     # Allow Monitoring Egress (Priority: 130)
-    name     = "Allow Monitoring Egress"
-    priority = 130
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["443"]
+    name        = "Allow Monitoring Egress"
+    priority    = 130
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 443
+    }
     logging = true
-    src_smart_groups = [aviatrix_smart_group.monitoring.name]
-    dst_smart_groups = [aviatrix_smart_group.internet.name]
+    src_smart_groups = [aviatrix_smart_group.monitoring.uuid]
+    dst_smart_groups = [aviatrix_smart_group.internet.uuid]
   }
 
   policies {
     # Deny Dev to Prod (Priority: 50)
-    name     = "Deny Dev to Prod"
-    priority = 50
-    action   = "DENY"
-    enforce  = true
-    protocol = "ANY"
+    name        = "Deny Dev to Prod"
+    priority    = 50
+    action      = "DENY"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = true
-    src_smart_groups = [aviatrix_smart_group.dev_workloads.name]
-    dst_smart_groups = [aviatrix_smart_group.app_tier.name]
+    src_smart_groups = [aviatrix_smart_group.dev_workloads.uuid]
+    dst_smart_groups = [aviatrix_smart_group.app_tier.uuid]
   }
 
   policies {
     # Allow Dev Internal (Priority: 140)
-    name     = "Allow Dev Internal"
-    priority = 140
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "ANY"
+    name        = "Allow Dev Internal"
+    priority    = 140
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = false
-    src_smart_groups = [aviatrix_smart_group.dev_workloads.name]
-    dst_smart_groups = [aviatrix_smart_group.dev_workloads.name]
+    src_smart_groups = [aviatrix_smart_group.dev_workloads.uuid]
+    dst_smart_groups = [aviatrix_smart_group.dev_workloads.uuid]
   }
 
   policies {
     # Web Egress with ThreatBlock (Priority: 150)
-    name     = "Web Egress with ThreatBlock"
-    priority = 150
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["443"]
+    name        = "Web Egress with ThreatBlock"
+    priority    = 150
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 443
+    }
     logging = true
-    decrypt = true
-    src_smart_groups = [aviatrix_smart_group.web_tier.name]
-    dst_smart_groups = [aviatrix_smart_group.internet.name]
+    decrypt_policy = "DECRYPT_REQUIRED"
+    src_smart_groups = [aviatrix_smart_group.web_tier.uuid]
+    dst_smart_groups = [aviatrix_smart_group.internet.uuid]
     threat_group = "tg-malware"
   }
 
   policies {
     # GeoBlock Non-US (Priority: 160)
-    name     = "GeoBlock Non-US"
-    priority = 160
-    action   = "DENY"
-    enforce  = true
-    protocol = "ANY"
+    name        = "GeoBlock Non-US"
+    priority    = 160
+    action      = "DENY"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = true
-    src_smart_groups = [aviatrix_smart_group.internet.name]
-    dst_smart_groups = [aviatrix_smart_group.web_tier.name]
+    src_smart_groups = [aviatrix_smart_group.internet.uuid]
+    dst_smart_groups = [aviatrix_smart_group.web_tier.uuid]
     geo_group = "gg-non-us"
   }
 
   policies {
     # Default Deny All (Priority: 9999)
-    name     = "Default Deny All"
-    priority = 9999
-    action   = "DENY"
-    enforce  = true
-    protocol = "ANY"
+    name        = "Default Deny All"
+    priority    = 9999
+    action      = "DENY"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = false
     src_smart_groups = []
     dst_smart_groups = []
@@ -261,11 +303,11 @@ resource "aviatrix_distributed_firewalling_policy_list" "dcf_policies" {
 
   policies {
     # Learned Routes from Peer (Priority: 10)
-    name     = "Learned Routes from Peer"
-    priority = 10
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "ANY"
+    name        = "Learned Routes from Peer"
+    priority    = 10
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "ANY"
     logging = false
     src_smart_groups = []
     dst_smart_groups = []
@@ -273,16 +315,18 @@ resource "aviatrix_distributed_firewalling_policy_list" "dcf_policies" {
 
   policies {
     # SaaS Egress via WebGroup (Priority: 70)
-    name     = "SaaS Egress via WebGroup"
-    priority = 70
-    action   = "PERMIT"
-    enforce  = true
-    protocol = "TCP"
-    port_ranges = ["443"]
+    name        = "SaaS Egress via WebGroup"
+    priority    = 70
+    action      = "PERMIT"
+    enforcement = "ENFORCE"
+    protocol    = "TCP"
+    port_ranges {
+      lo = 443
+    }
     logging = true
-    src_smart_groups = [aviatrix_smart_group.app_tier.name]
-    dst_smart_groups = [aviatrix_smart_group.internet.name]
-    # web_groups = ["SaaS Allowlist"]  # TODO: reference once web group resources are defined
+    src_smart_groups = [aviatrix_smart_group.app_tier.uuid]
+    dst_smart_groups = [aviatrix_smart_group.internet.uuid]
+    web_groups = [aviatrix_web_group.saas_allowlist.uuid]
   }
 
 }

@@ -113,14 +113,21 @@ export function generateTerraform(topology: DcfPolicyModel): string {
     lines.push(`# ============================================`);
     lines.push(`# Web Groups`);
     lines.push(`# ============================================`);
-    lines.push(`# NOTE: Aviatrix provider does not have a native "aviatrix_web_group" resource.`);
-    lines.push(`#       Configure web groups via Controller UI or use aviatrix_fqdn if applicable.`);
-    lines.push(`# TODO: Map these web groups to appropriate Terraform resources or data sources.`);
     lines.push('');
 
     topology.webGroups.forEach((wg) => {
-      lines.push(`# WebGroup: ${escapeHcl(wg.name)}`);
-      lines.push(`#   FQDNs: ${wg.fqdns.map((f) => escapeHcl(f)).join(', ')}`);
+      const resourceName = sanitizeName(wg.name);
+      lines.push(`resource "aviatrix_web_group" "${resourceName}" {`);
+      lines.push(`  name = "${escapeHcl(wg.name)}"`);
+      lines.push('');
+      lines.push(`  selector {`);
+      wg.fqdns.forEach((fqdn) => {
+        lines.push(`    match_expressions {`);
+        lines.push(`      snifilter = "${escapeHcl(fqdn)}"`);
+        lines.push(`    }`);
+      });
+      lines.push(`  }`);
+      lines.push(`}`);
       lines.push('');
     });
   }
@@ -173,57 +180,61 @@ export function generateTerraform(topology: DcfPolicyModel): string {
       .map((id) => getSmartGroupName(topology, id))
       .filter((n): n is string => n !== null);
 
-    const actionMap: Record<string, string> = {
-      allow: 'PERMIT',
-      deny: 'DENY',
-      learned: 'LEARNED',
-    };
+    const enforcement = pol.enforcement === false ? 'MONITOR' : 'ENFORCE';
 
     lines.push(`  policies {`);
     lines.push(`    # ${escapeHcl(pol.name)} (Priority: ${pol.priority})`);
-    lines.push(`    name     = "${escapeHcl(pol.name)}"`);
-    lines.push(`    priority = ${pol.priority}`);
-    lines.push(`    action   = "${actionMap[pol.action] || 'DENY'}"`);
-    lines.push(`    enforce  = ${pol.enforcement !== false}`);
-    lines.push(`    protocol = "${pol.protocol.toUpperCase()}"`);
-    if (pol.ports && pol.ports !== 'any') {
-      lines.push(`    port_ranges = [${pol.ports.split(',').map((p) => `"${escapeHcl(p.trim())}"`).join(', ')}]`);
+    lines.push(`    name        = "${escapeHcl(pol.name)}"`);
+    lines.push(`    priority    = ${pol.priority}`);
+    lines.push(`    action      = "${actionToProviderString(pol.action)}"`);
+    lines.push(`    enforcement = "${enforcement}"`);
+    lines.push(`    protocol    = "${pol.protocol.toUpperCase()}"`);
+
+    const portRanges = parsePortString(pol.ports);
+    for (const pr of portRanges) {
+      lines.push(`    port_ranges {`);
+      lines.push(`      lo = ${pr.lo}`);
+      if (pr.hi !== undefined) lines.push(`      hi = ${pr.hi}`);
+      lines.push(`    }`);
     }
+
     lines.push(`    logging = ${pol.logging}`);
+
     if (pol.decrypt) {
-      lines.push(`    decrypt = true`);
+      lines.push(`    decrypt_policy = "DECRYPT_REQUIRED"`);
     }
 
     if (srcNames.length > 0) {
-      lines.push(`    src_smart_groups = [${srcNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`);
+      lines.push(`    src_smart_groups = [${srcNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.uuid`).join(', ')}]`);
     } else {
       lines.push(`    src_smart_groups = []`);
     }
 
     if (dstNames.length > 0) {
-      lines.push(`    dst_smart_groups = [${dstNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`);
+      lines.push(`    dst_smart_groups = [${dstNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.uuid`).join(', ')}]`);
     } else {
       lines.push(`    dst_smart_groups = []`);
     }
 
     if (srcExcludeNames.length > 0) {
       lines.push(
-        `    src_exclude_smart_groups = [${srcExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`
+        `    src_exclude_smart_groups = [${srcExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.uuid`).join(', ')}]`
       );
     }
 
     if (dstExcludeNames.length > 0) {
       lines.push(
-        `    dst_exclude_smart_groups = [${dstExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.name`).join(', ')}]`
+        `    dst_exclude_smart_groups = [${dstExcludeNames.map((n) => `aviatrix_smart_group.${sanitizeName(n)}.uuid`).join(', ')}]`
       );
     }
 
     if (pol.webGroupIds && pol.webGroupIds.length > 0) {
-      const webGroupNames = pol.webGroupIds
+      const webRefs = pol.webGroupIds
         .map((id) => topology.webGroups.find((wg) => wg.id === id)?.name)
-        .filter((n): n is string => !!n);
-      if (webGroupNames.length > 0) {
-        lines.push(`    # web_groups = [${webGroupNames.map((n) => `"${escapeHcl(n)}"`).join(', ')}]  # TODO: reference once web group resources are defined`);
+        .filter((n): n is string => !!n)
+        .map((n) => `aviatrix_web_group.${sanitizeName(n)}.uuid`);
+      if (webRefs.length > 0) {
+        lines.push(`    web_groups = [${webRefs.join(', ')}]`);
       }
     }
 
