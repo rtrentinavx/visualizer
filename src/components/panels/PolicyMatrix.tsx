@@ -204,9 +204,12 @@ export default function PolicyMatrix({ topology, selectedCell, onSelectCell, onS
   const [heatmapMode, setHeatmapMode] = useState(false);
 
   const { allGroups, groups, matrix } = useMemo(() => {
-    const allGroups = topology.smartGroups.filter((g) => g.id !== 'sg-internet');
+    const allGroups = topology.smartGroups;
     const policyGroupIds = new Set(topology.policies.flatMap((p) => [...p.srcGroupId, ...p.dstGroupId]).filter(Boolean));
-    const groups = showAllGroups ? allGroups : allGroups.filter((g) => policyGroupIds.has(g.id));
+    // Internet always appears in the matrix; other groups appear only when referenced by a policy (unless showAllGroups)
+    const groups = showAllGroups
+      ? allGroups
+      : allGroups.filter((g) => g.id === 'sg-internet' || policyGroupIds.has(g.id));
 
     const matrix: Record<string, Record<string, DcfPolicy[]>> = {};
     for (const src of groups) {
