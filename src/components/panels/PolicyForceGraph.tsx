@@ -31,13 +31,6 @@ const SPECIAL_INTERNET: SmartGroup = {
   matchType: 'any',
 };
 
-const SPECIAL_ANY: SmartGroup = {
-  id: 'sg-any',
-  name: 'Any (wildcard)',
-  color: '#8b5cf6',
-  criteria: [],
-  matchType: 'any',
-};
 
 // ---------------------------------------------------------------------------
 // Force-graph node/link types
@@ -115,6 +108,8 @@ function buildGraphData(
 
   const links: FGLink[] = groupedEdges
     .filter((ge) => {
+      // sg-any is a wildcard — skip edges where it's the source or target
+      if (ge.source === 'sg-any' || ge.target === 'sg-any') return false;
       if (filterAction !== 'all' && ge.effectiveAction !== filterAction) return false;
       if (filterHasWebGroup && !ge.hasL7Inspection) return false;
       if (filterHasThreatGroup && !ge.policies.some((p) => !!p.threatGroup)) return false;
@@ -249,13 +244,12 @@ export default function PolicyForceGraph({
   const rafRef = useRef<number | null>(null);
 
   const allGroups = useMemo((): SmartGroup[] => {
-    const real = topology.smartGroups;
+    // sg-any is a wildcard sentinel, not a real group — exclude it from the graph.
+    const real = topology.smartGroups.filter((g) => g.id !== 'sg-any');
     const hasInternet = real.some((g) => g.id === 'sg-internet');
-    const hasAny = real.some((g) => g.id === 'sg-any');
     return [
       ...real,
       ...(hasInternet ? [] : [SPECIAL_INTERNET]),
-      ...(hasAny ? [] : [SPECIAL_ANY]),
     ];
   }, [topology.smartGroups]);
 
