@@ -2,13 +2,17 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: visualizer
-  description: DCF rule visualizer for Aviatrix Distributed Cloud Firewall
+  description: Aviatrix DCF topology visualizer
   annotations:
     github.com/project-slug: rtrentinavx/visualizer
+    backstage.io/techdocs-ref: dir:.
   links:
     - url: https://dcf-visualizer.vercel.app
       title: Live App
+      icon: web
 spec:
   type: website
   owner: user:default/rtrentinavx
   lifecycle: production
+  dependsOn:
+    - component:default/carlos
