@@ -6,6 +6,7 @@ metadata:
   annotations:
     github.com/project-slug: rtrentinavx/visualizer
     backstage.io/techdocs-ref: dir:.
+    sentry.io/project-slug: visualizer
   links:
     - url: https://dcf-visualizer.vercel.app
       title: Live App
@@ -18,3 +19,4 @@ spec:
     - component:default/carlos
   consumesApis:
     - carlos-api
+
